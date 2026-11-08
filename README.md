@@ -120,3 +120,4 @@ AnyProxyXa kết hợp hoàn hảo với hệ thống trình duyệt ẩn danh v
 ## Giấy phép
 
 Dự án này được phát hành theo giấy phép [MIT](LICENSE), ghi nhận bản quyền từ dự án gốc [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge). Chi tiết xem tại file [NOTICE](NOTICE).
+
