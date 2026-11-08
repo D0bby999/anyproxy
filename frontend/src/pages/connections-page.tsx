@@ -96,13 +96,13 @@ export function ConnectionsPage({
                 <table className="table flows">
                   <thead>
                     <tr>
-                      <th>{t.connections.process}</th>
-                      <th>{t.connections.dest}</th>
-                      <th>{t.connections.proto}</th>
-                      <th>{t.connections.action}</th>
-                      <th>{t.connections.sent}</th>
-                      <th>{t.connections.received}</th>
-                      <th className="col-actions">Trạng thái</th>
+                      <th className="col-proc">{t.connections.process}</th>
+                      <th className="col-dest">{t.connections.dest}</th>
+                      <th className="col-proto">{t.connections.proto}</th>
+                      <th className="col-route">{t.connections.action}</th>
+                      <th className="col-sent">{t.connections.sent}</th>
+                      <th className="col-recv">{t.connections.received}</th>
+                      <th className="col-state">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -118,11 +118,11 @@ export function ConnectionsPage({
                           <span className="mono">PID: {f.pid}</span>
                         </td>
                         <td>
-                          <span className="cellproxy">
-                            <span className="cc">{f.protocol}</span>
-                            <span className="mono selectable" title={f.destIP}>
-                              {f.resolvedDomain || f.destIP}:{f.destPort}
-                            </span>
+                          <span
+                            className="mono selectable ellipsis-text"
+                            title={`${f.resolvedDomain || f.destIP}:${f.destPort}`}
+                          >
+                            {f.resolvedDomain || f.destIP}:{f.destPort}
                           </span>
                         </td>
                         <td>
@@ -139,6 +139,11 @@ export function ConnectionsPage({
                                 ? 'danger'
                                 : 'ok'
                             }`}
+                            title={
+                              f.action === 'proxy' && f.proxyName
+                                ? `Proxy qua ${f.proxyName}`
+                                : f.action.toUpperCase()
+                            }
                           >
                             <span className="dot" />
                             <span className="chiptext">
@@ -147,9 +152,9 @@ export function ConnectionsPage({
                             </span>
                           </span>
                         </td>
-                        <td className="mono">{f.bytesOut} B</td>
-                        <td className="mono">{f.bytesIn} B</td>
-                        <td className="col-actions">
+                        <td className="mono ellipsis-text">{f.bytesOut} B</td>
+                        <td className="mono ellipsis-text">{f.bytesIn} B</td>
+                        <td className="col-state">
                           <span
                             className={`chip ${
                               f.state === 'open' ? 'ok' : ''
@@ -176,12 +181,12 @@ export function ConnectionsPage({
               <table className="table connection-logs">
                 <thead>
                   <tr>
-                    <th style={{ width: 110 }}>Thời gian</th>
-                    <th>{t.connections.process}</th>
-                    <th>{t.connections.dest}</th>
-                    <th>{t.connections.proto}</th>
-                    <th>{t.connections.action}</th>
-                    <th>Quy tắc áp dụng</th>
+                    <th className="col-time">Thời gian</th>
+                    <th className="col-proc">{t.connections.process}</th>
+                    <th className="col-dest">{t.connections.dest}</th>
+                    <th className="col-proto">{t.connections.proto}</th>
+                    <th className="col-route">{t.connections.action}</th>
+                    <th className="col-rule">Quy tắc áp dụng</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -191,14 +196,17 @@ export function ConnectionsPage({
                         {new Date(l.timestamp).toLocaleTimeString()}
                       </td>
                       <td className="cellname">
-                        <b className="selectable">{l.processName}</b>
+                        <b className="selectable" title={l.processName}>
+                          {l.processName}
+                        </b>
                         <span className="mono">PID: {l.pid}</span>
                       </td>
                       <td>
-                        <span className="cellproxy">
-                          <span className="mono selectable">
-                            {l.resolvedDomain || l.destIP}:{l.destPort}
-                          </span>
+                        <span
+                          className="mono selectable ellipsis-text"
+                          title={`${l.resolvedDomain || l.destIP}:${l.destPort}`}
+                        >
+                          {l.resolvedDomain || l.destIP}:{l.destPort}
                         </span>
                       </td>
                       <td>
@@ -215,6 +223,11 @@ export function ConnectionsPage({
                               ? 'danger'
                               : 'ok'
                           }`}
+                          title={
+                            l.action === 'proxy' && l.proxyName
+                              ? `Proxy qua ${l.proxyName}`
+                              : l.action.toUpperCase()
+                          }
                         >
                           <span className="dot" />
                           <span className="chiptext">
@@ -223,8 +236,15 @@ export function ConnectionsPage({
                           </span>
                         </span>
                       </td>
-                      <td className="muted">
-                        <span className="chip">{l.ruleName || 'Default'}</span>
+                      <td>
+                        <span
+                          className="chip ellipsis-text"
+                          title={l.ruleName || 'Default'}
+                        >
+                          <span className="chiptext">
+                            {l.ruleName || 'Default'}
+                          </span>
+                        </span>
                       </td>
                     </tr>
                   ))}

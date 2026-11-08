@@ -53,9 +53,9 @@ export function ActivityPage({
               <table className="table activity">
                 <thead>
                   <tr>
-                    <th style={{ width: 130 }}>Thời gian</th>
-                    <th style={{ width: 100 }}>Mức độ</th>
-                    <th>Nội dung thông điệp</th>
+                    <th className="col-time">Thời gian</th>
+                    <th className="col-level">Mức độ</th>
+                    <th className="col-msg">Nội dung thông điệp</th>
                   </tr>
                 </thead>
                 <tbody>
