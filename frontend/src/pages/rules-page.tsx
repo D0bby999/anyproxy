@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
+import { EmptyState } from '../components/empty-state'
+import { Icon } from '../components/icons'
 import { t } from '../i18n'
 import type { ProxyRule, ProxyConfig } from '../types'
 
@@ -53,48 +55,73 @@ export function RulesPage({
   return (
     <>
       <PageHead title={t.rules.title} sub={t.rules.sub}>
-        <button className="btn primary" onClick={handleOpenAdd}>
-          + {t.rules.newBtn}
+        <button className="btn primary nodrag" onClick={handleOpenAdd}>
+          <Icon name="plus" />
+          {t.rules.newBtn}
         </button>
       </PageHead>
 
       <div className="pagebody">
         <div className="card fill">
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>{t.rules.order}</th>
-                  <th>{t.rules.name}</th>
-                  <th>{t.rules.applications}</th>
-                  <th>{t.rules.targets}</th>
-                  <th>{t.rules.ports}</th>
-                  <th>{t.rules.protocol}</th>
-                  <th>{t.rules.action}</th>
-                  <th>Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rules.length === 0 ? (
+          <div className="tablewrap">
+            {rules.length === 0 ? (
+              <EmptyState
+                icon="rules"
+                title="Chưa có quy tắc định tuyến nào"
+                text="Các kết nối sẽ tự động đi theo cấu hình Proxy Mặc định."
+              >
+                <button className="btn primary" onClick={handleOpenAdd}>
+                  <Icon name="plus" />
+                  {t.rules.newBtn}
+                </button>
+              </EmptyState>
+            ) : (
+              <table className="table rules">
+                <thead>
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: 24 }} className="muted">
-                      No rules configured. Connections follow the Default Proxy.
-                    </td>
+                    <th className="col-no">{t.rules.order}</th>
+                    <th>{t.rules.name}</th>
+                    <th>{t.rules.applications}</th>
+                    <th>{t.rules.targets}</th>
+                    <th>{t.rules.ports}</th>
+                    <th>{t.rules.protocol}</th>
+                    <th>{t.rules.action}</th>
+                    <th className="col-actions" />
                   </tr>
-                ) : (
-                  rules.map((r, idx) => {
+                </thead>
+                <tbody>
+                  {rules.map((r, idx) => {
                     const matchedProxy = proxies.find((p) => p.id === r.proxyConfigId)
                     return (
-                      <tr key={r.id}>
-                        <td className="muted mono">{idx + 1}</td>
-                        <td>
-                          <strong>{r.name}</strong>
+                      <tr key={r.id} style={{ opacity: r.enabled ? 1 : 0.55 }}>
+                        <td className="col-no">{idx + 1}</td>
+                        <td className="cellname">
+                          <b className="selectable" title={r.name}>
+                            {r.name}
+                          </b>
+                          <span className="sub">
+                            {r.enabled ? 'Đang kích hoạt' : 'Đã tạm dừng'}
+                          </span>
                         </td>
-                        <td className="mono">{r.processNames || '*'}</td>
-                        <td className="mono">{r.targetHosts || '*'}</td>
-                        <td className="mono">{r.targetPorts || '*'}</td>
                         <td>
-                          <span className="chip">{r.protocol.toUpperCase()}</span>
+                          <span className="mono selectable" title={r.processNames}>
+                            {r.processNames || '*'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="mono selectable" title={r.targetHosts}>
+                            {r.targetHosts || '*'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="mono selectable" title={r.targetPorts}>
+                            {r.targetPorts || '*'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="chip">
+                            <span className="chiptext">{r.protocol.toUpperCase()}</span>
+                          </span>
                         </td>
                         <td>
                           <span
@@ -106,54 +133,74 @@ export function RulesPage({
                                 : 'ok'
                             }`}
                           >
-                            {r.action.toUpperCase()}
-                            {r.action === 'proxy' && matchedProxy
-                              ? `: ${matchedProxy.name}`
-                              : ''}
+                            <span className="dot" />
+                            <span className="chiptext">
+                              {r.action.toUpperCase()}
+                              {r.action === 'proxy' && matchedProxy
+                                ? `: ${matchedProxy.name}`
+                                : ''}
+                            </span>
                           </span>
                         </td>
-                        <td>
-                          <div className="row">
+                        <td className="col-actions">
+                          <span className="row">
                             <button
                               className="btn sm"
                               onClick={() => onToggleRule(r.id, !r.enabled)}
+                              title={r.enabled ? 'Tắt quy tắc' : 'Bật quy tắc'}
                             >
-                              {r.enabled ? 'Disable' : 'Enable'}
+                              {r.enabled ? 'Tắt' : 'Bật'}
                             </button>
                             <button
-                              className="btn sm"
+                              className="iconbtn sm"
                               disabled={idx === 0}
                               onClick={() => onMoveRule(r.id, -1)}
+                              title={t.actions.moveUp}
+                              aria-label={t.actions.moveUp}
                             >
-                              ↑
+                              <Icon name="arrow-up" />
                             </button>
                             <button
-                              className="btn sm"
+                              className="iconbtn sm"
                               disabled={idx === rules.length - 1}
                               onClick={() => onMoveRule(r.id, 1)}
+                              title={t.actions.moveDown}
+                              aria-label={t.actions.moveDown}
                             >
-                              ↓
-                            </button>
-                            <button className="btn sm" onClick={() => onCloneRule(r.id)}>
-                              Copy
-                            </button>
-                            <button className="btn sm" onClick={() => handleEdit(r)}>
-                              {t.actions.edit}
+                              <Icon name="arrow-down" />
                             </button>
                             <button
-                              className="btn sm danger"
-                              onClick={() => onDeleteRule(r.id)}
+                              className="iconbtn sm"
+                              onClick={() => onCloneRule(r.id)}
+                              title={t.actions.clone}
+                              aria-label={t.actions.clone}
                             >
-                              ✕
+                              <Icon name="copy" />
                             </button>
-                          </div>
+                            <button
+                              className="iconbtn sm"
+                              onClick={() => handleEdit(r)}
+                              title={t.actions.edit}
+                              aria-label={t.actions.edit}
+                            >
+                              <Icon name="more" />
+                            </button>
+                            <button
+                              className="iconbtn sm"
+                              onClick={() => onDeleteRule(r.id)}
+                              title={t.actions.delete}
+                              aria-label={t.actions.delete}
+                            >
+                              <Icon name="trash" />
+                            </button>
+                          </span>
                         </td>
                       </tr>
                     )
-                  })
-                )}
-              </tbody>
-            </table>
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
@@ -166,10 +213,10 @@ export function RulesPage({
                 <h2>{editing.id ? t.actions.edit : t.rules.newBtn}</h2>
                 <button
                   type="button"
-                  className="btn sm"
+                  className="iconbtn sm"
                   onClick={() => setShowModal(false)}
                 >
-                  ✕
+                  <Icon name="close" />
                 </button>
               </div>
 
@@ -180,12 +227,13 @@ export function RulesPage({
                     className="input"
                     value={editing.name}
                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                    placeholder="VD: Bypass Local / Route Telegram qua SOCKS5"
                     required
                   />
                 </div>
 
                 <div className="field">
-                  <label>{t.rules.applications} (e.g. curl, chrome, * for all)</label>
+                  <label>{t.rules.applications} (VD: curl, chrome, Telegram hoặc * cho tất cả)</label>
                   <input
                     className="input mono"
                     value={editing.processNames}
@@ -197,7 +245,7 @@ export function RulesPage({
 
                 <div className="row" style={{ gap: 8 }}>
                   <div className="field" style={{ flex: 2 }}>
-                    <label>{t.rules.targets} (IP, domain, CIDR)</label>
+                    <label>{t.rules.targets} (IP, domain, CIDR hoặc *)</label>
                     <input
                       className="input mono"
                       value={editing.targetHosts}
@@ -207,7 +255,7 @@ export function RulesPage({
                     />
                   </div>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>{t.rules.ports}</label>
+                    <label>{t.rules.ports} (VD: 80,443 hoặc *)</label>
                     <input
                       className="input mono"
                       value={editing.targetPorts}
@@ -249,16 +297,16 @@ export function RulesPage({
                         })
                       }
                     >
-                      <option value="direct">Direct</option>
-                      <option value="proxy">Proxy</option>
-                      <option value="block">Block</option>
+                      <option value="direct">Direct (Bypass)</option>
+                      <option value="proxy">Proxy (Định tuyến)</option>
+                      <option value="block">Block (Chặn)</option>
                     </select>
                   </div>
                 </div>
 
                 {editing.action === 'proxy' && (
                   <div className="field">
-                    <label>Target Proxy Server</label>
+                    <label>Máy chủ Proxy chỉ định</label>
                     <select
                       className="select"
                       value={editing.proxyConfigId || ''}
@@ -266,7 +314,7 @@ export function RulesPage({
                         setEditing({ ...editing, proxyConfigId: e.target.value })
                       }
                     >
-                      <option value="">Default Proxy</option>
+                      <option value="">Proxy Mặc định (Default)</option>
                       {proxies.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.type} {p.host}:{p.port})

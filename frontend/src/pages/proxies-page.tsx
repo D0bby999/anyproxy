@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
+import { EmptyState } from '../components/empty-state'
+import { Icon } from '../components/icons'
 import { t } from '../i18n'
 import type { ProxyConfig } from '../types'
 
@@ -51,82 +53,129 @@ export function ProxiesPage({
   return (
     <>
       <PageHead title={t.proxies.title} sub={t.proxies.sub}>
-        <button className="btn primary" onClick={handleOpenAdd}>
-          + {t.proxies.newBtn}
+        <button className="btn primary nodrag" onClick={handleOpenAdd}>
+          <Icon name="plus" />
+          {t.proxies.newBtn}
         </button>
       </PageHead>
 
       <div className="pagebody">
         <div className="card fill">
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t.proxies.name}</th>
-                  <th>{t.proxies.type}</th>
-                  <th>{t.proxies.server}</th>
-                  <th>{t.proxies.auth}</th>
-                  <th>{t.proxies.latency}</th>
-                  <th>{t.proxies.actions}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {proxies.length === 0 ? (
+          <div className="tablewrap">
+            {proxies.length === 0 ? (
+              <EmptyState
+                icon="proxy"
+                title="Chưa có máy chủ Proxy nào"
+                text="Thêm proxy để bắt đầu chuyển hướng lưu lượng mạng cho các ứng dụng."
+              >
+                <button className="btn primary" onClick={handleOpenAdd}>
+                  <Icon name="plus" />
+                  {t.proxies.newBtn}
+                </button>
+              </EmptyState>
+            ) : (
+              <table className="table proxies">
+                <thead>
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: 24 }} className="muted">
-                      No proxy servers configured. Click "+ Add Proxy" to create one.
-                    </td>
+                    <th>{t.proxies.name}</th>
+                    <th>{t.proxies.type}</th>
+                    <th>{t.proxies.server}</th>
+                    <th>{t.proxies.auth}</th>
+                    <th>{t.proxies.latency}</th>
+                    <th className="col-actions" />
                   </tr>
-                ) : (
-                  proxies.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <strong>{p.name}</strong>
-                        {p.id === defaultProxyId && (
-                          <span className="chip ok" style={{ marginLeft: 8 }}>
-                            Default
+                </thead>
+                <tbody>
+                  {proxies.map((p) => {
+                    const isDefault = p.id === defaultProxyId
+                    return (
+                      <tr key={p.id} className={isDefault ? 'active' : ''}>
+                        <td className="cellname">
+                          <b className="selectable" title={p.name}>
+                            {p.name}
+                          </b>
+                          <span className="mono" title={`${p.type}://${p.host}:${p.port}`}>
+                            {p.type}://{p.host}:{p.port}
                           </span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="chip">{p.type.toUpperCase()}</span>
-                      </td>
-                      <td className="mono">
-                        {p.host}:{p.port}
-                      </td>
-                      <td>{p.username ? 'Yes' : 'None'}</td>
-                      <td>
-                        {p.latencyMs !== undefined ? (
-                          <span className={`chip ${p.latencyMs < 300 ? 'ok' : 'warn'}`}>
-                            {p.latencyMs} ms
+                        </td>
+                        <td>
+                          <span className="chip">
+                            <span className="chiptext">{p.type.toUpperCase()}</span>
                           </span>
-                        ) : (
-                          <span className="muted">-</span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="row">
-                          <button className="btn sm" onClick={() => onTestProxy(p)}>
-                            {t.actions.test}
-                          </button>
-                          {p.id !== defaultProxyId && (
-                            <button className="btn sm" onClick={() => onSetDefault(p.id)}>
-                              {t.actions.setActive}
-                            </button>
+                        </td>
+                        <td>
+                          <span className="mono selectable">
+                            {p.host}:{p.port}
+                          </span>
+                        </td>
+                        <td>
+                          {p.username ? (
+                            <span className="chip accent" title={`User: ${p.username}`}>
+                              <span className="dot" />
+                              <span className="chiptext">User / Pass</span>
+                            </span>
+                          ) : (
+                            <span className="faint">—</span>
                           )}
-                          <button className="btn sm" onClick={() => handleEdit(p)}>
-                            {t.actions.edit}
-                          </button>
-                          <button className="btn sm danger" onClick={() => onDeleteProxy(p.id)}>
-                            {t.actions.delete}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                        </td>
+                        <td>
+                          {p.latencyMs !== undefined ? (
+                            <span className={`chip ${p.latencyMs < 300 ? 'ok' : 'warn'}`}>
+                              <span className="dot" />
+                              <span className="chiptext">{p.latencyMs} ms</span>
+                            </span>
+                          ) : (
+                            <span className="faint">—</span>
+                          )}
+                        </td>
+                        <td className="col-actions">
+                          <span className="row">
+                            <button
+                              className="iconbtn sm"
+                              onClick={() => onTestProxy(p)}
+                              title={t.actions.test}
+                              aria-label={t.actions.test}
+                            >
+                              <Icon name="refresh" />
+                            </button>
+                            {!isDefault ? (
+                              <button
+                                className="btn sm"
+                                onClick={() => onSetDefault(p.id)}
+                                title={t.actions.setActive}
+                              >
+                                {t.actions.setActive}
+                              </button>
+                            ) : (
+                              <span className="chip ok" title="Proxy mặc định">
+                                <span className="dot" />
+                                <span className="chiptext">Active</span>
+                              </span>
+                            )}
+                            <button
+                              className="iconbtn sm"
+                              onClick={() => handleEdit(p)}
+                              title={t.actions.edit}
+                              aria-label={t.actions.edit}
+                            >
+                              <Icon name="copy" />
+                            </button>
+                            <button
+                              className="iconbtn sm"
+                              onClick={() => onDeleteProxy(p.id)}
+                              title={t.actions.delete}
+                              aria-label={t.actions.delete}
+                            >
+                              <Icon name="trash" />
+                            </button>
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
@@ -139,10 +188,10 @@ export function ProxiesPage({
                 <h2>{editing.id ? t.actions.edit : t.proxies.newBtn}</h2>
                 <button
                   type="button"
-                  className="btn sm"
+                  className="iconbtn sm"
                   onClick={() => setShowModal(false)}
                 >
-                  ✕
+                  <Icon name="close" />
                 </button>
               </div>
 
@@ -153,6 +202,7 @@ export function ProxiesPage({
                     className="input"
                     value={editing.name}
                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                    placeholder="VD: Clash Local / SOCKS5 Singapore"
                     required
                   />
                 </div>
@@ -180,6 +230,7 @@ export function ProxiesPage({
                       className="input mono"
                       value={editing.host}
                       onChange={(e) => setEditing({ ...editing, host: e.target.value })}
+                      placeholder="127.0.0.1"
                       required
                     />
                   </div>
@@ -199,7 +250,7 @@ export function ProxiesPage({
 
                 <div className="row" style={{ gap: 8 }}>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>Username</label>
+                    <label>Username (tùy chọn)</label>
                     <input
                       className="input"
                       value={editing.username || ''}
@@ -209,7 +260,7 @@ export function ProxiesPage({
                     />
                   </div>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>Password</label>
+                    <label>Password (tùy chọn)</label>
                     <input
                       className="input"
                       type="password"

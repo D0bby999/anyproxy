@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
+import { EmptyState } from '../components/empty-state'
+import { Icon } from '../components/icons'
 import { t } from '../i18n'
 import type { Flow, ConnectionLogEntry } from '../types'
 
@@ -38,8 +40,15 @@ export function ConnectionsPage({
   return (
     <>
       <PageHead title={t.connections.title} sub={t.connections.sub}>
-        <div className="row" style={{ gap: 8 }}>
-          <div className="row" style={{ background: 'var(--surface-hover)', borderRadius: 'var(--r-md)', padding: 2 }}>
+        <div className="row nodrag" style={{ gap: 8 }}>
+          <div
+            className="row"
+            style={{
+              background: 'var(--surface-hover)',
+              borderRadius: 'var(--r-md)',
+              padding: 2,
+            }}
+          >
             <button
               className={`btn sm ${mode === 'live' ? 'primary' : ''}`}
               onClick={() => setMode('live')}
@@ -56,7 +65,7 @@ export function ConnectionsPage({
 
           <input
             className="input"
-            style={{ width: 160, height: 28 }}
+            style={{ width: 180, height: 28 }}
             placeholder={t.actions.search}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -65,7 +74,9 @@ export function ConnectionsPage({
           <button
             className="btn sm"
             onClick={mode === 'live' ? onClearClosed : onClearLogs}
+            title={t.actions.clear}
           >
+            <Icon name="trash" />
             {t.actions.clear}
           </button>
         </div>
@@ -73,39 +84,51 @@ export function ConnectionsPage({
 
       <div className="pagebody">
         <div className="card fill">
-          <div className="table-wrap">
+          <div className="tablewrap">
             {mode === 'live' ? (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>{t.connections.process}</th>
-                    <th>{t.connections.dest}</th>
-                    <th>{t.connections.proto}</th>
-                    <th>{t.connections.action}</th>
-                    <th>{t.connections.sent}</th>
-                    <th>{t.connections.received}</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredFlows.length === 0 ? (
+              filteredFlows.length === 0 ? (
+                <EmptyState
+                  icon="plug"
+                  title="Chưa có luồng kết nối trực tiếp nào"
+                  text="Khi ProxyBridge được bật và các ứng dụng gửi gói tin mạng, các luồng kết nối sẽ hiển thị theo thời gian thực tại đây."
+                />
+              ) : (
+                <table className="table flows">
+                  <thead>
                     <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', padding: 24 }} className="muted">
-                        No active network flows captured.
-                      </td>
+                      <th>{t.connections.process}</th>
+                      <th>{t.connections.dest}</th>
+                      <th>{t.connections.proto}</th>
+                      <th>{t.connections.action}</th>
+                      <th>{t.connections.sent}</th>
+                      <th>{t.connections.received}</th>
+                      <th className="col-actions">Trạng thái</th>
                     </tr>
-                  ) : (
-                    filteredFlows.map((f) => (
-                      <tr key={f.id}>
-                        <td>
-                          <strong>{f.processName}</strong>{' '}
-                          <span className="muted mono">({f.pid})</span>
+                  </thead>
+                  <tbody>
+                    {filteredFlows.map((f) => (
+                      <tr
+                        key={f.id}
+                        className={f.state === 'open' ? 'running' : ''}
+                      >
+                        <td className="cellname">
+                          <b className="selectable" title={f.processName}>
+                            {f.processName}
+                          </b>
+                          <span className="mono">PID: {f.pid}</span>
                         </td>
-                        <td className="mono">
-                          {f.resolvedDomain || f.destIP}:{f.destPort}
+                        <td>
+                          <span className="cellproxy">
+                            <span className="cc">{f.protocol}</span>
+                            <span className="mono selectable" title={f.destIP}>
+                              {f.resolvedDomain || f.destIP}:{f.destPort}
+                            </span>
+                          </span>
                         </td>
                         <td>
-                          <span className="chip">{f.protocol}</span>
+                          <span className="chip">
+                            <span className="chiptext">{f.protocol}</span>
+                          </span>
                         </td>
                         <td>
                           <span
@@ -117,75 +140,94 @@ export function ConnectionsPage({
                                 : 'ok'
                             }`}
                           >
-                            {f.action.toUpperCase()}
-                            {f.proxyName ? ` -> ${f.proxyName}` : ''}
+                            <span className="dot" />
+                            <span className="chiptext">
+                              {f.action.toUpperCase()}
+                              {f.proxyName ? ` → ${f.proxyName}` : ''}
+                            </span>
                           </span>
                         </td>
                         <td className="mono">{f.bytesOut} B</td>
                         <td className="mono">{f.bytesIn} B</td>
-                        <td>
-                          <span className={`chip ${f.state === 'open' ? 'ok' : ''}`}>
-                            {f.state.toUpperCase()}
+                        <td className="col-actions">
+                          <span
+                            className={`chip ${
+                              f.state === 'open' ? 'ok' : ''
+                            }`}
+                          >
+                            <span className="dot" />
+                            <span className="chiptext">
+                              {f.state.toUpperCase()}
+                            </span>
                           </span>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            ) : filteredLogs.length === 0 ? (
+              <EmptyState
+                icon="list"
+                title="Chưa có nhật ký kết nối nào"
+                text="Lịch sử các phiên kết nối đã hoàn thành sẽ được lưu trữ và hiển thị tại đây."
+              />
             ) : (
-              <table className="data-table">
+              <table className="table connection-logs">
                 <thead>
                   <tr>
-                    <th>Time</th>
+                    <th style={{ width: 110 }}>Thời gian</th>
                     <th>{t.connections.process}</th>
                     <th>{t.connections.dest}</th>
                     <th>{t.connections.proto}</th>
                     <th>{t.connections.action}</th>
-                    <th>Rule</th>
+                    <th>Quy tắc áp dụng</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredLogs.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: 24 }} className="muted">
-                        No connection history logs yet.
+                  {filteredLogs.map((l) => (
+                    <tr key={l.id}>
+                      <td className="muted mono">
+                        {new Date(l.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="cellname">
+                        <b className="selectable">{l.processName}</b>
+                        <span className="mono">PID: {l.pid}</span>
+                      </td>
+                      <td>
+                        <span className="cellproxy">
+                          <span className="mono selectable">
+                            {l.resolvedDomain || l.destIP}:{l.destPort}
+                          </span>
+                        </span>
+                      </td>
+                      <td>
+                        <span className="chip">
+                          <span className="chiptext">{l.protocol}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`chip ${
+                            l.action === 'proxy'
+                              ? 'accent'
+                              : l.action === 'block'
+                              ? 'danger'
+                              : 'ok'
+                          }`}
+                        >
+                          <span className="dot" />
+                          <span className="chiptext">
+                            {l.action.toUpperCase()}
+                            {l.proxyName ? ` qua ${l.proxyName}` : ''}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="muted">
+                        <span className="chip">{l.ruleName || 'Default'}</span>
                       </td>
                     </tr>
-                  ) : (
-                    filteredLogs.map((l) => (
-                      <tr key={l.id}>
-                        <td className="muted mono">
-                          {new Date(l.timestamp).toLocaleTimeString()}
-                        </td>
-                        <td>
-                          <strong>{l.processName}</strong>{' '}
-                          <span className="muted mono">({l.pid})</span>
-                        </td>
-                        <td className="mono">
-                          {l.resolvedDomain || l.destIP}:{l.destPort}
-                        </td>
-                        <td>
-                          <span className="chip">{l.protocol}</span>
-                        </td>
-                        <td>
-                          <span
-                            className={`chip ${
-                              l.action === 'proxy'
-                                ? 'accent'
-                                : l.action === 'block'
-                                ? 'danger'
-                                : 'ok'
-                            }`}
-                          >
-                            {l.action.toUpperCase()}
-                            {l.proxyName ? ` via ${l.proxyName}` : ''}
-                          </span>
-                        </td>
-                        <td className="muted">{l.ruleName || 'Default'}</td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
             )}
