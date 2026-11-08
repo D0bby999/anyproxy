@@ -95,7 +95,7 @@ export function RulesPage({
                     return (
                       <tr key={r.id} style={{ opacity: r.enabled ? 1 : 0.55 }}>
                         <td className="col-no">{idx + 1}</td>
-                        <td className="cellname">
+                        <td className="cellname col-name">
                           <b className="selectable" title={r.name}>
                             {r.name}
                           </b>
@@ -103,27 +103,27 @@ export function RulesPage({
                             {r.enabled ? 'Đang kích hoạt' : 'Đã tạm dừng'}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-apps">
                           <span className="mono selectable ellipsis-text" title={r.processNames}>
                             {r.processNames || '*'}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-targets">
                           <span className="mono selectable ellipsis-text" title={r.targetHosts}>
                             {r.targetHosts || '*'}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-ports">
                           <span className="mono selectable ellipsis-text" title={r.targetPorts}>
                             {r.targetPorts || '*'}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-proto">
                           <span className="chip">
                             <span className="chiptext">{r.protocol.toUpperCase()}</span>
                           </span>
                         </td>
-                        <td>
+                        <td className="col-action">
                           <span
                             className={`chip ${
                               r.action === 'proxy'

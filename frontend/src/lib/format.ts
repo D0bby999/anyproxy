@@ -20,3 +20,4 @@ export function formatDuration(ms: number): string {
   const hours = Math.floor(mins / 60)
   return `${hours}h ${mins % 60}m`
 }
+

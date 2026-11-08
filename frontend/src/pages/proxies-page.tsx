@@ -90,7 +90,7 @@ export function ProxiesPage({
                     const isDefault = p.id === defaultProxyId
                     return (
                       <tr key={p.id} className={isDefault ? 'active' : ''}>
-                        <td className="cellname">
+                        <td className="cellname col-name">
                           <b className="selectable" title={p.name}>
                             {p.name}
                           </b>
@@ -98,17 +98,17 @@ export function ProxiesPage({
                             {p.type}://{p.host}:{p.port}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-type">
                           <span className="chip">
                             <span className="chiptext">{p.type.toUpperCase()}</span>
                           </span>
                         </td>
-                        <td>
+                        <td className="col-server">
                           <span className="mono selectable ellipsis-text" title={`${p.host}:${p.port}`}>
                             {p.host}:{p.port}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-auth">
                           {p.username ? (
                             <span className="chip accent" title={`User: ${p.username}`}>
                               <span className="dot" />
@@ -118,7 +118,7 @@ export function ProxiesPage({
                             <span className="faint">—</span>
                           )}
                         </td>
-                        <td>
+                        <td className="col-latency">
                           {p.latencyMs !== undefined ? (
                             <span className={`chip ${p.latencyMs < 300 ? 'ok' : 'warn'}`}>
                               <span className="dot" />

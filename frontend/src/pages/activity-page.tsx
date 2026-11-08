@@ -61,10 +61,10 @@ export function ActivityPage({
                 <tbody>
                   {filtered.map((l) => (
                     <tr key={l.id}>
-                      <td className="muted mono">
+                      <td className="muted mono col-time">
                         {new Date(l.timestamp).toLocaleTimeString()}
                       </td>
-                      <td>
+                      <td className="col-level">
                         <span
                           className={`chip ${
                             l.level === 'ERROR'
@@ -78,7 +78,7 @@ export function ActivityPage({
                           <span className="chiptext">{l.level}</span>
                         </span>
                       </td>
-                      <td className="mono selectable" style={{ wordBreak: 'break-all' }}>
+                      <td className="mono selectable col-msg" style={{ wordBreak: 'break-all' }}>
                         {l.message}
                       </td>
                     </tr>
