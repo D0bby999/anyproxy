@@ -461,7 +461,7 @@ func (e *Engine) Evaluate(in FlowInput) Decision {
 	isUDP := in.Protocol == pbprofile.ProtoUDP
 	for _, m := range e.matchers {
 		rp := m.Rule.Protocol
-		if rp != pbprofile.ProtoBoth && rp != in.Protocol {
+		if rp != "" && rp != pbprofile.ProtoBoth && rp != in.Protocol {
 			continue
 		}
 		if !m.MatchesProcess(in.Process) {

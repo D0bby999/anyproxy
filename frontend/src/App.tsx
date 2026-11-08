@@ -67,6 +67,9 @@ export function App() {
   const [newFilterType, setNewFilterType] = useState<'host' | 'process' | 'port'>('host')
   const [newFilterPattern, setNewFilterPattern] = useState('')
 
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
   const profileFileInputRef = useRef<HTMLInputElement>(null)
   const rulesFileInputRef = useRef<HTMLInputElement>(null)
 
@@ -106,6 +109,16 @@ export function App() {
   }, [])
 
   // Event listeners from backend
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setIsProfileMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   useEffect(() => {
     const unsubProfile = api.subscribeEvent('profile:changed', (data) => {
       if (data) setProfile(data as Profile)
@@ -440,9 +453,20 @@ export function App() {
       {/* Sidebar */}
       <aside className="app-sidebar">
         <div className="brand-row">
-          <div className="brand-mark">XP</div>
+          <div className="brand-mark-svg">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 7V12C3 17.52 6.84 22.74 12 24C17.16 22.74 21 17.52 21 12V7L12 2Z" fill="url(#brandGrad)" />
+              <path d="M8 12L11 9M11 9L14 12M11 9V15M16 12L13 15M13 15L10 12M13 15V9" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <defs>
+                <linearGradient id="brandGrad" x1="3" y1="2" x2="21" y2="24" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#3b82f6"/>
+                  <stop offset="1" stopColor="#1d4ed8"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
           <div className="brand-title">AnyProxyXa</div>
-          <span className="brand-badge">v1.0</span>
+          <span className="brand-badge">Pro</span>
         </div>
 
         <nav className="nav-group">
@@ -450,48 +474,83 @@ export function App() {
             className={`nav-item ${tab === 'connections' ? 'active' : ''}`}
             onClick={() => setTab('connections')}
           >
-            <span>Connections</span>
+            <span className="nav-item-main">
+              <svg className="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+              <span>Connections</span>
+            </span>
             <span className="nav-item-count">{flows.filter((f) => f.state === 'open').length}</span>
           </button>
           <button
             className={`nav-item ${tab === 'rules' ? 'active' : ''}`}
             onClick={() => setTab('rules')}
           >
-            <span>Proxy Rules</span>
+            <span className="nav-item-main">
+              <svg className="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+              </svg>
+              <span>Proxy Rules</span>
+            </span>
             <span className="nav-item-count">{profile?.rules.length || 0}</span>
           </button>
           <button
             className={`nav-item ${tab === 'proxies' ? 'active' : ''}`}
             onClick={() => setTab('proxies')}
           >
-            <span>Proxy Servers</span>
+            <span className="nav-item-main">
+              <svg className="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                <line x1="6" y1="6" x2="6.01" y2="6"/>
+                <line x1="6" y1="18" x2="6.01" y2="18"/>
+              </svg>
+              <span>Proxy Servers</span>
+            </span>
             <span className="nav-item-count">{profile?.proxies.length || 0}</span>
           </button>
           <button
             className={`nav-item ${tab === 'logs' ? 'active' : ''}`}
             onClick={() => setTab('logs')}
           >
-            <span>Activity Logs</span>
+            <span className="nav-item-main">
+              <svg className="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="8" y1="6" x2="21" y2="6"/>
+                <line x1="8" y1="12" x2="21" y2="12"/>
+                <line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/>
+                <line x1="3" y1="12" x2="3.01" y2="12"/>
+                <line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+              <span>Activity Logs</span>
+            </span>
             <span className="nav-item-count">{activityLogs.length + connLogs.length}</span>
           </button>
           <button
             className={`nav-item ${tab === 'settings' ? 'active' : ''}`}
             onClick={() => setTab('settings')}
           >
-            <span>Settings</span>
+            <span className="nav-item-main">
+              <svg className="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              <span>Settings</span>
+            </span>
           </button>
         </nav>
 
         <div className="sidebar-status-card">
-          <div className="sidebar-status-title">OS INTERCEPTION DRIVER</div>
-          <div className={`sidebar-status-pill ${
-            engineStatus?.state === 'running' ? 'pill-pos' : engineStatus?.state === 'paused' ? 'pill-warn' : 'pill-neg'
-          }`}>
-            <span className="pulse-dot" />
-            <span>{engineStatus?.backend || 'macos-ne'} • {engineStatus?.state || 'stopped'}</span>
+          <div className="sidebar-status-header">
+            <span className="sidebar-status-title">Driver Engine</span>
+            <div className={`status-dot ${engineStatus?.state === 'running' ? 'dot-pos' : engineStatus?.state === 'paused' ? 'dot-warn' : 'dot-neg'}`} />
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
-            DNS Interception: {engineStatus?.dnsProxyActive ? 'Active' : 'Disabled'}
+          <div className="sidebar-status-name">
+            {engineStatus?.backend || 'macos-ne'} • <span className="status-state-text">{engineStatus?.state || 'stopped'}</span>
+          </div>
+          <div className="sidebar-status-sub">
+            DNS Interception: <span className={engineStatus?.dnsProxyActive ? 'text-pos' : 'text-muted'}>{engineStatus?.dnsProxyActive ? 'Active' : 'Disabled'}</span>
           </div>
         </div>
       </aside>
@@ -516,71 +575,105 @@ export function App() {
           />
 
           <div className="topbar-left">
-            <div className="profile-select-wrap">
-              <span className="profile-select-label">Active Profile:</span>
-              <select
-                className="profile-select"
-                value={profileSummary.active}
-                onChange={(e) => handleSwitchProfile(e.target.value)}
-              >
-                {profileSummary.names.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="profile-switcher-pill" ref={profileMenuRef}>
+              <span className="profile-pill-label">Profile</span>
+              <div className="profile-select-container">
+                <select
+                  className="profile-native-select"
+                  value={profileSummary.active}
+                  onChange={(e) => handleSwitchProfile(e.target.value)}
+                  aria-label="Select active profile"
+                >
+                  {profileSummary.names.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <span className="profile-select-chevron">▾</span>
+              </div>
 
-            <div className="profile-btn-group">
               <button
-                className="btn btn-sm"
+                className="btn btn-sm btn-ghost profile-action-btn"
                 onClick={() => {
                   setNewProfileName('')
                   setIsProfileModalOpen(true)
                 }}
+                title="Create new profile"
               >
-                + Profile
+                + New
               </button>
+
               <button
-                className="btn btn-sm"
-                onClick={() => {
-                  setRenameProfileName(profileSummary.active)
-                  setIsRenameProfileOpen(true)
-                }}
+                className="btn btn-sm btn-icon profile-action-btn"
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                title="Profile actions"
+                aria-label="Profile actions"
               >
-                Rename
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="2.2"/>
+                  <circle cx="12" cy="12" r="2.2"/>
+                  <circle cx="12" cy="19" r="2.2"/>
+                </svg>
               </button>
-              <button
-                className="btn btn-sm"
-                onClick={() => {
-                  setDuplicateProfileName(`${profileSummary.active} Copy`)
-                  setIsDuplicateProfileOpen(true)
-                }}
-              >
-                Duplicate
-              </button>
-              <button
-                className="btn btn-sm"
-                title="Export profile as .pbprofile"
-                onClick={handleExportProfile}
-              >
-                Export
-              </button>
-              <button
-                className="btn btn-sm"
-                title="Import .pbprofile file"
-                onClick={handleImportProfileClick}
-              >
-                Import
-              </button>
-              {profileSummary.names.length > 1 && profileSummary.active !== 'Default' && (
-                <button
-                  className="btn btn-sm btn-danger"
-                  title="Delete current profile"
-                  onClick={handleDeleteProfile}
-                >
-                  Delete
-                </button>
+
+              {isProfileMenuOpen && (
+                <div className="dropdown-menu">
+                  <div className="dropdown-title">Profile Actions</div>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      setRenameProfileName(profileSummary.active)
+                      setIsRenameProfileOpen(true)
+                    }}
+                  >
+                    Rename Profile…
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      setDuplicateProfileName(`${profileSummary.active} Copy`)
+                      setIsDuplicateProfileOpen(true)
+                    }}
+                  >
+                    Duplicate Profile…
+                  </button>
+                  <div className="dropdown-divider" />
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      handleExportProfile()
+                    }}
+                  >
+                    Export Profile (.pbprofile)…
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      handleImportProfileClick()
+                    }}
+                  >
+                    Import Profile (.pbprofile)…
+                  </button>
+                  {profileSummary.names.length > 1 && profileSummary.active !== 'Default' && (
+                    <>
+                      <div className="dropdown-divider" />
+                      <button
+                        className="dropdown-item text-danger"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false)
+                          handleDeleteProfile()
+                        }}
+                      >
+                        Delete Profile
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>
