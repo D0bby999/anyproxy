@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "AnyProxyXa",
+  "outputfilename": "AnyProxyXa",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Nguyen Minh Chau"
+  },
+  "info": {
+    "companyName": "Cassau, LLC",
+    "productName": "AnyProxyXa",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright © 2026 AnyProxyXa contributors. AGPL-3.0-or-later.",
+    "comments": "Universal per-application proxy router for macOS and Windows"
+  }
+}
+

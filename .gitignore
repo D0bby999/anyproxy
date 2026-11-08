@@ -1,0 +1,28 @@
+# Binaries
+bin/
+build/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Wails
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/gitkeep
+
+# Database & runtime files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage & artifacts
+*.out
+*.test
+.taste-skill/inspect/
