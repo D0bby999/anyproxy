@@ -44,7 +44,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 249, G: 251, B: 252, A: 1},
+		BackgroundColour: &options.RGBA{R: 236, G: 235, B: 231, A: 1},
 		Menu:             appMenu(app),
 		OnStartup:        app.startup,
 		OnBeforeClose:    app.beforeClose,
@@ -52,7 +52,7 @@ func main() {
 			app,
 		},
 		Mac: &mac.Options{
-			TitleBar: mac.TitleBarDefault(),
+			TitleBar: mac.TitleBarHiddenInset(),
 			About: &mac.AboutInfo{
 				Title:   "AnyProxyXa",
 				Message: "Transparent Per-Application Proxy Router for macOS & Windows\nAnyTools Ecosystem — Ported from InterceptSuite/ProxyBridge (MIT)",

@@ -1,0 +1,155 @@
+/* SPDX-License-Identifier: MIT
+   Primitives shared by every screen: buttons, fields, chips, base rules. */
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+
+body {
+  font: var(--t-base)/1.5 var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
+  font-feature-settings: "liga" 1, "calt" 1;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea, .selectable { user-select: text; -webkit-user-select: text; }
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.02em; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+
+::selection { background: var(--accent-selection); color: var(--ink); }
+input, textarea { caret-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-pill);
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon.xs { width: 12px; height: 12px; }
+.icon.sm { width: 14px; height: 14px; }
+.icon.lg { width: 20px; height: 20px; }
+
+.mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.spacer { flex: 1; min-width: 0; }
+.row { display: flex; align-items: center; gap: 8px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--ctl);
+  color: var(--ink);
+  font-size: var(--t-sm);
+  font-weight: 550;
+  box-shadow: var(--sh-ctl);
+  transition: background .12s var(--ease), border-color .12s var(--ease);
+}
+.btn:hover {
+  background: var(--ctl-hover);
+  border-color: var(--line-strong);
+  box-shadow: var(--sh-ctl-hover);
+}
+.btn:active { background: var(--surface-active); }
+.btn:disabled { opacity: .5; pointer-events: none; }
+
+.btn.primary {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-fill);
+}
+.btn.primary:hover {
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
+}
+.btn.primary:active { background: var(--accent-fill-press); }
+
+.btn.danger {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+  color: var(--on-fill);
+}
+.btn.danger:hover {
+  background: var(--danger-fill-hover);
+  border-color: var(--danger-fill-hover);
+}
+
+.btn.sm { height: 26px; padding: 0 8px; font-size: var(--t-xs); border-radius: var(--r-sm); }
+.btn.block { width: 100%; }
+
+/* Form inputs */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.input, .select, select, textarea {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--t-sm);
+  box-shadow: var(--sh-field);
+  outline: none;
+}
+.input:focus, .select:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+textarea {
+  height: auto;
+  min-height: 64px;
+  padding: 8px 10px;
+}
+
+/* Badges / Chips */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  background: var(--surface-hover);
+  color: var(--ink-soft);
+}
+.chip.ok { background: var(--success-soft); color: var(--success-ink); }
+.chip.warn { background: var(--warn-soft); color: var(--warn-ink); }
+.chip.danger { background: var(--danger-soft); color: var(--danger-ink); }
+.chip.accent { background: var(--accent-soft); color: var(--accent-ink); }
