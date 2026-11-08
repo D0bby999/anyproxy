@@ -532,6 +532,13 @@ export const stubApp = {
     return `proxy:${id}`
   },
   PickProcessExecutable: async (): Promise<string> => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  CheckForUpdates: async () => ({
+    currentVersion: '1.0.0',
+    latestVersion: '1.0.0',
+    isUpdateAvailable: false,
+    releaseDate: '2026-11-08',
+    releaseNotes: 'You are on the latest version of AnyProxyXa.',
+  }),
 }
 
 // Attach to window.go.main.App for preview mode

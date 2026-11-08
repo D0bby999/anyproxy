@@ -13,6 +13,7 @@ import type {
   ProxyConfig,
   ProxyRule,
   LogFilter,
+  ReleaseInfo,
 } from './types'
 
 type ActiveTab = 'connections' | 'rules' | 'proxies' | 'logs' | 'settings'
@@ -68,6 +69,9 @@ export function App() {
 
   const profileFileInputRef = useRef<HTMLInputElement>(null)
   const rulesFileInputRef = useRef<HTMLInputElement>(null)
+
+  const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   const app = api.getApp()
 
@@ -219,6 +223,23 @@ export function App() {
       setEditingProxy(null)
     } catch (err) {
       alert(String(err))
+    }
+  }
+
+  const handleCheckForUpdates = async () => {
+    setIsCheckingUpdate(true)
+    try {
+      const info = await app.CheckForUpdates()
+      setUpdateInfo(info)
+    } catch (err) {
+      setUpdateInfo({
+        currentVersion: '1.0.0',
+        latestVersion: '1.0.0',
+        isUpdateAvailable: false,
+        error: String(err),
+      })
+    } finally {
+      setIsCheckingUpdate(false)
     }
   }
 
@@ -1202,6 +1223,70 @@ export function App() {
                     />
                     <span>Auto-clear connection logs periodically</span>
                   </label>
+                </div>
+
+                <div className="kpi-card" style={{ gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>Software Version & Updates</div>
+                    <span className="pill pill-neu">v1.0.0</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                      AnyProxyXa Core Engine & Desktop Client
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={isCheckingUpdate}
+                      onClick={handleCheckForUpdates}
+                    >
+                      {isCheckingUpdate ? 'Checking...' : 'Check for Updates'}
+                    </button>
+                  </div>
+
+                  {updateInfo && (
+                    <div style={{ borderTop: '1px solid var(--rule)', paddingTop: '10px', fontSize: '13px' }}>
+                      {updateInfo.error ? (
+                        <div style={{ color: 'var(--negative)' }}>
+                          Update check failed: {updateInfo.error}
+                        </div>
+                      ) : updateInfo.isUpdateAvailable ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="pill pill-pos">Update Available: v{updateInfo.latestVersion}</span>
+                            {updateInfo.releaseDate && (
+                              <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                                Released {updateInfo.releaseDate}
+                              </span>
+                            )}
+                          </div>
+                          {updateInfo.releaseNotes && (
+                            <div style={{ color: 'var(--text)', fontSize: '12px', marginTop: '2px' }}>
+                              {updateInfo.releaseNotes}
+                            </div>
+                          )}
+                          {updateInfo.downloadUrl && (
+                            <div style={{ marginTop: '4px' }}>
+                              <a
+                                href={updateInfo.downloadUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-sm btn-primary"
+                                style={{ display: 'inline-block', textDecoration: 'none' }}
+                              >
+                                Download v{updateInfo.latestVersion}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ color: 'var(--positive)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="pill pill-pos">Up to date</span>
+                          <span>You are running the latest version of AnyProxyXa.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="kpi-card" style={{ gap: '12px' }}>

@@ -17,6 +17,7 @@ import (
 
 	"github.com/D0bby999/anyproxyxa/internal/netproxy"
 	"github.com/D0bby999/anyproxyxa/internal/service"
+	"github.com/D0bby999/anyproxyxa/internal/update"
 )
 
 const Version = "1.0.0"
@@ -30,6 +31,7 @@ type Options struct {
 	TestTarget   string
 	ShowVersion  bool
 	ShowHelp     bool
+	CheckUpdate  bool
 }
 
 // ShouldRunCLI reports whether the process arguments request headless CLI mode
@@ -40,7 +42,7 @@ func ShouldRunCLI(args []string) bool {
 			continue
 		}
 		switch a {
-		case "-h", "--help", "--version", "-v", "--list-profiles", "--profile", "-p", "--verbose", "--test-proxy":
+		case "-h", "--help", "--version", "-v", "--list-profiles", "--profile", "-p", "--verbose", "--test-proxy", "--update":
 			return true
 		}
 		if strings.HasPrefix(a, "--profile=") || strings.HasPrefix(a, "--verbose=") || strings.HasPrefix(a, "--test-proxy=") {
@@ -102,6 +104,8 @@ func ParseArgs(args []string) (Options, error) {
 			opts.TestProxyID = args[i]
 		case strings.HasPrefix(arg, "--test-proxy="):
 			opts.TestProxyID = strings.TrimPrefix(arg, "--test-proxy=")
+		case arg == "--update":
+			opts.CheckUpdate = true
 		default:
 			return opts, fmt.Errorf("unknown flag %q (run with --help for usage)", arg)
 		}
@@ -122,6 +126,28 @@ func Run(ctx context.Context, svc *service.Service, args []string, in io.Reader,
 	}
 	if opts.ShowVersion {
 		_, _ = fmt.Fprintf(out, "AnyProxyXa v%s (ProxyBridge Go/Wails Port)\n", Version)
+		return nil
+	}
+	if opts.CheckUpdate {
+		_, _ = fmt.Fprintln(out, "Checking for AnyProxyXa updates...")
+		info, err := update.CheckForUpdates(ctx, "")
+		if err != nil {
+			_, _ = fmt.Fprintf(out, "Update check failed: %v\n", err)
+			return err
+		}
+		_, _ = fmt.Fprintf(out, "Current version: v%s\n", info.CurrentVersion)
+		_, _ = fmt.Fprintf(out, "Latest version:  v%s\n", info.LatestVersion)
+		if info.IsUpdateAvailable {
+			_, _ = fmt.Fprintf(out, "\nNew version available! (Released: %s)\n", info.ReleaseDate)
+			if info.ReleaseNotes != "" {
+				_, _ = fmt.Fprintf(out, "Notes: %s\n", info.ReleaseNotes)
+			}
+			if info.DownloadURL != "" {
+				_, _ = fmt.Fprintf(out, "Download URL: %s\n", info.DownloadURL)
+			}
+		} else {
+			_, _ = fmt.Fprintln(out, "You are running the latest version.")
+		}
 		return nil
 	}
 	if opts.ListProfiles {
@@ -258,6 +284,7 @@ When launched with any flag below, AnyProxyXa runs in headless CLI mode:
       --list-profiles           List saved profiles (* marks active) and exit
   -v, --verbose <0-3>           Log output: 0=silent, 1=activity, 2=connections, 3=both (default: 1)
       --test-proxy <id|name>    Run 5-step Proxy Checker on the specified proxy and exit
+      --update                  Check for software updates
       --version                 Print version and exit
   -h, --help                    Show this help message`)
 }

@@ -43,6 +43,16 @@ export interface LogFilter {
   action?: string
 }
 
+export interface ReleaseInfo {
+  currentVersion: string
+  latestVersion: string
+  isUpdateAvailable: boolean
+  releaseDate?: string
+  releaseNotes?: string
+  downloadUrl?: string
+  error?: string
+}
+
 export interface Profile {
   id: string
   name: string

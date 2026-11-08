@@ -12,6 +12,7 @@ import type {
   ProxyConfig,
   ProxyRule,
   LogFilter,
+  ReleaseInfo,
 } from './types'
 
 interface WailsApp {
@@ -62,6 +63,7 @@ interface WailsApp {
     isUDP: boolean
   ): Promise<string>
   PickProcessExecutable(): Promise<string>
+  CheckForUpdates(): Promise<ReleaseInfo>
 }
 
 declare global {

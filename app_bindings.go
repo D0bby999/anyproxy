@@ -12,6 +12,7 @@ import (
 	"github.com/D0bby999/anyproxyxa/internal/netproxy"
 	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
 	"github.com/D0bby999/anyproxyxa/internal/service"
+	"github.com/D0bby999/anyproxyxa/internal/update"
 )
 
 // StartupError returns any initialization error encountered during Wails startup.
@@ -315,5 +316,14 @@ func (a *App) PickProcessExecutable() (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Process Executable or Application Bundle",
 	})
+}
+
+// CheckForUpdates retrieves the latest release info from the update manifest.
+func (a *App) CheckForUpdates() (update.ReleaseInfo, error) {
+	ctx := context.Background()
+	if a.ctx != nil {
+		ctx = a.ctx
+	}
+	return update.CheckForUpdates(ctx, "")
 }
 

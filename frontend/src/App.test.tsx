@@ -92,6 +92,14 @@ describe('AnyProxyXa Frontend App', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeDefined()
       expect(screen.getByText('OS Driver Diagnostics')).toBeDefined()
+      expect(screen.getByText('Software Version & Updates')).toBeDefined()
+    })
+
+    const checkUpdateBtn = screen.getByRole('button', { name: /^Check for Updates$/i })
+    fireEvent.click(checkUpdateBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('Up to date')).toBeDefined()
     })
   })
 
