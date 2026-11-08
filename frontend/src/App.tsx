@@ -676,6 +676,63 @@ export function App() {
                 </div>
               )}
             </div>
+
+            {/* Quick Active Proxy Switcher Pill */}
+            <div className="proxy-switcher-pill" title="Active Default Upstream Proxy">
+              <span className="proxy-pill-label">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: '4px' }}>
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+                Active Proxy:
+              </span>
+              <div className="proxy-select-container">
+                <select
+                  className="proxy-native-select"
+                  value={profile?.defaultProxyId || ''}
+                  onChange={async (e) => {
+                    const nextId = e.target.value
+                    if (nextId === '__add_new__') {
+                      setEditingProxy(null)
+                      setIsProxyModalOpen(true)
+                      return
+                    }
+                    try {
+                      const updated = await app.SetDefaultProxy(nextId)
+                      setProfile(updated)
+                    } catch (err) {
+                      alert('Failed to set active proxy: ' + String(err))
+                    }
+                  }}
+                  aria-label="Select default active proxy"
+                >
+                  {(!profile?.proxies || profile.proxies.length === 0) ? (
+                    <option value="">(No proxy configured)</option>
+                  ) : (
+                    profile.proxies.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.type} {p.host}:{p.port})
+                      </option>
+                    ))
+                  )}
+                  <option disabled>──────────</option>
+                  <option value="__add_new__">+ Add New Proxy…</option>
+                </select>
+                <span className="proxy-select-chevron">▾</span>
+              </div>
+
+              {profile?.defaultProxyId && (
+                <button
+                  className="btn btn-sm btn-ghost profile-action-btn"
+                  onClick={() => {
+                    const activePx = profile.proxies.find((p) => p.id === profile.defaultProxyId)
+                    if (activePx) handleRunProxyTest(activePx.id)
+                  }}
+                  title="Run 5-step diagnostic test on active proxy"
+                >
+                  Test
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="topbar-actions">
@@ -1024,7 +1081,7 @@ export function App() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th style={{ width: '40px' }}>Default</th>
+                        <th style={{ width: '110px' }}>Active Role</th>
                         <th>Name</th>
                         <th>Type</th>
                         <th>Endpoint</th>
@@ -1039,21 +1096,26 @@ export function App() {
                         return (
                           <tr key={px.id}>
                             <td>
-                              <button
-                                className={`btn btn-sm ${isDefault ? 'btn-primary' : ''}`}
-                                style={{
-                                  fontSize: '11px',
-                                  padding: '2px 6px',
-                                  height: '22px',
-                                }}
-                                onClick={async () => {
-                                  const u = await app.SetDefaultProxy(px.id)
-                                  setProfile(u)
-                                }}
-                                title={isDefault ? 'Default Proxy' : 'Set as Default'}
-                              >
-                                {isDefault ? 'Default' : 'Set'}
-                              </button>
+                              {isDefault ? (
+                                <span className="pill pill-pos" title="This proxy is currently active and receives all default rule traffic">
+                                  ★ Active
+                                </span>
+                              ) : (
+                                <button
+                                  className="btn btn-sm"
+                                  onClick={async () => {
+                                    try {
+                                      const u = await app.SetDefaultProxy(px.id)
+                                      setProfile(u)
+                                    } catch (err) {
+                                      alert('Failed to set active proxy: ' + String(err))
+                                    }
+                                  }}
+                                  title="Click to switch active default proxy immediately"
+                                >
+                                  Set Active
+                                </button>
+                              )}
                             </td>
                             <td>
                               <strong>{px.name}</strong>
