@@ -335,49 +335,59 @@ button.enginechip:hover {
   white-space: nowrap;
 }
 
+/* Traffic stack (sent & received in a single vertical cell) */
+.traffic-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.traffic-stack .tx { color: var(--accent-ink); }
+.traffic-stack .rx { color: var(--success-ink); }
+
 /* ─────────────────────────────────────────────────────────────
    Specific Table Column Widths (Fixed layout protection)
    ───────────────────────────────────────────────────────────── */
 
 /* 1. Routing Rules Table */
-.table.rules th.col-no { width: 44px; }
-.table.rules th.col-name { width: 22%; }
-.table.rules th.col-apps { width: 17%; }
-.table.rules th.col-targets { width: 18%; }
-.table.rules th.col-ports { width: 10%; }
-.table.rules th.col-proto { width: 75px; }
-.table.rules th.col-action { width: 15%; }
-.table.rules th.col-actions { width: 180px; }
+.table.rules th.col-no, .table.rules td.col-no { width: 44px; }
+.table.rules th.col-name, .table.rules td.col-name { width: 22%; }
+.table.rules th.col-apps, .table.rules td.col-apps { width: 17%; }
+.table.rules th.col-targets, .table.rules td.col-targets { width: 18%; }
+.table.rules th.col-ports, .table.rules td.col-ports { width: 10%; }
+.table.rules th.col-proto, .table.rules td.col-proto { width: 75px; }
+.table.rules th.col-action, .table.rules td.col-action { width: 15%; }
+.table.rules th.col-actions, .table.rules td.col-actions { width: 180px; }
 
 /* 2. Proxies Table */
-.table.proxies th.col-name { width: 26%; }
-.table.proxies th.col-type { width: 90px; }
-.table.proxies th.col-server { width: 24%; }
-.table.proxies th.col-auth { width: 110px; }
-.table.proxies th.col-latency { width: 100px; }
-.table.proxies th.col-actions { width: 150px; }
+.table.proxies th.col-name, .table.proxies td.col-name { width: 26%; }
+.table.proxies th.col-type, .table.proxies td.col-type { width: 90px; }
+.table.proxies th.col-server, .table.proxies td.col-server { width: 24%; }
+.table.proxies th.col-auth, .table.proxies td.col-auth { width: 110px; }
+.table.proxies th.col-latency, .table.proxies td.col-latency { width: 100px; }
+.table.proxies th.col-actions, .table.proxies td.col-actions { width: 150px; }
 
 /* 3. Live Flows Table */
-.table.flows th.col-proc { width: 22%; }
-.table.flows th.col-dest { width: 26%; }
-.table.flows th.col-proto { width: 80px; }
-.table.flows th.col-route { width: 20%; }
-.table.flows th.col-sent { width: 10%; }
-.table.flows th.col-recv { width: 10%; }
-.table.flows th.col-state { width: 95px; }
+.table.flows th.col-proc, .table.flows td.col-proc { width: 20%; }
+.table.flows th.col-dest, .table.flows td.col-dest { width: 27%; }
+.table.flows th.col-proto, .table.flows td.col-proto { width: 75px; }
+.table.flows th.col-route, .table.flows td.col-route { width: 22%; }
+.table.flows th.col-traffic, .table.flows td.col-traffic { width: 110px; }
+.table.flows th.col-state, .table.flows td.col-state { width: 95px; }
 
 /* 4. Connection Logs Table */
-.table.connection-logs th.col-time { width: 100px; }
-.table.connection-logs th.col-proc { width: 22%; }
-.table.connection-logs th.col-dest { width: 28%; }
-.table.connection-logs th.col-proto { width: 80px; }
-.table.connection-logs th.col-route { width: 22%; }
-.table.connection-logs th.col-rule { width: 16%; }
+.table.connection-logs th.col-time, .table.connection-logs td.col-time { width: 100px; }
+.table.connection-logs th.col-proc, .table.connection-logs td.col-proc { width: 22%; }
+.table.connection-logs th.col-dest, .table.connection-logs td.col-dest { width: 28%; }
+.table.connection-logs th.col-proto, .table.connection-logs td.col-proto { width: 75px; }
+.table.connection-logs th.col-route, .table.connection-logs td.col-route { width: 22%; }
+.table.connection-logs th.col-rule, .table.connection-logs td.col-rule { width: 16%; }
 
 /* 5. Activity Table */
-.table.activity th.col-time { width: 110px; }
-.table.activity th.col-level { width: 90px; }
-.table.activity th.col-msg { width: auto; }
+.table.activity th.col-time, .table.activity td.col-time { width: 110px; }
+.table.activity th.col-level, .table.activity td.col-level { width: 90px; }
+.table.activity th.col-msg, .table.activity td.col-msg { width: auto; }
 
 /* AnyProfile Empty State */
 .tablewrap > .emptystate {

@@ -4,6 +4,7 @@ import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
 import { t } from '../i18n'
+import { formatBytes } from '../lib/format'
 import type { Flow, ConnectionLogEntry } from '../types'
 
 export function ConnectionsPage({
@@ -100,9 +101,8 @@ export function ConnectionsPage({
                       <th className="col-dest">{t.connections.dest}</th>
                       <th className="col-proto">{t.connections.proto}</th>
                       <th className="col-route">{t.connections.action}</th>
-                      <th className="col-sent">{t.connections.sent}</th>
-                      <th className="col-recv">{t.connections.received}</th>
-                      <th className="col-state">Trạng thái</th>
+                      <th className="col-traffic">{t.connections.traffic}</th>
+                      <th className="col-state">{t.connections.status}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -111,13 +111,13 @@ export function ConnectionsPage({
                         key={f.id}
                         className={f.state === 'open' ? 'running' : ''}
                       >
-                        <td className="cellname">
+                        <td className="cellname col-proc">
                           <b className="selectable" title={f.processName}>
                             {f.processName}
                           </b>
                           <span className="mono">PID: {f.pid}</span>
                         </td>
-                        <td>
+                        <td className="col-dest">
                           <span
                             className="mono selectable ellipsis-text"
                             title={`${f.resolvedDomain || f.destIP}:${f.destPort}`}
@@ -125,12 +125,12 @@ export function ConnectionsPage({
                             {f.resolvedDomain || f.destIP}:{f.destPort}
                           </span>
                         </td>
-                        <td>
+                        <td className="col-proto">
                           <span className="chip">
                             <span className="chiptext">{f.protocol}</span>
                           </span>
                         </td>
-                        <td>
+                        <td className="col-route">
                           <span
                             className={`chip ${
                               f.action === 'proxy'
@@ -152,8 +152,12 @@ export function ConnectionsPage({
                             </span>
                           </span>
                         </td>
-                        <td className="mono ellipsis-text">{f.bytesOut} B</td>
-                        <td className="mono ellipsis-text">{f.bytesIn} B</td>
+                        <td className="col-traffic">
+                          <div className="traffic-stack mono" title={`Gửi: ${f.bytesOut} B, Nhận: ${f.bytesIn} B`}>
+                            <span className="tx" title="Đã gửi">↑ {formatBytes(f.bytesOut)}</span>
+                            <span className="rx" title="Đã nhận">↓ {formatBytes(f.bytesIn)}</span>
+                          </div>
+                        </td>
                         <td className="col-state">
                           <span
                             className={`chip ${
@@ -181,27 +185,27 @@ export function ConnectionsPage({
               <table className="table connection-logs">
                 <thead>
                   <tr>
-                    <th className="col-time">Thời gian</th>
+                    <th className="col-time">{t.connections.time}</th>
                     <th className="col-proc">{t.connections.process}</th>
                     <th className="col-dest">{t.connections.dest}</th>
                     <th className="col-proto">{t.connections.proto}</th>
                     <th className="col-route">{t.connections.action}</th>
-                    <th className="col-rule">Quy tắc áp dụng</th>
+                    <th className="col-rule">{t.connections.rule}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredLogs.map((l) => (
                     <tr key={l.id}>
-                      <td className="muted mono">
+                      <td className="muted mono col-time">
                         {new Date(l.timestamp).toLocaleTimeString()}
                       </td>
-                      <td className="cellname">
+                      <td className="cellname col-proc">
                         <b className="selectable" title={l.processName}>
                           {l.processName}
                         </b>
                         <span className="mono">PID: {l.pid}</span>
                       </td>
-                      <td>
+                      <td className="col-dest">
                         <span
                           className="mono selectable ellipsis-text"
                           title={`${l.resolvedDomain || l.destIP}:${l.destPort}`}
@@ -209,12 +213,12 @@ export function ConnectionsPage({
                           {l.resolvedDomain || l.destIP}:{l.destPort}
                         </span>
                       </td>
-                      <td>
+                      <td className="col-proto">
                         <span className="chip">
                           <span className="chiptext">{l.protocol}</span>
                         </span>
                       </td>
-                      <td>
+                      <td className="col-route">
                         <span
                           className={`chip ${
                             l.action === 'proxy'
@@ -236,7 +240,7 @@ export function ConnectionsPage({
                           </span>
                         </span>
                       </td>
-                      <td>
+                      <td className="col-rule">
                         <span
                           className="chip ellipsis-text"
                           title={l.ruleName || 'Default'}

@@ -80,6 +80,10 @@ export const en = {
     sent: 'Sent',
     received: 'Received',
     age: 'Duration',
+    status: 'Status',
+    traffic: 'Traffic',
+    rule: 'Rule',
+    time: 'Time',
   },
   settings: {
     title: 'Settings',

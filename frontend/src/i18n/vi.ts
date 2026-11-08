@@ -81,6 +81,10 @@ export const vi: Translations = {
     sent: 'Đã gửi',
     received: 'Đã nhận',
     age: 'Thời gian',
+    status: 'Trạng thái',
+    traffic: 'Lưu lượng',
+    rule: 'Quy tắc',
+    time: 'Thời gian',
   },
   settings: {
     title: 'Cài đặt',
