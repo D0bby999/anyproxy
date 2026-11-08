@@ -1,6 +1,6 @@
 ---
 title: "Phase 2: Rule Engine, Matcher & DNS Snoop Cache"
-status: todo
+status: completed
 ---
 
 # Phase 2: Rule Engine, Matcher & DNS Snoop Cache
@@ -21,7 +21,7 @@ status: todo
 ## Overview
 
 - **Priority**: P1
-- **Status**: Todo
+- **Status**: Completed
 - **Description**: Build the pure-Go pre-compiled Rule Engine (`internal/rules`) and DNS Snoop / IP-to-Domain Cache (`internal/dnsmap`) with 100% behavioral parity with upstream ProxyBridge across macOS, Windows, and Linux.
 
 ## Key Insights

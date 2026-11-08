@@ -1,6 +1,6 @@
 ---
 title: "Phase 3: TCP/UDP Proxy Relay, Flow Tracker & 5-Step Proxy Checker"
-status: todo
+status: completed
 ---
 
 # Phase 3: TCP/UDP Proxy Relay, Flow Tracker & 5-Step Proxy Checker
@@ -17,7 +17,7 @@ status: todo
 ## Overview
 
 - **Priority**: P1
-- **Status**: Todo
+- **Status**: Completed
 - **Description**: Build the Go upstream proxy dialer & local TCP/UDP relay (`internal/netproxy`), the 5-step diagnostic Proxy Checker (`TestProxyEx`), and the Live Connections + Connection/Activity Log tracker (`internal/flows`).
 
 ## Key Insights

@@ -1,6 +1,6 @@
 ---
 title: "Phase 4: macOS Driver: Thin Swift NetworkExtension + Go IPC Bridge"
-status: todo
+status: completed
 ---
 
 # Phase 4: macOS Driver: Thin Swift NetworkExtension + Go IPC Bridge
@@ -22,7 +22,7 @@ status: todo
 ## Overview
 
 - **Priority**: P1
-- **Status**: Todo
+- **Status**: Completed
 - **Description**: Define the unified cross-platform `internal/driver.Driver` interface in Go, port the thin Swift `NETransparentProxyProvider` + `NEDNSProxyProvider` System Extension into `macos/extension/`, and implement `internal/driver/darwin` so the Go Wails app and CLI activate, configure, monitor, and repair the macOS Network Extension seamlessly.
 
 ## Key Insights

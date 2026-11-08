@@ -1,6 +1,6 @@
 ---
 title: "Phase 6: Wails v2 Desktop GUI, Dual-Mode CLI & Packaging"
-status: todo
+status: completed
 ---
 
 # Phase 6: Wails v2 Desktop GUI, Dual-Mode CLI & Packaging
@@ -17,7 +17,7 @@ status: todo
 ## Overview
 
 - **Priority**: P1
-- **Status**: Done
+- **Status**: Completed
 - **Description**: Orchestrated all packages in `internal/service`, exposed Wails bindings (`app.go`, `app_bindings.go`), implemented the dual-mode CLI (`--profile`, `--list-profiles`, `--verbose 0..3`, `--test-proxy`, `--version`), and built the Wails v2 React + TypeScript desktop GUI with browser preview harness (`frontend/preview.html`).
 
 ## Key Insights

@@ -70,20 +70,20 @@ Port [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge)
 
 | # | Phase | Status |
 |---|-------|--------|
-| 1 | [Foundation, Storage, Vault & .pbprofile Compatibility](./phase-01-start.md) | Pending |
-| 2 | [Rule Engine, Matcher & DNS Snoop Cache](./phase-02-rule-engine-and-dns-cache.md) | Pending |
-| 3 | [TCP/UDP Proxy Relay, Flow Tracker & 5-Step Proxy Checker](./phase-03-proxy-relay-and-checker.md) | Pending |
-| 4 | [macOS Driver: Thin Swift NetworkExtension + Go IPC Bridge](./phase-04-macos-network-extension-driver.md) | Pending |
-| 5 | [Windows Driver: Pure Go WinDivert Engine & Windows Service](./phase-05-windows-windivert-service-driver.md) | Pending |
-| 6 | [Wails v2 Desktop GUI, Dual-Mode CLI & Packaging](./phase-06-wails-gui-and-cli.md) | Pending |
+| 1 | [Foundation, Storage, Vault & .pbprofile Compatibility](./phase-01-start.md) | Completed |
+| 2 | [Rule Engine, Matcher & DNS Snoop Cache](./phase-02-rule-engine-and-dns-cache.md) | Completed |
+| 3 | [TCP/UDP Proxy Relay, Flow Tracker & 5-Step Proxy Checker](./phase-03-proxy-relay-and-checker.md) | Completed |
+| 4 | [macOS Driver: Thin Swift NetworkExtension + Go IPC Bridge](./phase-04-macos-network-extension-driver.md) | Completed |
+| 5 | [Windows Driver: Pure Go WinDivert Engine & Windows Service](./phase-05-windows-windivert-service-driver.md) | Completed |
+| 6 | [Wails v2 Desktop GUI, Dual-Mode CLI & Packaging](./phase-06-wails-gui-and-cli.md) | Completed |
 
 ## Success Criteria
 
-- [ ] `go test ./internal/... -count=1` passes on macOS and cross-vets cleanly with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...`
-- [ ] `.pbprofile` files and rule JSON files exported from upstream ProxyBridge (macOS/Windows/Linux, including `MacOS/tests/pbtest.pbprofile`) import and export losslessly
-- [ ] Rule matcher passes all upstream test vectors from `MacOS/tests/logic/matcher_tests.swift` and `Windows/tests/test_rules_match.c`
-- [ ] DNS parser and IP->Domain cache pass all upstream test vectors from `MacOS/tests/logic/dnsmap_tests.swift` and `Windows/tests/test_dns.c`
-- [ ] TCP (`SOCKS5` / `HTTP` CONNECT) and UDP (`SOCKS5` UDP ASSOCIATE) relays forward traffic, enforce per-rule `LocalhostViaProxy` and per-proxy `SendDomainToProxy`, and report live byte counters
-- [ ] Wails GUI renders Connections, Live Connections, Proxy Rules, Proxy Servers, Proxy Checker, and Profile switcher, verified in `frontend/preview.html` and `npm test`
+- [x] `go test ./internal/... -count=1` passes on macOS and cross-vets cleanly with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...`
+- [x] `.pbprofile` files and rule JSON files exported from upstream ProxyBridge (macOS/Windows/Linux, including `MacOS/tests/pbtest.pbprofile`) import and export losslessly
+- [x] Rule matcher passes all upstream test vectors from `MacOS/tests/logic/matcher_tests.swift` and `Windows/tests/test_rules_match.c`
+- [x] DNS parser and IP->Domain cache pass all upstream test vectors from `MacOS/tests/logic/dnsmap_tests.swift` and `Windows/tests/test_dns.c`
+- [x] TCP (`SOCKS5` / `HTTP` CONNECT) and UDP (`SOCKS5` UDP ASSOCIATE) relays forward traffic, enforce per-rule `LocalhostViaProxy` and per-proxy `SendDomainToProxy`, and report live byte counters
+- [x] Wails GUI renders Connections, Live Connections, Proxy Rules, Proxy Servers, Proxy Checker, and Profile switcher, verified in `frontend/preview.html` and `npm test`
 
 <!-- slug: proxybridge-go-port -->

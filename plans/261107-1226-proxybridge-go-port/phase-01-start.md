@@ -1,6 +1,6 @@
 ---
 title: "Phase 1: Foundation, Storage, Vault & .pbprofile Compatibility"
-status: todo
+status: completed
 ---
 
 # Phase 1: Foundation, Storage, Vault & .pbprofile Compatibility
@@ -13,7 +13,7 @@ status: todo
 ## Overview
 
 - **Priority**: P1
-- **Status**: Todo
+- **Status**: Completed
 - **Description**: Bootstrap the `github.com/D0bby999/anyproxyxa` Go module, directory conventions (`0700` data dir, `0600` DB and vault), encrypted secret storage (`secrets.Vault` backed by macOS Keychain / Windows Credential Manager), SQLite schema (`modernc.org/sqlite`), and 100% lossless `.pbprofile` + rules JSON import/export.
 
 ## Key Insights
