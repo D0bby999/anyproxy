@@ -97,3 +97,4 @@ func TestCheckForUpdatesAlreadyUpToDate(t *testing.T) {
 		t.Errorf("LatestVersion = %q, want 1.0.0", info.LatestVersion)
 	}
 }
+
