@@ -53,7 +53,7 @@ describe('AnyProxyXa Frontend App', () => {
       expect(screen.getByRole('heading', { level: 1, name: 'Proxy Servers' })).toBeDefined()
     })
 
-    expect(screen.getByText('Local Clash SOCKS5')).toBeDefined()
+    expect(screen.getByText('Local Clash SOCKS5', { selector: 'strong' })).toBeDefined()
 
     const testButtons = screen.getAllByRole('button', { name: /^Test$/i })
     fireEvent.click(testButtons[0])

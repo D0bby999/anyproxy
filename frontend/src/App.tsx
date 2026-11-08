@@ -709,8 +709,8 @@ export function App() {
                     <option value="">(No proxy configured)</option>
                   ) : (
                     profile.proxies.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.type} {p.host}:{p.port})
+                      <option key={p.id} value={p.id} title={`${p.type} ${p.host}:${p.port}`}>
+                        {p.name}
                       </option>
                     ))
                   )}
