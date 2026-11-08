@@ -17,6 +17,7 @@ import (
 	"github.com/D0bby999/anyproxyxa/internal/dnsmap"
 	"github.com/D0bby999/anyproxyxa/internal/driver"
 	"github.com/D0bby999/anyproxyxa/internal/flows"
+	"github.com/D0bby999/anyproxyxa/internal/inbound"
 	"github.com/D0bby999/anyproxyxa/internal/netproxy"
 	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
 	"github.com/D0bby999/anyproxyxa/internal/rules"
@@ -51,6 +52,7 @@ type Service struct {
 	tracker *flows.Tracker
 	logs    *flows.LogManager
 	drv     driver.Driver
+	inbound *inbound.Server
 	onEvent func(topic string, payload any)
 }
 
@@ -63,6 +65,15 @@ func New(st *store.Store, vault secrets.Store, drv driver.Driver) *Service {
 	if drv == nil {
 		drv = driver.NewPlatformDriver(dns, tracker, logs)
 	}
+	inboundSrv := inbound.NewServer(inbound.Config{
+		ListenAddr: inbound.DefaultListenAddr,
+		Vault:      vault,
+		DNS:        dns,
+		Tracker:    tracker,
+		Logs:       logs,
+	})
+	_ = inboundSrv.Start()
+
 	s := &Service{
 		store:   st,
 		vault:   vault,
@@ -70,6 +81,7 @@ func New(st *store.Store, vault secrets.Store, drv driver.Driver) *Service {
 		tracker: tracker,
 		logs:    logs,
 		drv:     drv,
+		inbound: inboundSrv,
 	}
 	_ = s.syncActiveProfileToDriver()
 	return s
@@ -94,10 +106,21 @@ func (s *Service) emit(topic string, payload any) {
 // Close stops the OS interception driver and closes the SQLite store.
 func (s *Service) Close() error {
 	_ = s.drv.Stop()
+	if s.inbound != nil {
+		_ = s.inbound.Stop()
+	}
 	if s.store != nil {
 		return s.store.Close()
 	}
 	return nil
+}
+
+// InboundAddr returns the local forward proxy listening endpoint (e.g. "127.0.0.1:10800").
+func (s *Service) InboundAddr() string {
+	if s.inbound != nil {
+		return s.inbound.ListenAddr()
+	}
+	return ""
 }
 
 // DNS returns the shared DNS cache store.
@@ -761,6 +784,9 @@ func (s *Service) syncActiveProfileToDriver() error {
 		return err
 	}
 	s.hydratePasswords(&p)
+	if s.inbound != nil {
+		s.inbound.SyncProfile(p.Proxies, p.Rules, p.DefaultProxyID)
+	}
 	return s.drv.SyncProfile(p.Proxies, p.Rules, driver.RuntimeOptions{
 		TrafficLoggingEnabled:   p.TrafficLoggingEnabled,
 		DnsViaProxy:             p.DnsViaProxy,
