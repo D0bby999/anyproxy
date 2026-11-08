@@ -77,11 +77,11 @@ export function ProxiesPage({
               <table className="table proxies">
                 <thead>
                   <tr>
-                    <th>{t.proxies.name}</th>
-                    <th>{t.proxies.type}</th>
-                    <th>{t.proxies.server}</th>
-                    <th>{t.proxies.auth}</th>
-                    <th>{t.proxies.latency}</th>
+                    <th className="col-name">{t.proxies.name}</th>
+                    <th className="col-type">{t.proxies.type}</th>
+                    <th className="col-server">{t.proxies.server}</th>
+                    <th className="col-auth">{t.proxies.auth}</th>
+                    <th className="col-latency">{t.proxies.latency}</th>
                     <th className="col-actions" />
                   </tr>
                 </thead>
@@ -104,7 +104,7 @@ export function ProxiesPage({
                           </span>
                         </td>
                         <td>
-                          <span className="mono selectable">
+                          <span className="mono selectable ellipsis-text" title={`${p.host}:${p.port}`}>
                             {p.host}:{p.port}
                           </span>
                         </td>

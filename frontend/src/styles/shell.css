@@ -223,6 +223,7 @@ button.enginechip:hover {
 
 /* ─────────────────────────────────────────────────────────────
    AnyProfile Table Pattern: .tablewrap, .table, th/td, cellname, col-actions
+   Fixed column layout & text truncating
    ───────────────────────────────────────────────────────────── */
 .tablewrap {
   flex: 1;
@@ -233,13 +234,14 @@ button.enginechip:hover {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 .table th {
   position: sticky;
   top: 0;
   z-index: 1;
   height: 38px;
-  padding: 0 12px;
+  padding: 0 10px;
   background: var(--surface-sunken);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
@@ -252,7 +254,7 @@ button.enginechip:hover {
 }
 .table td {
   height: 52px;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line-soft);
   vertical-align: middle;
   color: var(--ink-soft);
@@ -269,14 +271,20 @@ button.enginechip:hover {
 .table tbody tr.running:hover td {
   background: var(--running-row-hover);
 }
+.table tbody tr.active td {
+  background: var(--accent-soft);
+}
+.table tbody tr.active td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 
 .table .col-no {
-  width: 48px;
+  width: 44px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 .table .col-actions {
-  width: 1%;
   text-align: right;
   white-space: nowrap;
 }
@@ -285,11 +293,9 @@ button.enginechip:hover {
   gap: 6px;
 }
 
-/* AnyProfile cellname: bold primary label + mono subtext */
+/* AnyProfile cellname: primary bold label + sub/mono details */
 .cellname {
-  max-width: 0;
-  width: 24%;
-  min-width: 160px;
+  min-width: 0;
 }
 .cellname b {
   display: block;
@@ -304,6 +310,9 @@ button.enginechip:hover {
   margin-top: 2px;
   color: var(--faint);
   font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cellname .sub {
   display: flex;
@@ -314,7 +323,61 @@ button.enginechip:hover {
   font-size: var(--t-xs);
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+/* Truncating helper for table cells */
+.ellipsis-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Specific Table Column Widths (Fixed layout protection)
+   ───────────────────────────────────────────────────────────── */
+
+/* 1. Routing Rules Table */
+.table.rules th.col-no { width: 44px; }
+.table.rules th.col-name { width: 22%; }
+.table.rules th.col-apps { width: 17%; }
+.table.rules th.col-targets { width: 18%; }
+.table.rules th.col-ports { width: 10%; }
+.table.rules th.col-proto { width: 75px; }
+.table.rules th.col-action { width: 15%; }
+.table.rules th.col-actions { width: 180px; }
+
+/* 2. Proxies Table */
+.table.proxies th.col-name { width: 26%; }
+.table.proxies th.col-type { width: 90px; }
+.table.proxies th.col-server { width: 24%; }
+.table.proxies th.col-auth { width: 110px; }
+.table.proxies th.col-latency { width: 100px; }
+.table.proxies th.col-actions { width: 150px; }
+
+/* 3. Live Flows Table */
+.table.flows th.col-proc { width: 22%; }
+.table.flows th.col-dest { width: 26%; }
+.table.flows th.col-proto { width: 80px; }
+.table.flows th.col-route { width: 20%; }
+.table.flows th.col-sent { width: 10%; }
+.table.flows th.col-recv { width: 10%; }
+.table.flows th.col-state { width: 95px; }
+
+/* 4. Connection Logs Table */
+.table.connection-logs th.col-time { width: 100px; }
+.table.connection-logs th.col-proc { width: 22%; }
+.table.connection-logs th.col-dest { width: 28%; }
+.table.connection-logs th.col-proto { width: 80px; }
+.table.connection-logs th.col-route { width: 22%; }
+.table.connection-logs th.col-rule { width: 16%; }
+
+/* 5. Activity Table */
+.table.activity th.col-time { width: 110px; }
+.table.activity th.col-level { width: 90px; }
+.table.activity th.col-msg { width: auto; }
 
 /* AnyProfile Empty State */
 .tablewrap > .emptystate {

@@ -80,12 +80,12 @@ export function RulesPage({
                 <thead>
                   <tr>
                     <th className="col-no">{t.rules.order}</th>
-                    <th>{t.rules.name}</th>
-                    <th>{t.rules.applications}</th>
-                    <th>{t.rules.targets}</th>
-                    <th>{t.rules.ports}</th>
-                    <th>{t.rules.protocol}</th>
-                    <th>{t.rules.action}</th>
+                    <th className="col-name">{t.rules.name}</th>
+                    <th className="col-apps">{t.rules.applications}</th>
+                    <th className="col-targets">{t.rules.targets}</th>
+                    <th className="col-ports">{t.rules.ports}</th>
+                    <th className="col-proto">{t.rules.protocol}</th>
+                    <th className="col-action">{t.rules.action}</th>
                     <th className="col-actions" />
                   </tr>
                 </thead>
@@ -104,17 +104,17 @@ export function RulesPage({
                           </span>
                         </td>
                         <td>
-                          <span className="mono selectable" title={r.processNames}>
+                          <span className="mono selectable ellipsis-text" title={r.processNames}>
                             {r.processNames || '*'}
                           </span>
                         </td>
                         <td>
-                          <span className="mono selectable" title={r.targetHosts}>
+                          <span className="mono selectable ellipsis-text" title={r.targetHosts}>
                             {r.targetHosts || '*'}
                           </span>
                         </td>
                         <td>
-                          <span className="mono selectable" title={r.targetPorts}>
+                          <span className="mono selectable ellipsis-text" title={r.targetPorts}>
                             {r.targetPorts || '*'}
                           </span>
                         </td>
@@ -132,6 +132,11 @@ export function RulesPage({
                                 ? 'danger'
                                 : 'ok'
                             }`}
+                            title={
+                              r.action === 'proxy' && matchedProxy
+                                ? `Proxy: ${matchedProxy.name}`
+                                : r.action.toUpperCase()
+                            }
                           >
                             <span className="dot" />
                             <span className="chiptext">
