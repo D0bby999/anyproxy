@@ -94,4 +94,39 @@ describe('AnyProxyXa Frontend App', () => {
       expect(screen.getByText('OS Driver Diagnostics')).toBeDefined()
     })
   })
+
+  it('opens Log Filters modal and displays filter controls', async () => {
+    render(<App />)
+
+    const logsTabBtn = screen.getByRole('button', { name: /^Activity Logs/i })
+    fireEvent.click(logsTabBtn)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Activity Logs' })).toBeDefined()
+    })
+
+    const filterBtn = screen.getByRole('button', { name: /^Log Filters/i })
+    fireEvent.click(filterBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('Connection Log Filters')).toBeDefined()
+      expect(screen.getByRole('button', { name: /^\+ Add$/i })).toBeDefined()
+    })
+  })
+
+  it('triggers + Rule action from Connections table', async () => {
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Connections' })).toBeDefined()
+    })
+
+    const addRuleButtons = screen.getAllByRole('button', { name: /^\+ Rule$/i })
+    expect(addRuleButtons.length).toBeGreaterThan(0)
+    fireEvent.click(addRuleButtons[0])
+
+    await waitFor(() => {
+      expect(screen.getByText('New Routing Rule')).toBeDefined()
+    })
+  })
 })

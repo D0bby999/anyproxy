@@ -34,8 +34,8 @@ export interface ProxyRule {
 export interface LogFilter {
   id: string
   name?: string
-  enabled: boolean
-  mode: 'include' | 'exclude'
+  enabled?: boolean
+  mode: 'include' | 'exclude' | 'INCLUDE' | 'EXCLUDE'
   process?: string
   host?: string
   port?: string

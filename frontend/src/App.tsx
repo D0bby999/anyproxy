@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { api } from './api'
 import type {
   Profile,
@@ -52,9 +52,22 @@ export function App() {
   const [checkReport, setCheckReport] = useState<CheckReport | null>(null)
   const [isCheckingProxy, setIsCheckingProxy] = useState(false)
 
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
   const [newProfileName, setNewProfileName] = useState('')
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+
+  const [isRenameProfileOpen, setIsRenameProfileOpen] = useState(false)
+  const [renameProfileName, setRenameProfileName] = useState('')
+
+  const [isDuplicateProfileOpen, setIsDuplicateProfileOpen] = useState(false)
+  const [duplicateProfileName, setDuplicateProfileName] = useState('')
+
+  const [isLogFiltersModalOpen, setIsLogFiltersModalOpen] = useState(false)
+  const [newFilterMode, setNewFilterMode] = useState<'EXCLUDE' | 'INCLUDE'>('EXCLUDE')
+  const [newFilterType, setNewFilterType] = useState<'host' | 'process' | 'port'>('host')
+  const [newFilterPattern, setNewFilterPattern] = useState('')
+
+  const profileFileInputRef = useRef<HTMLInputElement>(null)
+  const rulesFileInputRef = useRef<HTMLInputElement>(null)
 
   const app = api.getApp()
 
@@ -213,14 +226,191 @@ export function App() {
     try {
       const path = await app.PickProcessExecutable()
       if (path && editingRule) {
-        const parts = path.split('/')
-        const name = parts[parts.length - 1].replace('.app', '')
+        const normalized = path.replace(/\\/g, '/')
+        const parts = normalized.split('/')
+        const name = parts[parts.length - 1].replace('.app', '').replace('.exe', '')
         const current = editingRule.processNames.trim()
         const next = current === '*' || current === '' ? name : `${current};${name}`
         setEditingRule({ ...editingRule, processNames: next })
       }
     } catch (err) {
       console.error(err)
+    }
+  }
+
+  const handleRenameProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!renameProfileName.trim()) return
+    try {
+      const updated = await app.RenameProfile(profileSummary.active, renameProfileName.trim())
+      setProfile(updated)
+      setIsRenameProfileOpen(false)
+      await refreshAll()
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleDuplicateProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!duplicateProfileName.trim()) return
+    try {
+      const updated = await app.DuplicateProfile(profileSummary.active, duplicateProfileName.trim())
+      setProfile(updated)
+      setIsDuplicateProfileOpen(false)
+      await refreshAll()
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleDeleteProfile = async () => {
+    if (profileSummary.names.length <= 1) {
+      alert('Cannot delete the only profile.')
+      return
+    }
+    if (profileSummary.active === 'Default') {
+      alert('Cannot delete the Default profile.')
+      return
+    }
+    if (!confirm(`Are you sure you want to delete profile "${profileSummary.active}"?`)) return
+    try {
+      const next = await app.DeleteProfile(profileSummary.active)
+      setProfile(next)
+      await refreshAll()
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleExportProfile = async () => {
+    try {
+      const json = await app.ExportProfileJSON(profileSummary.active, false)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${profileSummary.active}.pbprofile`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleImportProfileClick = () => {
+    profileFileInputRef.current?.click()
+  }
+
+  const handleImportProfileFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const updated = await app.ImportProfileJSON(text, true)
+      setProfile(updated)
+      await refreshAll()
+      alert(`Profile "${updated.name}" imported successfully!`)
+    } catch (err) {
+      alert('Failed to import profile: ' + String(err))
+    } finally {
+      e.target.value = ''
+    }
+  }
+
+  const handleCloneRule = async (ruleId: string) => {
+    try {
+      const updated = await app.CloneRule(ruleId)
+      setProfile(updated)
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleExportRules = async () => {
+    try {
+      const json = await app.ExportRulesJSON([])
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${profileSummary.active}-rules.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleImportRulesClick = () => {
+    rulesFileInputRef.current?.click()
+  }
+
+  const handleImportRulesFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const updated = await app.ImportRulesJSON(text)
+      setProfile(updated)
+      alert('Rules imported successfully!')
+    } catch (err) {
+      alert('Failed to import rules: ' + String(err))
+    } finally {
+      e.target.value = ''
+    }
+  }
+
+  const handleCreateRuleFromFlow = (f: Flow) => {
+    const domain = f.resolvedDomain
+    const hostPattern = domain
+      ? (domain.startsWith('www.') ? `*.${domain.slice(4)}` : domain)
+      : f.destIP
+    const ruleName = `Route ${f.processName || domain || f.destIP}`
+    setEditingRule({
+      id: '',
+      name: ruleName,
+      enabled: true,
+      processNames: f.processName || '*',
+      targetHosts: hostPattern || '*',
+      targetPorts: String(f.destPort || '*'),
+      protocol: f.protocol.toLowerCase() === 'udp' ? 'udp' : 'tcp',
+      action: profile?.defaultProxyId ? 'proxy' : 'direct',
+      proxyConfigId: profile?.defaultProxyId || '',
+    })
+    setIsRuleModalOpen(true)
+    setTab('rules')
+  }
+
+  const handleAddLogFilter = async () => {
+    if (!newFilterPattern.trim() || !profile) return
+    const currentFilters = profile.logFilters || []
+    const newFilter: LogFilter = {
+      id: 'flt_' + Date.now().toString(36),
+      mode: newFilterMode,
+      host: newFilterType === 'host' ? newFilterPattern.trim() : '*',
+      process: newFilterType === 'process' ? newFilterPattern.trim() : '*',
+      port: newFilterType === 'port' ? newFilterPattern.trim() : '*',
+      protocol: 'ALL',
+      action: 'ALL',
+    }
+    try {
+      const updated = await app.SaveLogFilters([...currentFilters, newFilter])
+      setProfile(updated)
+      setNewFilterPattern('')
+    } catch (err) {
+      alert(String(err))
+    }
+  }
+
+  const handleRemoveLogFilter = async (id: string) => {
+    if (!profile) return
+    const next = (profile.logFilters || []).filter((f) => f.id !== id)
+    try {
+      const updated = await app.SaveLogFilters(next)
+      setProfile(updated)
+    } catch (err) {
+      alert(String(err))
     }
   }
 
@@ -289,6 +479,21 @@ export function App() {
       <main className="app-main">
         {/* Topbar */}
         <header className="app-topbar">
+          <input
+            type="file"
+            ref={profileFileInputRef}
+            style={{ display: 'none' }}
+            accept=".pbprofile,.json"
+            onChange={handleImportProfileFile}
+          />
+          <input
+            type="file"
+            ref={rulesFileInputRef}
+            style={{ display: 'none' }}
+            accept=".json"
+            onChange={handleImportRulesFile}
+          />
+
           <div className="topbar-left">
             <div className="profile-select-wrap">
               <span className="profile-select-label">Active Profile:</span>
@@ -304,15 +509,59 @@ export function App() {
                 ))}
               </select>
             </div>
-            <button
-              className="btn btn-sm"
-              onClick={() => {
-                setNewProfileName('')
-                setIsProfileModalOpen(true)
-              }}
-            >
-              + Profile
-            </button>
+
+            <div className="profile-btn-group">
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setNewProfileName('')
+                  setIsProfileModalOpen(true)
+                }}
+              >
+                + Profile
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setRenameProfileName(profileSummary.active)
+                  setIsRenameProfileOpen(true)
+                }}
+              >
+                Rename
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setDuplicateProfileName(`${profileSummary.active} Copy`)
+                  setIsDuplicateProfileOpen(true)
+                }}
+              >
+                Duplicate
+              </button>
+              <button
+                className="btn btn-sm"
+                title="Export profile as .pbprofile"
+                onClick={handleExportProfile}
+              >
+                Export
+              </button>
+              <button
+                className="btn btn-sm"
+                title="Import .pbprofile file"
+                onClick={handleImportProfileClick}
+              >
+                Import
+              </button>
+              {profileSummary.names.length > 1 && profileSummary.active !== 'Default' && (
+                <button
+                  className="btn btn-sm btn-danger"
+                  title="Delete current profile"
+                  onClick={handleDeleteProfile}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="topbar-actions">
@@ -401,12 +650,13 @@ export function App() {
                         <th>Routed Proxy</th>
                         <th className="num-cell">In / Out</th>
                         <th className="num-cell">Status</th>
+                        <th className="num-cell" style={{ width: '70px' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredFlows.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="empty-state">
+                          <td colSpan={8} className="empty-state">
                             <span className="empty-state-title">No matching flows</span>
                             <span>Traffic matching active rules will stream here in real time.</span>
                           </td>
@@ -451,6 +701,15 @@ export function App() {
                               <span className={`pill ${f.state === 'open' ? 'pill-pos' : 'pill-neu'}`}>
                                 {f.state}
                               </span>
+                            </td>
+                            <td className="num-cell">
+                              <button
+                                className="btn btn-sm"
+                                title="Create routing rule from this flow"
+                                onClick={() => handleCreateRuleFromFlow(f)}
+                              >
+                                + Rule
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -498,11 +757,15 @@ export function App() {
                   </button>
                   <button
                     className="btn btn-sm"
-                    onClick={async () => {
-                      const json = await app.ExportRulesJSON([])
-                      navigator.clipboard.writeText(json)
-                      alert('Rules JSON copied to clipboard!')
-                    }}
+                    title="Import rules from a JSON file"
+                    onClick={handleImportRulesClick}
+                  >
+                    Import
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    title="Export all rules to a JSON file"
+                    onClick={handleExportRules}
                   >
                     Export
                   </button>
@@ -522,7 +785,7 @@ export function App() {
                         <th>Ports</th>
                         <th>Action</th>
                         <th>Target Proxy</th>
-                        <th style={{ width: '180px' }} className="num-cell">Manage</th>
+                        <th style={{ width: '220px' }} className="num-cell">Manage</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -559,6 +822,7 @@ export function App() {
                             <button
                               className="btn btn-sm"
                               disabled={idx === 0}
+                              title="Move rule up"
                               onClick={async () => {
                                 const u = await app.MoveRule(r.id, -1)
                                 setProfile(u)
@@ -569,12 +833,20 @@ export function App() {
                             <button
                               className="btn btn-sm"
                               disabled={idx === (profile?.rules.length || 0) - 1}
+                              title="Move rule down"
                               onClick={async () => {
                                 const u = await app.MoveRule(r.id, 1)
                                 setProfile(u)
                               }}
                             >
                               ↓
+                            </button>{' '}
+                            <button
+                              className="btn btn-sm"
+                              title="Duplicate rule"
+                              onClick={() => handleCloneRule(r.id)}
+                            >
+                              Clone
                             </button>{' '}
                             <button
                               className="btn btn-sm"
@@ -747,6 +1019,13 @@ export function App() {
                       System ({activityLogs.length})
                     </button>
                   </div>
+                  <button
+                    className="btn btn-sm"
+                    title="Manage connection log inclusion and exclusion filters"
+                    onClick={() => setIsLogFiltersModalOpen(true)}
+                  >
+                    Log Filters ({profile?.logFilters?.length || 0})
+                  </button>
                   <button
                     className="btn btn-sm"
                     onClick={async () => {
@@ -1274,6 +1553,170 @@ export function App() {
                 <button type="submit" className="btn btn-primary">Create Profile</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Profile Modal */}
+      {isRenameProfileOpen && (
+        <div className="modal-overlay" onClick={() => setIsRenameProfileOpen(false)}>
+          <div className="modal-card" style={{ width: '380px' }} onClick={(e) => e.stopPropagation()}>
+            <form onSubmit={handleRenameProfile}>
+              <div className="modal-header">
+                <div className="modal-title">Rename Profile</div>
+                <button type="button" className="btn btn-sm" onClick={() => setIsRenameProfileOpen(false)}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">New Profile Name</label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    className="input-text"
+                    value={renameProfileName}
+                    onChange={(e) => setRenameProfileName(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn" onClick={() => setIsRenameProfileOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Name</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Profile Modal */}
+      {isDuplicateProfileOpen && (
+        <div className="modal-overlay" onClick={() => setIsDuplicateProfileOpen(false)}>
+          <div className="modal-card" style={{ width: '380px' }} onClick={(e) => e.stopPropagation()}>
+            <form onSubmit={handleDuplicateProfile}>
+              <div className="modal-header">
+                <div className="modal-title">Duplicate Profile</div>
+                <button type="button" className="btn btn-sm" onClick={() => setIsDuplicateProfileOpen(false)}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">New Profile Name</label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    className="input-text"
+                    value={duplicateProfileName}
+                    onChange={(e) => setDuplicateProfileName(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn" onClick={() => setIsDuplicateProfileOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Duplicate</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Log Filters Modal */}
+      {isLogFiltersModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsLogFiltersModalOpen(false)}>
+          <div className="modal-card modal-card-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Connection Log Filters</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>
+                  Filter background telemetry or exclude noisy IPs and ports from connection history.
+                </div>
+              </div>
+              <button type="button" className="btn btn-sm" onClick={() => setIsLogFiltersModalOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="filter-list-wrap">
+                {!profile?.logFilters || profile.logFilters.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
+                    No active log filters. All connections are currently logged.
+                  </div>
+                ) : (
+                  profile.logFilters.map((f) => (
+                    <div key={f.id} className="filter-item-row">
+                      <div className="filter-item-desc">
+                        <span className={`pill ${f.mode === 'INCLUDE' || f.mode === 'include' ? 'pill-pos' : 'pill-neg'}`}>
+                          {f.mode.toUpperCase()}
+                        </span>
+                        <span className="mono-cell">
+                          {f.host && f.host !== '*' && `Host: ${f.host} `}
+                          {f.process && f.process !== '*' && `Process: ${f.process} `}
+                          {f.port && f.port !== '*' && `Port: ${f.port} `}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        title="Delete filter"
+                        onClick={() => handleRemoveLogFilter(f.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--rule)', paddingTop: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>Add Filter Rule</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <select
+                    className="input-text"
+                    style={{ width: '120px' }}
+                    value={newFilterMode}
+                    onChange={(e) => setNewFilterMode(e.target.value as 'EXCLUDE' | 'INCLUDE')}
+                  >
+                    <option value="EXCLUDE">EXCLUDE</option>
+                    <option value="INCLUDE">INCLUDE</option>
+                  </select>
+                  <select
+                    className="input-text"
+                    style={{ width: '140px' }}
+                    value={newFilterType}
+                    onChange={(e) => setNewFilterType(e.target.value as 'host' | 'process' | 'port')}
+                  >
+                    <option value="host">Host / Domain</option>
+                    <option value="process">Process Name</option>
+                    <option value="port">Port</option>
+                  </select>
+                  <input
+                    type="text"
+                    className="input-text mono-cell"
+                    style={{ flex: 1, minWidth: '160px' }}
+                    placeholder={
+                      newFilterType === 'host'
+                        ? 'e.g. *.telemetry.* or 127.0.0.1'
+                        : newFilterType === 'process'
+                        ? 'e.g. curl or chrome'
+                        : 'e.g. 53, 443, or 8000-8080'
+                    }
+                    value={newFilterPattern}
+                    onChange={(e) => setNewFilterPattern(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleAddLogFilter()
+                      }
+                    }}
+                  />
+                  <button type="button" className="btn btn-sm btn-primary" onClick={handleAddLogFilter}>
+                    + Add
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn" onClick={() => setIsLogFiltersModalOpen(false)}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
