@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 )
 
-const ServiceName = "AnyProxyXaSvc"
+const ServiceName = "AnyProxySvc"
 
 type winServiceHandler struct {
 	engine *WinDivertEngine

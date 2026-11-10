@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package paths owns the on-disk layout of AnyProxyXa's data directory.
+// Package paths owns the on-disk layout of AnyProxy's data directory.
 package paths
 
 import (
@@ -17,8 +17,8 @@ type Dirs struct {
 // EnvDataDir overrides the data directory with an absolute path.
 const EnvDataDir = "ANYPROXY_DATA_DIR"
 
-// Default is ~/Library/Application Support/AnyProxyXa on macOS,
-// %APPDATA%\AnyProxyXa on Windows, or the absolute path in ANYPROXY_DATA_DIR.
+// Default is ~/Library/Application Support/AnyProxy on macOS,
+// %APPDATA%\AnyProxy on Windows, or the absolute path in ANYPROXY_DATA_DIR.
 func Default() (Dirs, error) {
 	if v := os.Getenv(EnvDataDir); v != "" && filepath.IsAbs(v) {
 		return Dirs{Root: filepath.Clean(v)}, nil
@@ -27,10 +27,35 @@ func Default() (Dirs, error) {
 	if err != nil {
 		return Dirs{}, err
 	}
-	return Dirs{Root: filepath.Join(base, "AnyProxyXa")}, nil
+	return defaultForBase(base)
 }
 
-func (d Dirs) DB() string       { return filepath.Join(d.Root, "anyproxyxa.db") }
+func defaultForBase(base string) (Dirs, error) {
+	current, legacy := filepath.Join(base, "AnyProxy"), filepath.Join(base, "AnyProxyXa")
+	_, oldErr := os.Lstat(legacy)
+	_, newErr := os.Lstat(current)
+	if oldErr != nil && !os.IsNotExist(oldErr) {
+		return Dirs{}, fmt.Errorf("inspect legacy data directory: %w", oldErr)
+	}
+	if newErr != nil && !os.IsNotExist(newErr) {
+		return Dirs{}, fmt.Errorf("inspect data directory: %w", newErr)
+	}
+	if oldErr == nil && newErr == nil {
+		return Dirs{}, fmt.Errorf("both AnyProxy and legacy data directories exist; resolve manually before starting")
+	}
+	if oldErr == nil {
+		return Dirs{Root: legacy}, nil
+	}
+	return Dirs{Root: current}, nil
+}
+
+func (d Dirs) DB() string {
+	legacy := filepath.Join(d.Root, "anyproxyxa.db")
+	if _, err := os.Lstat(legacy); err == nil || !os.IsNotExist(err) {
+		return legacy
+	}
+	return filepath.Join(d.Root, "anyproxy.db")
+}
 func (d Dirs) Vault() string    { return filepath.Join(d.Root, "secrets.vault") }
 func (d Dirs) Profiles() string { return filepath.Join(d.Root, "profiles") }
 func (d Dirs) Logs() string     { return filepath.Join(d.Root, "logs") }
@@ -38,6 +63,17 @@ func (d Dirs) Backups() string  { return filepath.Join(d.Root, "backups") }
 
 // Ensure creates every directory with owner-only permissions (0700).
 func (d Dirs) Ensure() error {
+	_, oldErr := os.Lstat(filepath.Join(d.Root, "anyproxyxa.db"))
+	_, newErr := os.Lstat(filepath.Join(d.Root, "anyproxy.db"))
+	if oldErr != nil && !os.IsNotExist(oldErr) {
+		return fmt.Errorf("inspect legacy database: %w", oldErr)
+	}
+	if newErr != nil && !os.IsNotExist(newErr) {
+		return fmt.Errorf("inspect database: %w", newErr)
+	}
+	if oldErr == nil && newErr == nil {
+		return fmt.Errorf("both AnyProxy and legacy databases exist; resolve manually before starting")
+	}
 	for _, p := range []string{d.Root, d.Profiles(), d.Logs(), d.Backups()} {
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", p, err)
@@ -48,4 +84,3 @@ func (d Dirs) Ensure() error {
 	}
 	return nil
 }
-

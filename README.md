@@ -1,13 +1,17 @@
-# AnyProxyXa
+# AnyProxy
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/D0bby999/anyproxyxa)](https://github.com/D0bby999/anyproxyxa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**AnyProxyXa** là công cụ điều hướng lưu lượng mạng hệ thống (System-level Network Traffic Interceptor & Proxy Router) thuộc hệ sinh thái **AnyTools** (cùng với `anyprofile`, `anybrowser`, `any mobile`).
+**AnyProxy** là công cụ điều hướng lưu lượng mạng hệ thống (System-level Network Traffic Interceptor & Proxy Router) thuộc hệ sinh thái **AnyTools** (cùng với `anyprofile`, `anybrowser`, `any mobile`).
 
 Dự án được xỉa và tái thiết kế hoàn toàn bằng **Go + Wails v2 + React/TypeScript** từ [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge), bổ sung kiến trúc native driver hiện đại (macOS Network Extension & Windows WinDivert), mã hóa credential an toàn (OS Keychain / Credential Manager), cùng giao diện desktop chuẩn `framed-sheet` không phụ thuộc electron cồng kềnh.
 
 ---
+
+> **Trạng thái hiện tại:** Ứng dụng hỗ trợ proxy cục bộ SOCKS5/HTTP CONNECT tại `127.0.0.1:10800` cho các ứng dụng được cấu hình sử dụng địa chỉ này. Driver chặn lưu lượng toàn hệ thống trên macOS và Windows chưa được kết nối; không dùng ứng dụng này để đảm bảo chống rò rỉ DNS hoặc định tuyến bắt buộc toàn máy. Proxy cục bộ chỉ hỗ trợ TCP, không nhận diện tiến trình nguồn, và các rule không khớp sẽ đi trực tiếp. Listener vẫn chạy khi nút engine được tắt và chỉ dừng khi thoát ứng dụng.
+>
+> Ví dụ: `curl --proxy socks5h://127.0.0.1:10800 https://example.com`. Cần tạo rule PROXY phù hợp trong ứng dụng để chuyển tiếp qua proxy upstream; chỉ chọn proxy mặc định không tự động chuyển mọi kết nối qua nó.
 
 ## Tính năng chính
 
@@ -22,8 +26,8 @@ Dự án được xỉa và tái thiết kế hoàn toàn bằng **Go + Wails v2
    - Tự động kiểm tra proxy trước khi sử dụng qua 5 bước nghiêm ngặt:
      1. TCP Handshake & Latency.
      2. Proxy Auth & Protocol Negotiation (SOCKS5/HTTP/HTTPS).
-     3. Upstream HTTP GET (kiểm tra khả năng tải trang thực tế).
-     4. DNS Resolution qua Proxy (phát hiện DNS leak).
+     3. Upstream HTTP HEAD (kiểm tra phản hồi HTTP thực tế).
+     4. Đo độ trễ thiết lập tunnel 3 lần (không phải kiểm tra DNS leak).
      5. UDP Relay Capability (RFC 1928, kiểm tra hỗ trợ voice/game/WebRTC).
 4. **Bảo mật chuẩn AnyProfile**:
    - Toàn bộ mật khẩu proxy được lưu trực tiếp vào OS Keychain (macOS) hoặc Credential Manager (Windows) qua `internal/secrets.Vault`.
@@ -39,7 +43,7 @@ Dự án được xỉa và tái thiết kế hoàn toàn bằng **Go + Wails v2
 ## Kiến trúc thư mục
 
 ```
-anyproxyxa/
+anyproxy/
 ├── cmd/
 ├── internal/
 │   ├── cli/            # Headless CLI runner
@@ -81,39 +85,43 @@ cd frontend && npm install && npm run build && cd ..
 go test -race ./...
 
 # 3. Build binary bất đối xứng (Dual GUI/CLI binary)
-go build -o build/bin/anyproxyxa .
+go build -o build/bin/anyproxy .
 ```
 
 ---
+
+## Dữ liệu từ phiên bản cũ
+
+Bản mới dùng thư mục dữ liệu `AnyProxy`. Nếu chỉ có thư mục `AnyProxyXa` cũ, ứng dụng tiếp tục dùng dữ liệu đó mà không tự di chuyển trong khi ứng dụng cũ có thể đang chạy. Để đổi tên thư mục, thoát cả hai bản, sao lưu rồi đổi tên thư mục cũ thành `AnyProxy`. Tên database và định danh vault cũ được giữ nội bộ để đọc dữ liệu và mật khẩu hiện có. Nếu cả hai thư mục cùng tồn tại, ứng dụng dừng để tránh chọn nhầm. Biến `ANYPROXY_DATA_DIR` tiếp tục được hỗ trợ.
 
 ## Hướng dẫn sử dụng CLI
 
 ```bash
 # Xem trợ giúp
-./build/bin/anyproxyxa --help
+./build/bin/anyproxy --help
 
 # Liệt kê các profile hiện có
-./build/bin/anyproxyxa --list-profiles
+./build/bin/anyproxy --list-profiles
 
 # Chạy headless với một profile đã lưu
-./build/bin/anyproxyxa --profile "BurpSuite Intercept" --verbose 2
+./build/bin/anyproxy --profile "BurpSuite Intercept" --verbose 2
 
 # Chạy headless trực tiếp từ file .pbprofile ngoài
-./build/bin/anyproxyxa -p /path/to/custom.pbprofile
+./build/bin/anyproxy -p /path/to/custom.pbprofile
 
 # Kiểm tra độ trễ và tính toàn vẹn của một proxy
-./build/bin/anyproxyxa --test-proxy "proxy-uuid-hoac-ten"
+./build/bin/anyproxy --test-proxy "proxy-uuid-hoac-ten"
 ```
 
 ---
 
 ## Tích hợp cùng AnyProfile / AnyTools
 
-AnyProxyXa kết hợp hoàn hảo với hệ thống trình duyệt ẩn danh và anti-detect profile của **AnyProfile**:
+AnyProxy kết hợp hoàn hảo với hệ thống trình duyệt ẩn danh và anti-detect profile của **AnyProfile**:
 
 - **Định tuyến độc lập từng Profile**: Định tuyến luồng mạng của từng tiến trình Chromium / Firefox riêng lẻ đi qua các proxy chain khác nhau mà không cần cấu hình extension proxy trên browser.
 - **Pentest Bridge**: Chuyển tiếp toàn bộ traffic từ các app không hỗ trợ proxy (như game client, desktop app, terminal tool) đi xuyên qua Burp Suite hoặc Caido qua luật `Action: PROXY -> 127.0.0.1:8080`.
-- **Chống rò rỉ DNS**: Toàn bộ yêu cầu DNS được DNS cache xử lý và chuyển tiếp qua upstream SOCKS5 an toàn.
+- **DNS**: Chưa có bảo đảm chống rò rỉ DNS toàn hệ thống; cấu hình ứng dụng khách và proxy phù hợp, rồi tự kiểm tra trước khi sử dụng.
 
 ---
 

@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>NSSystemExtensionUsageDescription</key>
-	<string>AnyProxyXa needs to install a system extension to intercept and route network traffic per application.</string>
+	<string>AnyProxy needs to install a system extension to intercept and route network traffic per application.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AnyProxyXa routes traffic through proxy servers on your local network.</string>
+	<string>AnyProxy routes traffic through proxy servers on your local network.</string>
 	<key>NetworkExtension</key>
 	<dict>
 		<key>NEProviderClasses</key>

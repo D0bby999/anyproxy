@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 WAILS   ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
-APP     := build/bin/AnyProxyXa.app
+APP     := build/bin/AnyProxy.app
 VERSION ?= $(shell sed -n 's/.*"productVersion": *"\([^"]*\)".*/\1/p' wails.json)
 LDFLAGS := -X main.Version=$(VERSION)
 SIGN_ID ?= $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q '"AnyProfile Dev"' && echo 'AnyProfile Dev' || echo -)

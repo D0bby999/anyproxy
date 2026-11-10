@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
-	"github.com/D0bby999/anyproxyxa/internal/rules"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/rules"
 )
 
 const (

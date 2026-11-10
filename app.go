@@ -8,10 +8,10 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/D0bby999/anyproxyxa/internal/paths"
-	"github.com/D0bby999/anyproxyxa/internal/secrets"
-	"github.com/D0bby999/anyproxyxa/internal/service"
-	"github.com/D0bby999/anyproxyxa/internal/store"
+	"github.com/D0bby999/anyproxy/internal/paths"
+	"github.com/D0bby999/anyproxy/internal/secrets"
+	"github.com/D0bby999/anyproxy/internal/service"
+	"github.com/D0bby999/anyproxy/internal/store"
 )
 
 // App is the Wails application host bound to the frontend.

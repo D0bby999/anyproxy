@@ -2,7 +2,7 @@
 
 // Package inbound implements a local dual-protocol (SOCKS5 and HTTP CONNECT)
 // forward proxy server, allowing AnyProfile, browsers, curl, and CLI tools
-// to route traffic through AnyProxyXa's rule engine without requiring OS-level
+// to route traffic through AnyProxy's rule engine without requiring OS-level
 // driver interception (NetworkExtension or WinDivert).
 package inbound
 
@@ -20,12 +20,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/D0bby999/anyproxyxa/internal/dnsmap"
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/netproxy"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
-	"github.com/D0bby999/anyproxyxa/internal/rules"
-	"github.com/D0bby999/anyproxyxa/internal/secrets"
+	"github.com/D0bby999/anyproxy/internal/dnsmap"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/netproxy"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/rules"
+	"github.com/D0bby999/anyproxy/internal/secrets"
 )
 
 // DefaultListenAddr is the default local forward proxy endpoint.
@@ -329,7 +329,7 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 
 		decision, targetProxy := s.evaluateTarget(destHost, destPort)
 		if decision.Action == pbprofile.ActionBlock {
-			_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nBlocked by AnyProxyXa rules\r\n"))
+			_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nBlocked by AnyProxy rules\r\n"))
 			s.recordLog(client, destHost, destPort, "block", "", 0, 0)
 			return
 		}
@@ -366,7 +366,7 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 		s.relayTraffic(wrappedClient, upstream, client, destHost, destPort, string(decision.Action), proxyName)
 	} else {
 		// Plain HTTP request: reject or close with guidance to use HTTPS or SOCKS5
-		_, _ = client.Write([]byte("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nAnyProxyXa local listener supports HTTPS CONNECT and SOCKS5\r\n"))
+		_, _ = client.Write([]byte("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nAnyProxy local listener supports HTTPS CONNECT and SOCKS5\r\n"))
 	}
 }
 
@@ -409,7 +409,8 @@ func (s *Server) evaluateTarget(host string, port uint16) (rules.Decision, *pbpr
 			cp := p
 			px = &cp
 		} else {
-			dec.Action = pbprofile.ActionDirect
+			// A missing proxy must never silently send traffic directly.
+			dec.Action = pbprofile.ActionBlock
 		}
 	}
 
@@ -419,7 +420,7 @@ func (s *Server) evaluateTarget(host string, port uint16) (rules.Decision, *pbpr
 func (s *Server) buildUpstream(cfg pbprofile.ProxyConfig) netproxy.Upstream {
 	password := cfg.Password
 	if s.vault != nil {
-		if pw, err := s.vault.Get("anyproxyxa.proxy", cfg.ID); err == nil && len(pw) > 0 {
+		if pw, err := s.vault.Get(secrets.ServiceProxy, cfg.ID); err == nil && len(pw) > 0 {
 			password = string(pw)
 		}
 	}
@@ -513,4 +514,3 @@ func wrapWithReader(conn net.Conn, r *bufio.Reader) net.Conn {
 		r:    r,
 	}
 }
-

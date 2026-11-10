@@ -5,8 +5,8 @@ package driver
 import (
 	"runtime"
 
-	"github.com/D0bby999/anyproxyxa/internal/dnsmap"
-	"github.com/D0bby999/anyproxyxa/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/dnsmap"
+	"github.com/D0bby999/anyproxy/internal/flows"
 )
 
 // NewPlatformDriver returns the default platform Driver (macOS NetworkExtension driver
@@ -16,9 +16,8 @@ func NewPlatformDriver(dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.Lo
 	case "darwin":
 		return NewDarwinDriver(nil, dns, tracker, logs)
 	case "windows":
-		return NewMockDriver("windows-windivert", dns, tracker, logs)
+		return NewMockDriver("windows-mock", dns, tracker, logs)
 	default:
 		return NewMockDriver("loopback-dev", dns, tracker, logs)
 	}
 }
-

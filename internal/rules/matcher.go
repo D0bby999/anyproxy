@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 )
 
 // FlowProcess holds pre-lowercased process identity strings for a flow.

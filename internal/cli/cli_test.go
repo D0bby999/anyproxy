@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/D0bby999/anyproxyxa/internal/driver"
-	"github.com/D0bby999/anyproxyxa/internal/secrets"
-	"github.com/D0bby999/anyproxyxa/internal/service"
-	"github.com/D0bby999/anyproxyxa/internal/store"
+	"github.com/D0bby999/anyproxy/internal/driver"
+	"github.com/D0bby999/anyproxy/internal/secrets"
+	"github.com/D0bby999/anyproxy/internal/service"
+	"github.com/D0bby999/anyproxy/internal/store"
 )
 
 func TestCLIListProfilesAndStdinProfile(t *testing.T) {
@@ -54,7 +54,7 @@ func TestCLIListProfilesAndStdinProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run --profile -: %v", err)
 	}
-	if !strings.Contains(out.String(), `AnyProxyXa active with profile "CLI-Stdin"`) {
+	if !strings.Contains(out.String(), `AnyProxy active with profile "CLI-Stdin"`) {
 		t.Fatalf("expected active banner in CLI output, got:\n%s", out.String())
 	}
 }

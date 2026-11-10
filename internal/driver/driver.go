@@ -8,8 +8,8 @@ package driver
 import (
 	"context"
 
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 )
 
 // EngineState represents the operational state of the interception backend.

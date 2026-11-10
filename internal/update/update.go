@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Package update checks for new AnyProxyXa releases against an update manifest
+// Package update checks for new AnyProxy releases against an update manifest
 // or GitHub Releases, comparing versions and providing release metadata.
 package update
 
@@ -73,7 +73,7 @@ func CheckForUpdates(ctx context.Context, customURL string) (ReleaseInfo, error)
 			Error:          err.Error(),
 		}, err
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("AnyProxyXa/%s (%s; %s)", Current, runtime.GOOS, runtime.GOARCH))
+	req.Header.Set("User-Agent", fmt.Sprintf("AnyProxy/%s (%s; %s)", Current, runtime.GOOS, runtime.GOARCH))
 
 	client := &http.Client{Timeout: 12 * time.Second}
 	resp, err := client.Do(req)

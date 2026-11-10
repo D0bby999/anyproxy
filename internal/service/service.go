@@ -14,15 +14,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/D0bby999/anyproxyxa/internal/dnsmap"
-	"github.com/D0bby999/anyproxyxa/internal/driver"
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/inbound"
-	"github.com/D0bby999/anyproxyxa/internal/netproxy"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
-	"github.com/D0bby999/anyproxyxa/internal/rules"
-	"github.com/D0bby999/anyproxyxa/internal/secrets"
-	"github.com/D0bby999/anyproxyxa/internal/store"
+	"github.com/D0bby999/anyproxy/internal/dnsmap"
+	"github.com/D0bby999/anyproxy/internal/driver"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/inbound"
+	"github.com/D0bby999/anyproxy/internal/netproxy"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/rules"
+	"github.com/D0bby999/anyproxy/internal/secrets"
+	"github.com/D0bby999/anyproxy/internal/store"
 )
 
 func validateProfileName(name string) error {
@@ -45,15 +45,16 @@ type ProfileListSummary struct {
 
 // Service is the central application controller shared by the Wails GUI and headless CLI.
 type Service struct {
-	mu      sync.Mutex
-	store   *store.Store
-	vault   secrets.Store
-	dns     *dnsmap.Store
-	tracker *flows.Tracker
-	logs    *flows.LogManager
-	drv     driver.Driver
-	inbound *inbound.Server
-	onEvent func(topic string, payload any)
+	mu         sync.Mutex
+	store      *store.Store
+	vault      secrets.Store
+	dns        *dnsmap.Store
+	tracker    *flows.Tracker
+	logs       *flows.LogManager
+	drv        driver.Driver
+	inbound    *inbound.Server
+	inboundErr error
+	onEvent    func(topic string, payload any)
 }
 
 // New creates a Service backed by store, vault, and driver. If drv is nil, NewPlatformDriver is used.
@@ -72,16 +73,20 @@ func New(st *store.Store, vault secrets.Store, drv driver.Driver) *Service {
 		Tracker:    tracker,
 		Logs:       logs,
 	})
-	_ = inboundSrv.Start()
+	inboundErr := inboundSrv.Start()
+	if inboundErr != nil {
+		logs.LogActivity("ERROR", inboundErr.Error())
+	}
 
 	s := &Service{
-		store:   st,
-		vault:   vault,
-		dns:     dns,
-		tracker: tracker,
-		logs:    logs,
-		drv:     drv,
-		inbound: inboundSrv,
+		store:      st,
+		vault:      vault,
+		dns:        dns,
+		tracker:    tracker,
+		logs:       logs,
+		drv:        drv,
+		inbound:    inboundSrv,
+		inboundErr: inboundErr,
 	}
 	_ = s.syncActiveProfileToDriver()
 	return s
@@ -195,6 +200,15 @@ func (s *Service) DuplicateProfile(srcName, newName string) (pbprofile.Profile, 
 	if err := validateProfileName(newName); err != nil {
 		return pbprofile.Profile{}, err
 	}
+	names, _, err := s.store.ListProfileNames()
+	if err != nil {
+		return pbprofile.Profile{}, err
+	}
+	for _, name := range names {
+		if name == newName {
+			return pbprofile.Profile{}, fmt.Errorf("profile %q already exists", newName)
+		}
+	}
 	src, err := s.store.GetProfileByName(srcName)
 	if err != nil {
 		return pbprofile.Profile{}, err
@@ -203,9 +217,6 @@ func (s *Service) DuplicateProfile(srcName, newName string) (pbprofile.Profile, 
 
 	src.ID = uuid.NewString()
 	src.Name = newName
-	for i := range src.Proxies {
-		src.Proxies[i].ID = uuid.NewString()
-	}
 	saved, err := s.store.SaveProfile(src, true)
 	if err != nil {
 		return pbprofile.Profile{}, err
@@ -307,6 +318,7 @@ func (s *Service) ExportProfileJSON(name string, includePasswords bool) ([]byte,
 
 // SaveProxy adds or updates a ProxyConfig in the active profile.
 func (s *Service) SaveProxy(px pbprofile.ProxyConfig) (pbprofile.Profile, error) {
+	px.Type = pbprofile.ProxyType(strings.ToUpper(string(px.Type)))
 	p, err := s.store.ActiveProfile()
 	if err != nil {
 		return pbprofile.Profile{}, err
@@ -314,8 +326,19 @@ func (s *Service) SaveProxy(px pbprofile.ProxyConfig) (pbprofile.Profile, error)
 
 	rawPassword := px.Password
 	px.Password = ""
+	isNew := px.ID == ""
+	if rawPassword != "" && rawPassword != "••••••••" {
+		if s.vault == nil {
+			return pbprofile.Profile{}, errors.New("cannot save proxy password: vault unavailable")
+		}
+		check := pbprofile.DefaultProfile("validation")
+		check.Proxies = []pbprofile.ProxyConfig{{ID: "validation", Type: px.Type, Host: px.Host, Port: px.Port, Username: px.Username, Password: rawPassword}}
+		if err := pbprofile.ValidateProfile(&check); err != nil {
+			return pbprofile.Profile{}, err
+		}
+	}
 
-	if px.ID == "" {
+	if isNew {
 		px.ID = uuid.NewString()
 		p.Proxies = append(p.Proxies, px)
 	} else {
@@ -339,22 +362,34 @@ func (s *Service) SaveProxy(px pbprofile.ProxyConfig) (pbprofile.Profile, error)
 		p.DefaultProxyID = p.Proxies[0].ID
 	}
 
+	if isNew && rawPassword != "" && rawPassword != "••••••••" {
+		if err := s.vault.Set(secrets.ServiceProxy, px.ID, []byte(rawPassword)); err != nil {
+			return pbprofile.Profile{}, fmt.Errorf("cannot save proxy password: %w", err)
+		}
+	}
 	saved, err := s.store.SaveProfile(p, true)
 	if err != nil {
+		if isNew && rawPassword != "" && rawPassword != "••••••••" {
+			_ = s.vault.Delete(secrets.ServiceProxy, px.ID)
+		}
 		return pbprofile.Profile{}, err
 	}
 
-	if s.vault != nil {
+	var secretErr error
+	if s.vault != nil && !isNew {
 		if rawPassword != "" && rawPassword != "••••••••" {
-			_ = s.vault.Set(secrets.ServiceProxy, px.ID, []byte(rawPassword))
+			secretErr = s.vault.Set(secrets.ServiceProxy, px.ID, []byte(rawPassword))
 		} else if px.Username == "" && rawPassword == "" {
-			_ = s.vault.Delete(secrets.ServiceProxy, px.ID)
+			secretErr = s.vault.Delete(secrets.ServiceProxy, px.ID)
 		}
 	}
 
 	_ = s.syncActiveProfileToDriver()
 	s.fillProxyPasswordIndicators(&saved)
 	s.emit("profile:changed", saved)
+	if secretErr != nil {
+		return saved, fmt.Errorf("proxy saved, but credentials could not be updated: %w", secretErr)
+	}
 	return saved, nil
 }
 
@@ -449,6 +484,8 @@ func (s *Service) TestProxy(ctx context.Context, proxyID, targetHost string, tar
 
 // SaveRule validates and adds or updates a ProxyRule in the active profile.
 func (s *Service) SaveRule(r pbprofile.ProxyRule) (pbprofile.Profile, error) {
+	r.Protocol = pbprofile.RuleProtocol(strings.ToUpper(string(r.Protocol)))
+	r.Action = pbprofile.RuleAction(strings.ToUpper(string(r.Action)))
 	if strings.TrimSpace(r.ProcessNames) == "" {
 		r.ProcessNames = "*"
 	}
@@ -662,6 +699,9 @@ func (s *Service) ExportRulesJSON(ruleIDs []string) ([]byte, error) {
 
 // StartEngine activates the OS interception driver and syncs the active profile.
 func (s *Service) StartEngine(ctx context.Context) (driver.EngineStatus, error) {
+	if s.inboundErr != nil {
+		return s.Status(), s.inboundErr
+	}
 	if err := s.syncActiveProfileToDriver(); err != nil {
 		return s.drv.Status(), err
 	}
@@ -691,7 +731,12 @@ func (s *Service) SetEngineEnabled(enabled bool) (driver.EngineStatus, error) {
 
 // Status returns the current OS driver status.
 func (s *Service) Status() driver.EngineStatus {
-	return s.drv.Status()
+	st := s.drv.Status()
+	if s.inboundErr != nil {
+		st.State = driver.StateError
+		st.Message = s.inboundErr.Error()
+	}
+	return st
 }
 
 // UpdateOptions updates profile-level runtime options (traffic logging, DNS via proxy, log every connection, auto-clear).

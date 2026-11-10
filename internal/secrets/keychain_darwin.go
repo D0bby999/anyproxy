@@ -28,7 +28,7 @@ func (Keychain) Get(service, account string) ([]byte, error) {
 }
 
 func (Keychain) Set(service, account string, data []byte) error {
-	item := keychain.NewGenericPassword(service, account, "AnyProxyXa", data, "")
+	item := keychain.NewGenericPassword(service, account, "AnyProxy", data, "")
 	item.SetSynchronizable(keychain.SynchronizableNo)
 	item.SetAccessible(keychain.AccessibleWhenUnlockedThisDeviceOnly)
 	err := keychain.AddItem(item)

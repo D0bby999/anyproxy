@@ -1,4 +1,4 @@
-module github.com/D0bby999/anyproxyxa
+module github.com/D0bby999/anyproxy
 
 go 1.26.0
 

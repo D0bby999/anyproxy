@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// Package cli implements the headless command-line runner for AnyProxyXa,
+// Package cli implements the headless command-line runner for AnyProxy,
 // compatible with upstream ProxyBridge CLI flags (--profile, --list-profiles,
 // --verbose 0..3, --test-proxy, --version, --help).
 package cli
@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/D0bby999/anyproxyxa/internal/netproxy"
-	"github.com/D0bby999/anyproxyxa/internal/service"
-	"github.com/D0bby999/anyproxyxa/internal/update"
+	"github.com/D0bby999/anyproxy/internal/netproxy"
+	"github.com/D0bby999/anyproxy/internal/service"
+	"github.com/D0bby999/anyproxy/internal/update"
 )
 
 const Version = "1.0.0"
@@ -125,11 +125,11 @@ func Run(ctx context.Context, svc *service.Service, args []string, in io.Reader,
 		return nil
 	}
 	if opts.ShowVersion {
-		_, _ = fmt.Fprintf(out, "AnyProxyXa v%s (ProxyBridge Go/Wails Port)\n", Version)
+		_, _ = fmt.Fprintf(out, "AnyProxy v%s (ProxyBridge Go/Wails Port)\n", Version)
 		return nil
 	}
 	if opts.CheckUpdate {
-		_, _ = fmt.Fprintln(out, "Checking for AnyProxyXa updates...")
+		_, _ = fmt.Fprintln(out, "Checking for AnyProxy updates...")
 		info, err := update.CheckForUpdates(ctx, "")
 		if err != nil {
 			_, _ = fmt.Fprintf(out, "Update check failed: %v\n", err)
@@ -201,7 +201,7 @@ func Run(ctx context.Context, svc *service.Service, args []string, in io.Reader,
 	}()
 
 	if opts.Verbose > 0 {
-		_, _ = fmt.Fprintf(out, "AnyProxyXa active with profile %q (%d proxies, %d rules). Press Ctrl+C to stop.\n",
+		_, _ = fmt.Fprintf(out, "AnyProxy active with profile %q (%d proxies, %d rules). Press Ctrl+C to stop.\n",
 			prof.Name, len(prof.Proxies), len(prof.Rules))
 	}
 
@@ -275,10 +275,10 @@ func loadProfileSpec(svc *service.Service, spec string, in io.Reader) error {
 }
 
 func printUsage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, `Usage: anyproxyxa [options]
+	_, _ = fmt.Fprintln(w, `Usage: anyproxy [options]
 
-When launched without flags, AnyProxyXa opens the desktop GUI.
-When launched with any flag below, AnyProxyXa runs in headless CLI mode:
+When launched without flags, AnyProxy opens the desktop GUI.
+When launched with any flag below, AnyProxy runs in headless CLI mode:
 
   -p, --profile <name|path|->   Load saved profile name, .pbprofile file, or '-' (stdin)
       --list-profiles           List saved profiles (* marks active) and exit

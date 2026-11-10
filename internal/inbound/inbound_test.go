@@ -12,9 +12,21 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 )
+
+func TestMissingProxyBlocksInsteadOfConnectingDirectly(t *testing.T) {
+	srv := NewServer(Config{})
+	srv.SyncProfile(nil, []pbprofile.ProxyRule{{
+		ID: "missing-proxy", Enabled: true, TargetHosts: "*", TargetPorts: "*",
+		Action: pbprofile.ActionProxy, ProxyConfigID: "missing",
+	}}, "")
+	decision, proxy := srv.evaluateTarget("example.com", 443)
+	if decision.Action != pbprofile.ActionBlock || proxy != nil {
+		t.Fatalf("missing proxy must block, got decision=%+v proxy=%+v", decision, proxy)
+	}
+}
 
 func TestInboundSOCKS5Direct(t *testing.T) {
 	// 1. Start a mock target echo server

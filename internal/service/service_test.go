@@ -4,14 +4,56 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net"
 	"path/filepath"
 	"testing"
 
-	"github.com/D0bby999/anyproxyxa/internal/driver"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
-	"github.com/D0bby999/anyproxyxa/internal/secrets"
-	"github.com/D0bby999/anyproxyxa/internal/store"
+	"github.com/D0bby999/anyproxy/internal/driver"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/secrets"
+	"github.com/D0bby999/anyproxy/internal/store"
 )
+
+type failingSecrets struct{}
+
+func (failingSecrets) Get(string, string) ([]byte, error) { return nil, secrets.ErrNotFound }
+func (failingSecrets) Set(string, string, []byte) error   { return errors.New("vault locked") }
+func (failingSecrets) Delete(string, string) error        { return nil }
+
+func TestSaveProxyDoesNotCreateRecordWhenVaultFails(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(st, failingSecrets{}, driver.NewMockDriver("test", nil, nil, nil))
+	t.Cleanup(func() { _ = svc.Close() })
+	_, err = svc.SaveProxy(pbprofile.ProxyConfig{Name: "test", Type: pbprofile.ProxyHTTP, Host: "example.com", Port: 80, Username: "user", Password: "secret"})
+	if err == nil {
+		t.Fatal("expected vault error")
+	}
+	profile, err := svc.ActiveProfile()
+	if err != nil || len(profile.Proxies) != 0 {
+		t.Fatalf("proxy saved despite vault error: count=%d err=%v", len(profile.Proxies), err)
+	}
+}
+
+func TestStartEngineReportsInboundPortConflict(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:10800")
+	if err != nil {
+		t.Skipf("port already in use: %v", err)
+	}
+	defer ln.Close()
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(st, nil, driver.NewMockDriver("test", nil, nil, nil))
+	t.Cleanup(func() { _ = svc.Close() })
+	if status, err := svc.StartEngine(context.Background()); err == nil || status.State != driver.StateError {
+		t.Fatalf("expected listener error, status=%+v err=%v", status, err)
+	}
+}
 
 func TestServiceEndToEnd(t *testing.T) {
 	dir := t.TempDir()
@@ -32,7 +74,7 @@ func TestServiceEndToEnd(t *testing.T) {
 	// Add a proxy with a password
 	prof, err := svc.SaveProxy(pbprofile.ProxyConfig{
 		Name:              "Work SOCKS",
-		Type:              pbprofile.ProxySOCKS5,
+		Type:              pbprofile.ProxyType("socks5"),
 		Host:              "127.0.0.1",
 		Port:              1080,
 		Username:          "dobby",
@@ -49,13 +91,13 @@ func TestServiceEndToEnd(t *testing.T) {
 
 	// Add two rules and reorder them
 	prof, err = svc.SaveRule(pbprofile.ProxyRule{
-		Name:          "Block Telemetry",
-		ProcessNames:  "*",
-		TargetHosts:   "*.telemetry.invalid",
-		TargetPorts:   "*",
-		Protocol:      pbprofile.ProtoBoth,
-		Action:        pbprofile.ActionBlock,
-		Enabled:       true,
+		Name:         "Block Telemetry",
+		ProcessNames: "*",
+		TargetHosts:  "*.telemetry.invalid",
+		TargetPorts:  "*",
+		Protocol:     pbprofile.ProtoBoth,
+		Action:       pbprofile.ActionBlock,
+		Enabled:      true,
 	})
 	if err != nil {
 		t.Fatalf("SaveRule 1: %v", err)
@@ -67,8 +109,8 @@ func TestServiceEndToEnd(t *testing.T) {
 		ProcessNames:  "curl",
 		TargetHosts:   "*.github.com",
 		TargetPorts:   "443",
-		Protocol:      pbprofile.ProtoTCP,
-		Action:        pbprofile.ActionProxy,
+		Protocol:      pbprofile.RuleProtocol("tcp"),
+		Action:        pbprofile.RuleAction("proxy"),
 		ProxyConfigID: proxyID,
 		Enabled:       true,
 	})
@@ -98,6 +140,15 @@ func TestServiceEndToEnd(t *testing.T) {
 	if err != nil || dup.Name != "Work Copy" || len(dup.Proxies) != 1 || len(dup.Rules) != 2 {
 		t.Fatalf("DuplicateProfile failed: %+v, err=%v", dup, err)
 	}
+	if dup.Proxies[0].ID == proxyID || dup.DefaultProxyID != dup.Proxies[0].ID || dup.Rules[0].ProxyConfigID != dup.Proxies[0].ID {
+		t.Fatalf("duplicated proxy references are invalid: %+v", dup)
+	}
+	if _, err := svc.DuplicateProfile("Default", "Work Copy"); err == nil {
+		t.Fatal("duplicate profile name should be rejected")
+	}
+	unchanged, err := st.GetProfileByName("Work Copy")
+	if err != nil || unchanged.Proxies[0].ID != dup.Proxies[0].ID {
+		t.Fatalf("existing profile was changed: %+v, err=%v", unchanged, err)
+	}
 	_ = exported
 }
-

@@ -13,14 +13,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/D0bby999/anyproxyxa/internal/dnsmap"
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/dnsmap"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 )
 
 const (
-	MacAppBundleID       = "dev.anyprofile.anyproxyxa"
-	MacExtensionBundleID = "dev.anyprofile.anyproxyxa.extension"
+	MacAppBundleID       = "dev.anyprofile.anyproxy"
+	MacExtensionBundleID = "dev.anyprofile.anyproxy.extension"
 )
 
 // ProviderMessageSender sends a serialized JSON message to the macOS NetworkExtension
@@ -318,7 +318,7 @@ func NewDarwinDriver(sender ProviderMessageSender, dns *dnsmap.Store, tracker *f
 	}
 	fb := NewMockDriver(backend, dns, tracker, logs)
 	if !extInstalled && runtime.GOOS == "darwin" {
-		fb.SetMessage("Running in dev/loopback mode (install signed AnyProxyXa.app to /Applications for System Extension kernel capture)")
+		fb.SetMessage("Running in dev/loopback mode (install signed AnyProxy.app to /Applications for System Extension kernel capture)")
 	}
 	return &DarwinDriver{
 		sender:       sender,
@@ -332,7 +332,7 @@ func detectMacSystemExtensionBundle() bool {
 	if err != nil {
 		return false
 	}
-	// .../AnyProxyXa.app/Contents/MacOS/AnyProxyXa -> .../AnyProxyXa.app/Contents/Library/SystemExtensions/dev.anyprofile.anyproxyxa.extension.systemextension
+	// .../AnyProxy.app/Contents/MacOS/AnyProxy -> .../AnyProxy.app/Contents/Library/SystemExtensions/dev.anyprofile.anyproxy.extension.systemextension
 	contentsDir := filepath.Dir(filepath.Dir(exe))
 	sysExtPath := filepath.Join(contentsDir, "Library", "SystemExtensions", MacExtensionBundleID+".systemextension")
 	if st, err := os.Stat(sysExtPath); err == nil && st.IsDir() {

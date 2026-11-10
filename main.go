@@ -17,11 +17,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
-	"github.com/D0bby999/anyproxyxa/internal/cli"
-	"github.com/D0bby999/anyproxyxa/internal/paths"
-	"github.com/D0bby999/anyproxyxa/internal/secrets"
-	"github.com/D0bby999/anyproxyxa/internal/service"
-	"github.com/D0bby999/anyproxyxa/internal/store"
+	"github.com/D0bby999/anyproxy/internal/cli"
+	"github.com/D0bby999/anyproxy/internal/paths"
+	"github.com/D0bby999/anyproxy/internal/secrets"
+	"github.com/D0bby999/anyproxy/internal/service"
+	"github.com/D0bby999/anyproxy/internal/store"
 )
 
 //go:embed all:frontend/dist
@@ -36,7 +36,7 @@ func main() {
 
 	app := NewApp()
 	err := wails.Run(&options.App{
-		Title:     "AnyProxyXa",
+		Title:     "AnyProxy",
 		Width:     1280,
 		Height:    800,
 		MinWidth:  980,
@@ -54,7 +54,7 @@ func main() {
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			About: &mac.AboutInfo{
-				Title:   "AnyProxyXa",
+				Title:   "AnyProxy",
 				Message: "Transparent Per-Application Proxy Router for macOS & Windows\nAnyTools Ecosystem — Ported from InterceptSuite/ProxyBridge (MIT)",
 			},
 		},
@@ -72,16 +72,16 @@ func main() {
 func runCLI(args []string) int {
 	dirs, err := paths.Default()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "anyproxyxa: paths: %v\n", err)
+		fmt.Fprintf(os.Stderr, "anyproxy: paths: %v\n", err)
 		return 1
 	}
 	if err := dirs.Ensure(); err != nil {
-		fmt.Fprintf(os.Stderr, "anyproxyxa: ensure dirs: %v\n", err)
+		fmt.Fprintf(os.Stderr, "anyproxy: ensure dirs: %v\n", err)
 		return 1
 	}
 	st, err := store.Open(dirs.DB())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "anyproxyxa: open store: %v\n", err)
+		fmt.Fprintf(os.Stderr, "anyproxy: open store: %v\n", err)
 		return 1
 	}
 	vault := secrets.NewVault(dirs.Vault(), secrets.Keychain{})
@@ -91,7 +91,7 @@ func runCLI(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := cli.Run(ctx, svc, args, os.Stdin, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "anyproxyxa: %v\n", err)
+		fmt.Fprintf(os.Stderr, "anyproxy: %v\n", err)
 		return 1
 	}
 	return 0

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 )
 
 func TestStoreSaveAndSwitchProfiles(t *testing.T) {

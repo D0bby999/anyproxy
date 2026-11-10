@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/D0bby999/anyproxyxa/internal/dnsmap"
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
-	"github.com/D0bby999/anyproxyxa/internal/rules"
+	"github.com/D0bby999/anyproxy/internal/dnsmap"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/rules"
 )
 
 // MockDriver is an in-process Go interception engine used in unit tests and
@@ -125,8 +125,8 @@ func (d *MockDriver) Status() EngineStatus {
 		State:              st,
 		Enabled:            d.enabled,
 		Backend:            d.backend,
-		ExtensionInstalled: d.backend != "loopback-dev",
-		DNSProxyActive:     d.started && d.opts.DnsViaProxy,
+		ExtensionInstalled: false,
+		DNSProxyActive:     false,
 		ActiveProxies:      len(d.proxies),
 		ActiveRules:        activeRules,
 		ActiveFlows:        activeFlows,

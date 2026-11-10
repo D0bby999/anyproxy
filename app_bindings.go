@@ -7,12 +7,12 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/D0bby999/anyproxyxa/internal/driver"
-	"github.com/D0bby999/anyproxyxa/internal/flows"
-	"github.com/D0bby999/anyproxyxa/internal/netproxy"
-	"github.com/D0bby999/anyproxyxa/internal/pbprofile"
-	"github.com/D0bby999/anyproxyxa/internal/service"
-	"github.com/D0bby999/anyproxyxa/internal/update"
+	"github.com/D0bby999/anyproxy/internal/driver"
+	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/netproxy"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/service"
+	"github.com/D0bby999/anyproxy/internal/update"
 )
 
 // StartupError returns any initialization error encountered during Wails startup.

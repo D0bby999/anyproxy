@@ -929,6 +929,10 @@ class AppProxyProvider: NETransparentProxyProvider {
     }
 
     private static let selfSigningIDs: Set<String> = [
+        "dev.anyprofile.anyproxy",
+        "dev.anyprofile.anyproxy.extension",
+        "com.wails.anyproxy",
+        "com.wails.anyproxyxa",
         "dev.anyprofile.anyproxyxa",
         "dev.anyprofile.anyproxyxa.extension",
         "com.interceptsuite.ProxyBridge",

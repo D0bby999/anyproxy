@@ -135,7 +135,7 @@ func CheckProxyEx(ctx context.Context, u Upstream, targetHost string, targetPort
 	// Step 3: HTTP Request/Response Probe over Tunnel
 	t2 := time.Now()
 	_ = tunConn.SetDeadline(time.Now().Add(8 * time.Second))
-	probeReq := fmt.Sprintf("HEAD / HTTP/1.1\r\nHost: %s\r\nUser-Agent: AnyProxyXA/1.0\r\nConnection: close\r\n\r\n", targetHost)
+	probeReq := fmt.Sprintf("HEAD / HTTP/1.1\r\nHost: %s\r\nUser-Agent: AnyProxy/1.0\r\nConnection: close\r\n\r\n", targetHost)
 	_, werr := tunConn.Write([]byte(probeReq))
 	var step3 checkProbeResult
 	if werr != nil {
