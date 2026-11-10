@@ -16,6 +16,16 @@ import (
 	"github.com/D0bby999/anyproxy/internal/store"
 )
 
+func TestVersionUsesAnyProxyName(t *testing.T) {
+	var out bytes.Buffer
+	if err := Run(context.Background(), nil, []string{"--version"}, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := out.String(), "AnyProxy v"+Version+"\n"; got != want {
+		t.Fatalf("version = %q, want %q", got, want)
+	}
+}
+
 func TestCLIListProfilesAndStdinProfile(t *testing.T) {
 	if ShouldRunCLI([]string{"-psn_0_12345"}) {
 		t.Fatalf("Finder -psn argument must not trigger CLI mode")
@@ -58,4 +68,3 @@ func TestCLIListProfilesAndStdinProfile(t *testing.T) {
 		t.Fatalf("expected active banner in CLI output, got:\n%s", out.String())
 	}
 }
-

@@ -1,6 +1,5 @@
 # AnyProxy
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/D0bby999/anyproxyxa)](https://github.com/D0bby999/anyproxyxa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **AnyProxy** là công cụ điều hướng lưu lượng mạng hệ thống (System-level Network Traffic Interceptor & Proxy Router) thuộc hệ sinh thái **AnyTools** (cùng với `anyprofile`, `anybrowser`, `any mobile`).
@@ -89,6 +88,12 @@ go build -o build/bin/anyproxy .
 ```
 
 ---
+
+Logo giao diện nằm tại `frontend/src/assets/anyproxy-mark.svg`; thiết kế icon ứng dụng riêng nằm tại `build/appicon.svg`. Sau khi sửa icon, tạo lại PNG cho Wails (cần `rsvg-convert`):
+
+```bash
+rsvg-convert -w 1024 -h 1024 build/appicon.svg -o build/appicon.png
+```
 
 ## Dữ liệu từ phiên bản cũ
 

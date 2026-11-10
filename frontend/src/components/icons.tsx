@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import React from 'react'
+import anyproxyMark from '../assets/anyproxy-mark.svg'
 
 export type IconName =
   | 'power'
@@ -200,12 +201,5 @@ export function Icon({ name, className = 'icon' }: { name: IconName; className?:
 }
 
 export function LogoMark() {
-  return (
-    <svg className="mark" viewBox="0 0 24 24" width="22" height="22" fill="none">
-      <rect width="24" height="24" rx="6" fill="#3366e6" />
-      <path d="M5 16C5 12.5 8 9 12 9C16 9 19 12.5 19 16" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="12" cy="7.5" r="2" fill="#ffffff" />
-      <line x1="6" y1="18" x2="18" y2="18" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
-    </svg>
-  )
+  return <img className="mark" src={anyproxyMark} width="22" height="22" alt="" aria-hidden="true" />
 }

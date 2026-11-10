@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">AnyProxy app icon</title>
+  <desc id="desc">A chameleon with a curled tail on a blue rounded square.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.85" y2="1">
+      <stop stop-color="#4477ed"/>
+      <stop offset="0.55" stop-color="#2854cc"/>
+      <stop offset="1" stop-color="#173993"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="15"/>
+      <feOffset dy="16"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.23"/></feComponentTransfer>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="198" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="198" fill="url(#tile)"/>
+  <rect x="104" y="104" width="816" height="816" rx="194" fill="none" stroke="#fff" stroke-opacity="0.17" stroke-width="8"/>
+  <g transform="translate(100 100) scale(2.1458333333) translate(-36 -55) scale(1.18)">
+    <path d="M85 285h218" fill="none" stroke="#bcd0ff" stroke-width="16" stroke-linecap="round"/>
+    <path d="M142 222c-34-4-60 9-60 33 0 21 17 32 35 28 16-3 22-15 17-25-4-8-15-8-18-1" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round"/>
+    <path d="M161 222l-8 44-14 19m93-62 8 44 13 18" fill="none" stroke="#fff" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M124 218c0-37 24-65 63-65 19 0 35 7 48 19 8-8 14-23 21-36 4-8 14-9 19-1l12 19c14 3 24 13 24 26 0 13-9 21-23 21h-13c-10 26-35 43-72 46-44 3-79-6-79-29z" fill="#fff"/>
+    <circle cx="275" cy="168" r="11" fill="#2854cc"/>
+    <path d="M160 197c12-11 28-15 45-10" fill="none" stroke="#bcd0ff" stroke-width="10" stroke-linecap="round"/>
+  </g>
+</svg>

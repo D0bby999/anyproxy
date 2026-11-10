@@ -55,7 +55,7 @@ func main() {
 			TitleBar: mac.TitleBarHiddenInset(),
 			About: &mac.AboutInfo{
 				Title:   "AnyProxy",
-				Message: "Transparent Per-Application Proxy Router for macOS & Windows\nAnyTools Ecosystem — Ported from InterceptSuite/ProxyBridge (MIT)",
+				Message: "Per-application proxy manager for macOS & Windows\nAnyTools Ecosystem",
 			},
 		},
 		Windows: &windows.Options{

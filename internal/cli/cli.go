@@ -125,7 +125,7 @@ func Run(ctx context.Context, svc *service.Service, args []string, in io.Reader,
 		return nil
 	}
 	if opts.ShowVersion {
-		_, _ = fmt.Fprintf(out, "AnyProxy v%s (ProxyBridge Go/Wails Port)\n", Version)
+		_, _ = fmt.Fprintf(out, "AnyProxy v%s\n", Version)
 		return nil
 	}
 	if opts.CheckUpdate {
