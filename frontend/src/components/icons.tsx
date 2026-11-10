@@ -12,6 +12,7 @@ export type IconName =
   | 'more'
   | 'chevron'
   | 'search'
+  | 'cart'
   | 'trash'
   | 'filter'
   | 'refresh'
@@ -20,6 +21,7 @@ export type IconName =
   | 'arrow-up'
   | 'arrow-down'
   | 'copy'
+  | 'pencil'
   | 'upload'
   | 'download'
   | 'close'
@@ -103,6 +105,13 @@ export function Icon({ name, className = 'icon' }: { name: IconName; className?:
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
       )
+    case 'cart':
+      return (
+        <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h2l2.4 10.2a2 2 0 0 0 2 1.6h8.9a2 2 0 0 0 1.9-1.4L22 7H6" />
+          <circle cx="10" cy="20" r="1" /><circle cx="18" cy="20" r="1" />
+        </svg>
+      )
     case 'trash':
       return (
         <svg className={className} viewBox="0 0 24 24">
@@ -156,6 +165,12 @@ export function Icon({ name, className = 'icon' }: { name: IconName; className?:
         <svg className={className} viewBox="0 0 24 24">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )
+    case 'pencil':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
         </svg>
       )
     case 'upload':

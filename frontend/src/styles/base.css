@@ -152,6 +152,8 @@ input, textarea { caret-color: var(--accent); }
   box-shadow: var(--sh-field);
   outline: none;
 }
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder { color: var(--faint); opacity: 1; }
 .input:focus, .select:focus, select:focus, textarea:focus {
   border-color: var(--accent);
 }

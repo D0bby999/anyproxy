@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
-import { t } from '../i18n'
+import { getLanguage, t } from '../i18n'
 import type { ActivityLogEntry } from '../types'
 
 export function ActivityPage({
@@ -23,7 +23,7 @@ export function ActivityPage({
     <>
       <PageHead
         title={t.nav.activity}
-        sub="Nhật ký hoạt động của Driver Engine, sự kiện hệ thống và theo dõi kết nối."
+        sub={t.activity.sub}
       >
         <div className="row nodrag" style={{ gap: 8 }}>
           <input
@@ -46,23 +46,23 @@ export function ActivityPage({
             {filtered.length === 0 ? (
               <EmptyState
                 icon="list"
-                title="Chưa có nhật ký hoạt động nào"
-                text="Các thông báo trạng thái của trình điều khiển mạng sẽ được ghi nhận tại đây."
+                title={t.activity.empty}
+                text={t.activity.emptyText}
               />
             ) : (
               <table className="table activity">
                 <thead>
                   <tr>
-                    <th className="col-time">Thời gian</th>
-                    <th className="col-level">Mức độ</th>
-                    <th className="col-msg">Nội dung thông điệp</th>
+                    <th className="col-time">{t.connections.time}</th>
+                    <th className="col-level">{t.activity.level}</th>
+                    <th className="col-msg">{t.activity.message}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((l) => (
                     <tr key={l.id}>
                       <td className="muted mono col-time">
-                        {new Date(l.timestamp).toLocaleTimeString()}
+                        {new Date(l.timestamp).toLocaleTimeString(getLanguage() === 'vi' ? 'vi-VN' : 'en-US')}
                       </td>
                       <td className="col-level">
                         <span

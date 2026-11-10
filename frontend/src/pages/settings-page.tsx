@@ -34,27 +34,27 @@ export function SettingsPage({
 
   return (
     <>
-      <PageHead title={t.settings.title} sub="Application preferences and global options." />
+      <PageHead title={t.settings.title} sub={t.settings.sub} />
 
       <div className="pagebody" style={{ maxWidth: 760 }}>
         <div className="card pad">
           <h3>{t.settings.appearance}</h3>
           <div className="row" style={{ gap: 24, marginTop: 8 }}>
             <div className="field" style={{ flex: 1 }}>
-              <label>Theme</label>
+              <label>{t.settings.theme}</label>
               <select
                 className="select"
                 defaultValue={currentTheme}
                 onChange={(e) => handleThemeChange(e.target.value as ThemeChoice)}
               >
-                <option value="system">System Default</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
+                <option value="system">{t.settings.system}</option>
+                <option value="light">{t.settings.light}</option>
+                <option value="dark">{t.settings.dark}</option>
               </select>
             </div>
 
             <div className="field" style={{ flex: 1 }}>
-              <label>Language</label>
+              <label>{t.settings.language}</label>
               <select
                 className="select"
                 defaultValue={currentLang}
@@ -84,7 +84,7 @@ export function SettingsPage({
                     )
                   }
                 />
-                <span>Enable network traffic logging</span>
+                <span>{t.settings.trafficLogging}</span>
               </label>
 
               <label className="row" style={{ cursor: 'pointer' }}>
@@ -100,7 +100,7 @@ export function SettingsPage({
                     )
                   }
                 />
-                <span>Forward DNS requests via selected proxy</span>
+                <span>{t.settings.dnsViaProxy}</span>
               </label>
 
               <label className="row" style={{ cursor: 'pointer' }}>
@@ -116,7 +116,7 @@ export function SettingsPage({
                     )
                   }
                 />
-                <span>Log every connection without deduplication</span>
+                <span>{t.settings.logEvery}</span>
               </label>
             </div>
           </div>
@@ -125,11 +125,11 @@ export function SettingsPage({
         <div className="card pad">
           <h3>{t.settings.version}</h3>
           <p className="muted" style={{ margin: 0, fontSize: 'var(--t-sm)' }}>
-            AnyProxyXa v1.0.0 (Port of InterceptSuite/ProxyBridge to Go + Wails).
+            AnyProxy v1.0.0
           </p>
           <div style={{ marginTop: 8 }}>
             <button className="btn sm" onClick={onCheckUpdates}>
-              Check for Updates
+              {t.settings.checkUpdates}
             </button>
           </div>
         </div>

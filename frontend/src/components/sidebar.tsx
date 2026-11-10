@@ -158,6 +158,12 @@ export function Sidebar({
           <span className={`state ${isRunning ? 'ok' : 'warn'}`} />
           <span>{engine?.backend || 'System Driver'}</span>
         </div>
+        {engine && !engine.extensionInstalled && (
+          <p className="engine-notice" role="status">{t.engine.localNotice}</p>
+        )}
+        {engine?.state === 'error' && engine.message && (
+          <p className="engine-notice" role="alert">{engine.message}</p>
+        )}
       </div>
     </aside>
   )

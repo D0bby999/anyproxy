@@ -25,8 +25,10 @@ export function RulesPage({
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyRule | null>(null)
+  const [error, setError] = useState('')
 
   const handleOpenAdd = () => {
+    setError('')
     setEditing({
       id: '',
       name: '',
@@ -41,15 +43,20 @@ export function RulesPage({
   }
 
   const handleEdit = (r: ProxyRule) => {
-    setEditing({ ...r })
+    setError('')
+    setEditing({ ...r, action: r.action.toLowerCase() as ProxyRule['action'], protocol: r.protocol.toLowerCase() as ProxyRule['protocol'] })
     setShowModal(true)
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editing) return
-    await onSaveRule(editing)
-    setShowModal(false)
+    try {
+      await onSaveRule(editing)
+      setShowModal(false)
+    } catch (err) {
+      setError(String(err))
+    }
   }
 
   return (
@@ -67,8 +74,8 @@ export function RulesPage({
             {rules.length === 0 ? (
               <EmptyState
                 icon="rules"
-                title="Chưa có quy tắc định tuyến nào"
-                text="Các kết nối sẽ tự động đi theo cấu hình Proxy Mặc định."
+                title={t.rules.emptyTitle}
+                text={t.rules.emptyText}
               >
                 <button className="btn primary" onClick={handleOpenAdd}>
                   <Icon name="plus" />
@@ -92,15 +99,16 @@ export function RulesPage({
                 <tbody>
                   {rules.map((r, idx) => {
                     const matchedProxy = proxies.find((p) => p.id === r.proxyConfigId)
+                    const action = r.action.toLowerCase()
                     return (
-                      <tr key={r.id} style={{ opacity: r.enabled ? 1 : 0.55 }}>
+                      <tr key={r.id}>
                         <td className="col-no">{idx + 1}</td>
                         <td className="cellname col-name">
                           <b className="selectable" title={r.name}>
                             {r.name}
                           </b>
                           <span className="sub">
-                            {r.enabled ? 'Đang kích hoạt' : 'Đã tạm dừng'}
+                            {r.enabled ? t.rules.enabled : t.rules.disabled}
                           </span>
                         </td>
                         <td className="col-apps">
@@ -126,14 +134,14 @@ export function RulesPage({
                         <td className="col-action">
                           <span
                             className={`chip ${
-                              r.action === 'proxy'
+                              action === 'proxy'
                                 ? 'accent'
-                                : r.action === 'block'
+                                : action === 'block'
                                 ? 'danger'
                                 : 'ok'
                             }`}
                             title={
-                              r.action === 'proxy' && matchedProxy
+                              action === 'proxy' && matchedProxy
                                 ? `Proxy: ${matchedProxy.name}`
                                 : r.action.toUpperCase()
                             }
@@ -141,7 +149,7 @@ export function RulesPage({
                             <span className="dot" />
                             <span className="chiptext">
                               {r.action.toUpperCase()}
-                              {r.action === 'proxy' && matchedProxy
+                              {action === 'proxy' && matchedProxy
                                 ? `: ${matchedProxy.name}`
                                 : ''}
                             </span>
@@ -152,9 +160,9 @@ export function RulesPage({
                             <button
                               className="btn sm"
                               onClick={() => onToggleRule(r.id, !r.enabled)}
-                              title={r.enabled ? 'Tắt quy tắc' : 'Bật quy tắc'}
+                              title={r.enabled ? t.rules.disable : t.rules.enable}
                             >
-                              {r.enabled ? 'Tắt' : 'Bật'}
+                              {r.enabled ? t.actions.disable : t.actions.enable}
                             </button>
                             <button
                               className="iconbtn sm"
@@ -188,11 +196,11 @@ export function RulesPage({
                               title={t.actions.edit}
                               aria-label={t.actions.edit}
                             >
-                              <Icon name="more" />
+                              <Icon name="pencil" />
                             </button>
                             <button
                               className="iconbtn sm"
-                              onClick={() => onDeleteRule(r.id)}
+                              onClick={() => { if (window.confirm(`${t.rules.confirmDelete}\n${r.name}`)) void onDeleteRule(r.id) }}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >
@@ -220,25 +228,27 @@ export function RulesPage({
                   type="button"
                   className="iconbtn sm"
                   onClick={() => setShowModal(false)}
+                  aria-label={t.actions.cancel}
                 >
                   <Icon name="close" />
                 </button>
               </div>
 
               <div className="dialog-body">
+                {error && <p role="alert">{error}</p>}
                 <div className="field">
                   <label>{t.rules.name}</label>
                   <input
                     className="input"
                     value={editing.name}
                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                    placeholder="VD: Bypass Local / Route Telegram qua SOCKS5"
+                    placeholder={t.rules.namePlaceholder}
                     required
                   />
                 </div>
 
                 <div className="field">
-                  <label>{t.rules.applications} (VD: curl, chrome, Telegram hoặc * cho tất cả)</label>
+                  <label>{t.rules.applications} ({t.rules.processHint})</label>
                   <input
                     className="input mono"
                     value={editing.processNames}
@@ -250,7 +260,7 @@ export function RulesPage({
 
                 <div className="row" style={{ gap: 8 }}>
                   <div className="field" style={{ flex: 2 }}>
-                    <label>{t.rules.targets} (IP, domain, CIDR hoặc *)</label>
+                    <label>{t.rules.targets} ({t.rules.targetHint})</label>
                     <input
                       className="input mono"
                       value={editing.targetHosts}
@@ -260,7 +270,7 @@ export function RulesPage({
                     />
                   </div>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>{t.rules.ports} (VD: 80,443 hoặc *)</label>
+                    <label>{t.rules.ports} ({t.rules.portHint})</label>
                     <input
                       className="input mono"
                       value={editing.targetPorts}
@@ -284,9 +294,9 @@ export function RulesPage({
                         })
                       }
                     >
-                      <option value="both">Both TCP & UDP</option>
-                      <option value="tcp">TCP only</option>
-                      <option value="udp">UDP only</option>
+                      <option value="both">{t.rules.both}</option>
+                      <option value="tcp">{t.rules.tcp}</option>
+                      <option value="udp">{t.rules.udp}</option>
                     </select>
                   </div>
 
@@ -302,16 +312,16 @@ export function RulesPage({
                         })
                       }
                     >
-                      <option value="direct">Direct (Bypass)</option>
-                      <option value="proxy">Proxy (Định tuyến)</option>
-                      <option value="block">Block (Chặn)</option>
+                      <option value="direct">{t.rules.direct}</option>
+                      <option value="proxy">{t.rules.proxy}</option>
+                      <option value="block">{t.rules.block}</option>
                     </select>
                   </div>
                 </div>
 
                 {editing.action === 'proxy' && (
                   <div className="field">
-                    <label>Máy chủ Proxy chỉ định</label>
+                    <label>{t.rules.selectProxy}</label>
                     <select
                       className="select"
                       value={editing.proxyConfigId || ''}
@@ -319,7 +329,7 @@ export function RulesPage({
                         setEditing({ ...editing, proxyConfigId: e.target.value })
                       }
                     >
-                      <option value="">Proxy Mặc định (Default)</option>
+                      <option value="">{t.rules.defaultProxy}</option>
                       {proxies.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.type} {p.host}:{p.port})

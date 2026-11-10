@@ -3,8 +3,10 @@ import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
+import { BuyProxies } from '../components/buy-proxies'
+import { parseProxy } from '../lib/parse-proxy'
 import { t } from '../i18n'
-import type { ProxyConfig } from '../types'
+import type { CheckReport, ProxyConfig } from '../types'
 
 export function ProxiesPage({
   proxies,
@@ -19,12 +21,19 @@ export function ProxiesPage({
   onSaveProxy: (px: ProxyConfig) => Promise<void>
   onDeleteProxy: (id: string) => Promise<void>
   onSetDefault: (id: string) => Promise<void>
-  onTestProxy: (px: ProxyConfig) => void
+  onTestProxy: (px: ProxyConfig) => Promise<CheckReport | undefined>
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyConfig | null>(null)
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState('')
+  const [results, setResults] = useState<Record<string, CheckReport>>({})
+  const [bulkText, setBulkText] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkMessage, setBulkMessage] = useState('')
 
   const handleOpenAdd = () => {
+    setError('')
     setEditing({
       id: '',
       name: '',
@@ -39,20 +48,49 @@ export function ProxiesPage({
   }
 
   const handleEdit = (p: ProxyConfig) => {
-    setEditing({ ...p })
+    setError('')
+    setEditing({ ...p, type: p.type.toLowerCase() as ProxyConfig['type'] })
     setShowModal(true)
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editing) return
-    await onSaveProxy(editing)
-    setShowModal(false)
+    try {
+      await onSaveProxy(editing)
+      setResults((prev) => {
+        const next = { ...prev }
+        delete next[editing.id]
+        return next
+      })
+      setShowModal(false)
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const handleBulkAdd = async () => {
+    const lines = bulkText.split(/\r?\n/).map((line) => line.trim())
+    setBulkText('')
+    setBulkMessage('')
+    setBulkBusy(true)
+    let added = 0
+    const failed: number[] = []
+    try {
+      for (const [index, line] of lines.entries()) {
+        if (!line) continue
+        const proxy = parseProxy(line)
+        if (!proxy) { failed.push(index + 1); continue }
+        try { await onSaveProxy(proxy); added++ } catch { failed.push(index + 1) }
+      }
+      setBulkMessage([added ? `${t.proxies.bulkAdded}: ${added}` : '', failed.length ? `${t.proxies.bulkFailed}: ${failed.join(', ')}` : ''].filter(Boolean).join(' · '))
+    } finally { setBulkBusy(false) }
   }
 
   return (
     <>
       <PageHead title={t.proxies.title} sub={t.proxies.sub}>
+        <BuyProxies />
         <button className="btn primary nodrag" onClick={handleOpenAdd}>
           <Icon name="plus" />
           {t.proxies.newBtn}
@@ -60,13 +98,25 @@ export function ProxiesPage({
       </PageHead>
 
       <div className="pagebody">
-        <div className="card fill">
+        <section className="card pad proxy-import">
+          <div>
+            <h2>{t.proxies.bulkTitle}</h2>
+            <p>{t.proxies.bulkDesc}</p>
+          </div>
+          <textarea className="input mono proxy-paste" rows={3} value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={t.proxies.bulkPlaceholder} aria-label={t.proxies.bulkTitle} spellCheck={false} autoComplete="off" />
+          <div className="proxy-import-foot">
+            <button type="button" className="btn primary" disabled={bulkBusy || !bulkText.trim()} onClick={handleBulkAdd} aria-busy={bulkBusy}><Icon name="plus" />{bulkBusy ? t.proxies.bulkAdding : t.proxies.bulkAdd}</button>
+            <span className="muted">{t.proxies.bulkSecret}</span>
+          </div>
+          {bulkMessage && <p className="proxy-import-result" role="status">{bulkMessage}</p>}
+        </section>
+        <div className="card fill proxy-list">
           <div className="tablewrap">
             {proxies.length === 0 ? (
               <EmptyState
                 icon="proxy"
-                title="Chưa có máy chủ Proxy nào"
-                text="Thêm proxy để bắt đầu chuyển hướng lưu lượng mạng cho các ứng dụng."
+                title={t.proxies.emptyTitle}
+                text={t.proxies.emptyText}
               >
                 <button className="btn primary" onClick={handleOpenAdd}>
                   <Icon name="plus" />
@@ -82,7 +132,7 @@ export function ProxiesPage({
                     <th className="col-server">{t.proxies.server}</th>
                     <th className="col-auth">{t.proxies.auth}</th>
                     <th className="col-latency">{t.proxies.latency}</th>
-                    <th className="col-actions" />
+                    <th className="col-actions">{t.proxies.actions}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -112,27 +162,33 @@ export function ProxiesPage({
                           {p.username ? (
                             <span className="chip accent" title={`User: ${p.username}`}>
                               <span className="dot" />
-                              <span className="chiptext">User / Pass</span>
+                              <span className="chiptext">{t.proxies.authProvided}</span>
                             </span>
                           ) : (
                             <span className="faint">—</span>
                           )}
                         </td>
                         <td className="col-latency">
-                          {p.latencyMs !== undefined ? (
-                            <span className={`chip ${p.latencyMs < 300 ? 'ok' : 'warn'}`}>
+                          {results[p.id] ? (
+                            <span className={`chip ${(results[p.id].success ?? results[p.id].ok) ? 'ok' : 'danger'}`} title={results[p.id].summary}>
                               <span className="dot" />
-                              <span className="chiptext">{p.latencyMs} ms</span>
+                              <span className="chiptext">{(results[p.id].success ?? results[p.id].ok) ? `${results[p.id].avgMs ?? results[p.id].totalDurationMs ?? 0} ms` : t.messages.testFailed}</span>
                             </span>
-                          ) : (
-                            <span className="faint">—</span>
-                          )}
+                          ) : <span className="faint">{t.proxies.unchecked}</span>}
                         </td>
                         <td className="col-actions">
                           <span className="row">
                             <button
                               className="iconbtn sm"
-                              onClick={() => onTestProxy(p)}
+                              disabled={!!checking}
+                              aria-busy={checking === p.id}
+                              onClick={async () => {
+                                setChecking(p.id)
+                                try {
+                                  const report = await onTestProxy(p)
+                                  if (report) setResults((prev) => ({ ...prev, [p.id]: report }))
+                                } finally { setChecking('') }
+                              }}
                               title={t.actions.test}
                               aria-label={t.actions.test}
                             >
@@ -147,9 +203,9 @@ export function ProxiesPage({
                                 {t.actions.setActive}
                               </button>
                             ) : (
-                              <span className="chip ok" title="Proxy mặc định">
+                              <span className="chip ok" title={t.proxies.active}>
                                 <span className="dot" />
-                                <span className="chiptext">Active</span>
+                                <span className="chiptext">{t.proxies.active}</span>
                               </span>
                             )}
                             <button
@@ -158,11 +214,11 @@ export function ProxiesPage({
                               title={t.actions.edit}
                               aria-label={t.actions.edit}
                             >
-                              <Icon name="copy" />
+                              <Icon name="pencil" />
                             </button>
                             <button
                               className="iconbtn sm"
-                              onClick={() => onDeleteProxy(p.id)}
+                              onClick={() => { if (window.confirm(`${t.proxies.confirmDelete}\n${p.name}`)) void onDeleteProxy(p.id) }}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >
@@ -190,19 +246,21 @@ export function ProxiesPage({
                   type="button"
                   className="iconbtn sm"
                   onClick={() => setShowModal(false)}
+                  aria-label={t.actions.cancel}
                 >
                   <Icon name="close" />
                 </button>
               </div>
 
               <div className="dialog-body">
+                {error && <p role="alert">{error}</p>}
                 <div className="field">
                   <label>{t.proxies.name}</label>
                   <input
                     className="input"
                     value={editing.name}
                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                    placeholder="VD: Clash Local / SOCKS5 Singapore"
+                    placeholder={t.proxies.namePlaceholder}
                     required
                   />
                 </div>
@@ -218,14 +276,12 @@ export function ProxiesPage({
                   >
                     <option value="socks5">SOCKS5</option>
                     <option value="http">HTTP</option>
-                    <option value="https">HTTPS</option>
-                    <option value="socks4">SOCKS4</option>
                   </select>
                 </div>
 
                 <div className="row" style={{ gap: 8 }}>
                   <div className="field" style={{ flex: 3 }}>
-                    <label>Host</label>
+                    <label>{t.proxies.host}</label>
                     <input
                       className="input mono"
                       value={editing.host}
@@ -235,7 +291,7 @@ export function ProxiesPage({
                     />
                   </div>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>Port</label>
+                    <label>{t.proxies.port}</label>
                     <input
                       className="input mono"
                       type="number"
@@ -250,7 +306,7 @@ export function ProxiesPage({
 
                 <div className="row" style={{ gap: 8 }}>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>Username (tùy chọn)</label>
+                    <label>{t.proxies.username}</label>
                     <input
                       className="input"
                       value={editing.username || ''}
@@ -260,7 +316,7 @@ export function ProxiesPage({
                     />
                   </div>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>Password (tùy chọn)</label>
+                    <label>{t.proxies.password}</label>
                     <input
                       className="input"
                       type="password"

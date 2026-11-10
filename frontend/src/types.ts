@@ -137,6 +137,8 @@ export interface CheckStep {
 }
 
 export interface CheckReport {
+  success?: boolean
+  avgMs?: number
   ok: boolean
   target: string
   proxyType: string

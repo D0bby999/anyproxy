@@ -3,11 +3,12 @@ import { en } from './en'
 import { vi } from './vi'
 
 export type Lang = 'en' | 'vi'
-const KEY = 'anyproxyxa.lang'
+const KEY = 'anyproxy.lang'
+const LEGACY_KEY = 'anyproxyxa.lang'
 
 export function getLanguage(): Lang {
   try {
-    const saved = localStorage.getItem(KEY)
+    const saved = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY)
     if (saved === 'vi' || saved === 'en') return saved
     if (typeof navigator !== 'undefined' && navigator.language?.startsWith('vi')) {
       return 'vi'

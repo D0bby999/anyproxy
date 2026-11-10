@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
-import { t } from '../i18n'
+import { getLanguage, t } from '../i18n'
 import { formatBytes } from '../lib/format'
 import type { Flow, ConnectionLogEntry } from '../types'
 
@@ -41,7 +41,7 @@ export function ConnectionsPage({
   return (
     <>
       <PageHead title={t.connections.title} sub={t.connections.sub}>
-        <div className="row nodrag" style={{ gap: 8 }}>
+        <div className="row nodrag connection-toolbar" style={{ gap: 8 }}>
           <div
             className="row"
             style={{
@@ -90,8 +90,8 @@ export function ConnectionsPage({
               filteredFlows.length === 0 ? (
                 <EmptyState
                   icon="plug"
-                  title="Chưa có luồng kết nối trực tiếp nào"
-                  text="Khi ProxyBridge được bật và các ứng dụng gửi gói tin mạng, các luồng kết nối sẽ hiển thị theo thời gian thực tại đây."
+                  title={t.connections.emptyLive}
+                  text={t.connections.emptyLiveText}
                 />
               ) : (
                 <table className="table flows">
@@ -141,7 +141,7 @@ export function ConnectionsPage({
                             }`}
                             title={
                               f.action === 'proxy' && f.proxyName
-                                ? `Proxy qua ${f.proxyName}`
+                                ? `Proxy: ${f.proxyName}`
                                 : f.action.toUpperCase()
                             }
                           >
@@ -153,9 +153,9 @@ export function ConnectionsPage({
                           </span>
                         </td>
                         <td className="col-traffic">
-                          <div className="traffic-stack mono" title={`Gửi: ${f.bytesOut} B, Nhận: ${f.bytesIn} B`}>
-                            <span className="tx" title="Đã gửi">↑ {formatBytes(f.bytesOut)}</span>
-                            <span className="rx" title="Đã nhận">↓ {formatBytes(f.bytesIn)}</span>
+                          <div className="traffic-stack mono" title={`${t.connections.sentTitle}: ${f.bytesOut} B, ${t.connections.receivedTitle}: ${f.bytesIn} B`}>
+                            <span className="tx" title={t.connections.sentTitle}>↑ {formatBytes(f.bytesOut)}</span>
+                            <span className="rx" title={t.connections.receivedTitle}>↓ {formatBytes(f.bytesIn)}</span>
                           </div>
                         </td>
                         <td className="col-state">
@@ -178,8 +178,8 @@ export function ConnectionsPage({
             ) : filteredLogs.length === 0 ? (
               <EmptyState
                 icon="list"
-                title="Chưa có nhật ký kết nối nào"
-                text="Lịch sử các phiên kết nối đã hoàn thành sẽ được lưu trữ và hiển thị tại đây."
+                title={t.connections.emptyHistory}
+                text={t.connections.emptyHistoryText}
               />
             ) : (
               <table className="table connection-logs">
@@ -197,7 +197,7 @@ export function ConnectionsPage({
                   {filteredLogs.map((l) => (
                     <tr key={l.id}>
                       <td className="muted mono col-time">
-                        {new Date(l.timestamp).toLocaleTimeString()}
+                        {new Date(l.timestamp).toLocaleTimeString(getLanguage() === 'vi' ? 'vi-VN' : 'en-US')}
                       </td>
                       <td className="cellname col-proc">
                         <b className="selectable" title={l.processName}>
@@ -229,24 +229,24 @@ export function ConnectionsPage({
                           }`}
                           title={
                             l.action === 'proxy' && l.proxyName
-                              ? `Proxy qua ${l.proxyName}`
+                              ? `Proxy: ${l.proxyName}`
                               : l.action.toUpperCase()
                           }
                         >
                           <span className="dot" />
                           <span className="chiptext">
                             {l.action.toUpperCase()}
-                            {l.proxyName ? ` qua ${l.proxyName}` : ''}
+                            {l.proxyName ? ` → ${l.proxyName}` : ''}
                           </span>
                         </span>
                       </td>
                       <td className="col-rule">
                         <span
                           className="chip ellipsis-text"
-                          title={l.ruleName || 'Default'}
+                          title={l.ruleName || t.connections.defaultRule}
                         >
                           <span className="chiptext">
-                            {l.ruleName || 'Default'}
+                            {l.ruleName || t.connections.defaultRule}
                           </span>
                         </span>
                       </td>

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-import { stubApp } from './preview/stub'
 import type {
   Profile,
   ProfileListSummary,
@@ -75,6 +74,7 @@ declare global {
     }
     runtime?: {
       EventsOn?: (eventName: string, callback: (...args: unknown[]) => void) => () => void
+      BrowserOpenURL?: (url: string) => void
     }
   }
 }
@@ -83,11 +83,16 @@ function getApp(): WailsApp {
   if (typeof window !== 'undefined' && window.go?.main?.App) {
     return window.go.main.App
   }
-  return stubApp as unknown as WailsApp
+  throw new Error('AnyProxy backend is unavailable. Open preview.html for the development preview.')
 }
 
 export const api = {
   getApp,
+
+  openExternal(url: string) {
+    if (window.runtime?.BrowserOpenURL) window.runtime.BrowserOpenURL(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  },
 
   subscribeEvent(topic: string, callback: (...args: unknown[]) => void): () => void {
     if (typeof window !== 'undefined' && window.runtime?.EventsOn) {

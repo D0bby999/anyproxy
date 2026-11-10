@@ -1,5 +1,5 @@
-AnyProxyXa
-Copyright (C) 2026 AnyProxyXa contributors
+AnyProxy
+Copyright (C) 2026 AnyProxy contributors
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU Affero General Public License as published by the Free
@@ -9,6 +9,10 @@ later version.
 ---
 
 Third-party attributions:
+
+AnyProfile (https://github.com/D0bby999/anyprofile)
+Provider directory adapted from frontend/src/lib/partners.ts at commit 2db8fee.
+Licensed under AGPL-3.0-or-later.
 
 ProxyBridge (https://github.com/InterceptSuite/ProxyBridge)
 Commit: cb897b017a88a142ec803c3af138b0ad75c2ae12

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 export type ThemeChoice = 'system' | 'light' | 'dark'
-const KEY = 'anyproxyxa.theme'
+const KEY = 'anyproxy.theme'
+const LEGACY_KEY = 'anyproxyxa.theme'
 
 export function readTheme(storage: Pick<Storage, 'getItem'> = localStorage): ThemeChoice {
-  const v = storage.getItem(KEY)
+  const v = storage.getItem(KEY) ?? storage.getItem(LEGACY_KEY)
   return v === 'light' || v === 'dark' || v === 'system' ? v : 'system'
 }
 

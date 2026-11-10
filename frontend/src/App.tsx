@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 import React, { useEffect, useState, useRef } from 'react'
 import { api } from './api'
+import { t } from './i18n'
+import { normalizeConnectionLog, normalizeFlow } from './lib/normalize-traffic'
 import { Sidebar, type Page } from './components/sidebar'
 import { StatusBar } from './components/status-bar'
 import { ProxiesPage } from './pages/proxies-page'
@@ -39,7 +41,7 @@ export default function App() {
 
   const app = api.getApp()
 
-  const reloadData = async () => {
+  const reloadData = async (silent = false): Promise<boolean> => {
     try {
       const p = await app.ActiveProfile()
       setProfile(p)
@@ -47,13 +49,24 @@ export default function App() {
       setProfiles(list)
       const st = await app.Status()
       setEngine(st)
+      return true
     } catch (e: any) {
-      toast(e.message || String(e), 'error')
+      const message = e.message || String(e)
+      if (silent && message.includes('service is not initialized')) return false
+      toast(message, 'error')
+      return true
     }
   }
 
   useEffect(() => {
-    reloadData()
+    let cancelled = false
+    let startupTimer: ReturnType<typeof setTimeout>
+    const waitForStartup = async () => {
+      if (!(await reloadData(true)) && !cancelled) {
+        startupTimer = setTimeout(waitForStartup, 1000)
+      }
+    }
+    void waitForStartup()
     const timer = setInterval(async () => {
       try {
         const [fl, cl, al] = await Promise.all([
@@ -61,9 +74,9 @@ export default function App() {
           app.GetConnectionLogs(100),
           app.GetActivityLogs(100),
         ])
-        setFlows(fl)
-        setConnLogs(cl)
-        setActivityLogs(al)
+        setFlows((fl ?? []).map(normalizeFlow))
+        setConnLogs((cl ?? []).map(normalizeConnectionLog))
+        setActivityLogs(al ?? [])
       } catch {}
     }, 1200)
 
@@ -75,6 +88,8 @@ export default function App() {
     })
 
     return () => {
+      cancelled = true
+      clearTimeout(startupTimer)
       clearInterval(timer)
       unsubProfile()
       unsubEngine()
@@ -86,7 +101,7 @@ export default function App() {
       const isRunning = engine?.state === 'running'
       const next = isRunning ? await app.StopEngine() : await app.StartEngine()
       setEngine(next)
-      toast(isRunning ? 'Engine stopped' : 'Engine started', 'success')
+      toast(isRunning ? t.messages.engineStopped : t.messages.engineStarted, 'success')
     } catch (e: any) {
       toast(e.message || String(e), 'error')
     }
@@ -96,7 +111,7 @@ export default function App() {
     try {
       const updated = await app.SetDefaultProxy(id)
       setProfile(updated)
-      toast('Default proxy updated', 'success')
+      toast(t.messages.defaultUpdated, 'success')
     } catch (e: any) {
       toast(e.message || String(e), 'error')
     }
@@ -116,7 +131,7 @@ export default function App() {
           setProfiles((prev) => ({ ...prev, active: name }))
         }}
         onCreateProfile={async () => {
-          const name = prompt('Enter new profile name:')
+          const name = prompt(t.messages.profilePrompt)
           if (name) {
             const p = await app.CreateProfile(name)
             setProfile(p)
@@ -163,25 +178,27 @@ export default function App() {
             onSaveProxy={async (px) => {
               const updated = await app.SaveProxy(px)
               setProfile(updated)
-              toast('Proxy saved', 'success')
+              toast(t.messages.proxySaved, 'success')
             }}
             onDeleteProxy={async (id) => {
               const updated = await app.DeleteProxy(id)
               setProfile(updated)
-              toast('Proxy deleted', 'info')
+              toast(t.messages.proxyDeleted, 'info')
             }}
             onSetDefault={handleSetDefaultProxy}
             onTestProxy={async (px) => {
-              toast(`Testing proxy ${px.name}...`, 'info')
+              toast(`${t.messages.testing} ${px.name}...`, 'info')
               try {
                 const rep = await app.TestProxy(px.id, 'httpbin.org', 80)
+                const success = rep.success ?? rep.ok
                 toast(
-                  rep.ok ? `Success! Latency: ${rep.totalDurationMs}ms` : `Test Failed: ${rep.summary}`,
-                  rep.ok ? 'success' : 'error'
+                  success ? `${t.messages.testSuccess}: ${rep.avgMs ?? rep.totalDurationMs} ms` : `${t.messages.testFailed}: ${rep.summary}`,
+                  success ? 'success' : 'error'
                 )
                 reloadData()
+                return rep
               } catch (e: any) {
-                toast(`Test error: ${e.message}`, 'error')
+                toast(`${t.messages.testError}: ${e.message || String(e)}`, 'error')
               }
             }}
           />
@@ -194,12 +211,12 @@ export default function App() {
             onSaveRule={async (r) => {
               const updated = await app.SaveRule(r)
               setProfile(updated)
-              toast('Rule saved', 'success')
+              toast(t.messages.ruleSaved, 'success')
             }}
             onDeleteRule={async (id) => {
               const updated = await app.DeleteRule(id)
               setProfile(updated)
-              toast('Rule deleted', 'info')
+              toast(t.messages.ruleDeleted, 'info')
             }}
             onToggleRule={async (id, en) => {
               const updated = await app.ToggleRule(id, en)
@@ -212,7 +229,7 @@ export default function App() {
             onCloneRule={async (id) => {
               const updated = await app.CloneRule(id)
               setProfile(updated)
-              toast('Rule cloned', 'success')
+              toast(t.messages.ruleCloned, 'success')
             }}
           />
         )}
@@ -223,15 +240,15 @@ export default function App() {
             onUpdateOptions={async (tl, dns, lgc, clr) => {
               const updated = await app.UpdateOptions(tl, dns, lgc, clr)
               setProfile(updated)
-              toast('Settings updated', 'success')
+              toast(t.messages.settingsUpdated, 'success')
             }}
             onCheckUpdates={async () => {
-              toast('Checking for updates...', 'info')
+              toast(t.messages.checkingUpdates, 'info')
               const res = await app.CheckForUpdates()
               toast(
                 res.isUpdateAvailable
-                  ? `Update available: v${res.latestVersion}`
-                  : 'You have the latest version',
+                  ? `${t.messages.updateAvailable}: v${res.latestVersion}`
+                  : t.messages.upToDate,
                 'info'
               )
             }}
