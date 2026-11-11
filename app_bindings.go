@@ -328,7 +328,7 @@ func (a *App) CheckForUpdates() (update.ReleaseInfo, error) {
 	return update.CheckForUpdates(ctx, "")
 }
 
-// SetCompactMode resizes the native window between compact widget mode (350x490) and full desktop mode (1080x680),
+// SetCompactMode resizes the native window between compact phone-sized mode (336x620) and full desktop mode (1080x680),
 // preserving and restoring the user's preferred screen coordinates for each mode.
 func (a *App) SetCompactMode(compact bool, alwaysOnTop bool) {
 	ctx := a.ctx
@@ -349,7 +349,7 @@ func (a *App) SetCompactMode(compact bool, alwaysOnTop bool) {
 			cx, cy := a.compactX, a.compactY
 			a.posMu.Unlock()
 
-			runtime.WindowSetSize(ctx, 350, 490)
+			runtime.WindowSetSize(ctx, 336, 620)
 			runtime.WindowSetPosition(ctx, cx, cy)
 			runtime.WindowSetAlwaysOnTop(ctx, alwaysOnTop)
 			runtime.WindowShow(ctx)

@@ -130,7 +130,7 @@ export function CompactView({
               title={t.engine.copyEndpoint}
             >
               <Icon name={copied ? 'check' : 'copy'} />
-              <span>{copied ? '127.0.0.1:10800 ✓' : '127.0.0.1:10800'}</span>
+              <span>127.0.0.1:10800</span>
             </button>
           </div>
           <div className="compact-metrics">
@@ -149,8 +149,9 @@ export function CompactView({
                 ))}
               </select>
             </span>
-            <span className="mono">{openFlows.length} active</span>
-            <span className="mono">{profile?.rules?.filter((r) => r.enabled).length || 0} rules</span>
+            <span className="compact-metrics-stats mono">
+              {openFlows.length} active · {profile?.rules?.filter((r) => r.enabled).length || 0} rules
+            </span>
           </div>
         </section>
 
@@ -264,12 +265,24 @@ export function CompactView({
         <section className="compact-flows">
           <div className="compact-sec-head">
             <span className="compact-sec-title">{t.engine.liveFlowsShort}</span>
-            <div className="row" style={{ gap: 6 }}>
-              <button type="button" className="btn sm" onClick={() => onExpand('rules')}>
+            <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => onExpand('rules')}
+                title={t.nav.rules}
+                aria-label={t.nav.rules}
+              >
                 <Icon name="rules" />
-                <span>{t.nav.rules}</span>
+                <span>{t.status.rules}</span>
               </button>
-              <button type="button" className="btn sm" onClick={() => onExpand('connections')}>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => onExpand('connections')}
+                title={t.nav.connections}
+                aria-label={t.nav.connections}
+              >
                 <Icon name="plug" />
                 <span>{t.nav.connections}</span>
               </button>
