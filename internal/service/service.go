@@ -337,7 +337,7 @@ func (s *Service) ExportProfileJSON(name string, includePasswords bool) ([]byte,
 
 // SaveProxy adds or updates a ProxyConfig in the active profile.
 func (s *Service) SaveProxy(px pbprofile.ProxyConfig) (pbprofile.Profile, error) {
-	px.Type = pbprofile.ProxyType(strings.ToUpper(string(px.Type)))
+	px.Type = pbprofile.ProxyType(strings.ToUpper(strings.TrimSpace(string(px.Type))))
 	p, err := s.store.ActiveProfile()
 	if err != nil {
 		return pbprofile.Profile{}, err

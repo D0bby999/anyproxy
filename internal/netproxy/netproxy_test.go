@@ -5,11 +5,13 @@ package netproxy
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -415,5 +417,125 @@ func TestHTTPConnectAndPipeByteCounters(t *testing.T) {
 	report := CheckProxyEx(ctx, up, "127.0.0.1", uint16(targetPort), nil)
 	if !report.Success || len(report.Steps) != 5 || report.Steps[4].Status != StepSkip {
 		t.Fatalf("unexpected HTTP CheckProxyEx report: %+v", report)
+	}
+}
+
+func startFakeHTTPSConnectProxy(t *testing.T, wantAuthHeader string) (string, int, *x509.CertPool) {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if wantAuthHeader != "" && r.Header.Get("Proxy-Authorization") != wantAuthHeader {
+			http.Error(w, "auth required", http.StatusProxyAuthRequired)
+			return
+		}
+		_, portStr, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			http.Error(w, "bad host", http.StatusBadRequest)
+			return
+		}
+		target, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", portStr))
+		if err != nil {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			_ = target.Close()
+			http.Error(w, "hijack unsupported", http.StatusInternalServerError)
+			return
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			_ = target.Close()
+			return
+		}
+		defer conn.Close()
+		defer target.Close()
+		if rw != nil && rw.Writer.Buffered() > 0 {
+			_ = rw.Flush()
+		}
+		_, _ = io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		Pipe(conn, target, nil, nil)
+	}))
+	// Advertise HTTP/2 on the server side to confirm NextProtos enforces HTTP/1.1 for CONNECT.
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	host, portStr, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("Atoi: %v", err)
+	}
+	return host, port, pool
+}
+
+func TestHTTPSConnectTLSAndChecker(t *testing.T) {
+	targetPort := startEchoHTTPTarget(t)
+	upRef := Upstream{Username: "tlsuser", Password: "tlspass"}
+	host, port, rootCAs := startFakeHTTPSConnectProxy(t, upRef.basicAuth())
+
+	ctx := context.Background()
+
+	// Without trusting the proxy certificate, TLS verification must reject the handshake.
+	untrusted := Upstream{
+		ID: "https-untrusted", Name: "Untrusted", Type: "HTTPS", Host: host, Port: port,
+		Username: "tlsuser", Password: "tlspass",
+	}
+	if _, err := untrusted.DialTCP(ctx, "127.0.0.1", "", uint16(targetPort)); err == nil {
+		t.Fatal("expected TLS verification error for untrusted HTTPS proxy certificate")
+	}
+
+	up := Upstream{
+		ID:                "https-1",
+		Name:              "Edge HTTPS",
+		Type:              "HTTPS",
+		Host:              host,
+		Port:              port,
+		Username:          "tlsuser",
+		Password:          "tlspass",
+		SendDomainToProxy: true,
+		tlsRootCAs:        rootCAs,
+	}
+
+	conn, err := up.DialTCP(ctx, "127.0.0.1", "example.com", uint16(targetPort))
+	if err != nil {
+		t.Fatalf("HTTPS DialTCP failed: %v", err)
+	}
+	_, _ = conn.Write([]byte("hello-https\n"))
+	reply, err := bufio.NewReader(conn).ReadString('\n')
+	_ = conn.Close()
+	if err != nil {
+		t.Fatalf("read reply: %v", err)
+	}
+	if strings.TrimSpace(reply) != "echo:hello-https" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+
+	// Wrong credentials must return ErrUpstreamAuth.
+	badAuth := up
+	badAuth.Password = "wrong"
+	if _, err := badAuth.DialTCP(ctx, "127.0.0.1", "", uint16(targetPort)); !errors.Is(err, ErrUpstreamAuth) {
+		t.Fatalf("expected ErrUpstreamAuth, got %v", err)
+	}
+
+	if _, err := up.DialUDP(ctx); !errors.Is(err, ErrUDPNotSupportedOnHTTP) {
+		t.Fatalf("expected ErrUDPNotSupportedOnHTTP for HTTPS proxy, got %v", err)
+	}
+
+	report := CheckProxyEx(ctx, up, "127.0.0.1", uint16(targetPort), nil)
+	if !report.Success || report.ProxyType != "HTTPS" || len(report.Steps) != 5 || report.Steps[4].Status != StepSkip {
+		t.Fatalf("unexpected HTTPS CheckProxyEx report: %+v", report)
+	}
+	if !strings.Contains(report.Steps[4].Message, "HTTPS") {
+		t.Fatalf("expected HTTPS in UDP skip message, got %q", report.Steps[4].Message)
 	}
 }

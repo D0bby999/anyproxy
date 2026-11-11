@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package netproxy implements SOCKS5 (TCP + UDP ASSOCIATE) and HTTP CONNECT
+// Package netproxy implements SOCKS5 (TCP + UDP ASSOCIATE) and HTTP/HTTPS CONNECT
 // upstream dialing, bidirectional stream piping with live byte counters, and
 // the 5-step diagnostic Proxy Checker.
 package netproxy
@@ -8,6 +8,8 @@ package netproxy
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -34,16 +36,17 @@ var (
 	ErrUnsupportedScheme = errors.New("unsupported proxy protocol")
 )
 
-// Upstream describes a configured SOCKS5 or HTTP proxy server.
+// Upstream describes a configured SOCKS5, HTTP, or HTTPS proxy server.
 type Upstream struct {
 	ID                string
 	Name              string
-	Type              string // "SOCKS5" | "HTTP"
+	Type              string // "SOCKS5" | "HTTP" | "HTTPS"
 	Host              string
 	Port              int
 	Username          string
 	Password          string
 	SendDomainToProxy bool
+	tlsRootCAs        *x509.CertPool
 }
 
 // Addr returns host:port formatted for net.Dial.
@@ -51,12 +54,16 @@ func (u Upstream) Addr() string {
 	return net.JoinHostPort(u.Host, strconv.Itoa(u.Port))
 }
 
-// NormalizedType returns "SOCKS5" or "HTTP".
+// NormalizedType returns "SOCKS5", "HTTP", or "HTTPS".
 func (u Upstream) NormalizedType() string {
-	if strings.EqualFold(strings.TrimSpace(u.Type), "HTTP") {
+	switch strings.ToUpper(strings.TrimSpace(u.Type)) {
+	case "HTTP":
 		return "HTTP"
+	case "HTTPS":
+		return "HTTPS"
+	default:
+		return "SOCKS5"
 	}
-	return "SOCKS5"
 }
 
 // TargetHost chooses the destination host sent to the upstream proxy based on SendDomainToProxy.
@@ -153,7 +160,9 @@ func (u Upstream) DialTCP(ctx context.Context, destIP, destDomain string, destPo
 	case "SOCKS5":
 		return u.dialSOCKS5TCP(ctx, targetHost, destPort)
 	case "HTTP":
-		return u.dialHTTPConnect(ctx, targetHost, destPort)
+		return u.dialHTTPConnect(ctx, targetHost, destPort, false)
+	case "HTTPS":
+		return u.dialHTTPConnect(ctx, targetHost, destPort, true)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedScheme, u.Type)
 	}
@@ -194,7 +203,7 @@ func (u Upstream) dialSOCKS5TCP(ctx context.Context, targetHost string, destPort
 	return &bufConn{Conn: c, r: br}, nil
 }
 
-func (u Upstream) dialHTTPConnect(ctx context.Context, targetHost string, destPort uint16) (net.Conn, error) {
+func (u Upstream) dialHTTPConnect(ctx context.Context, targetHost string, destPort uint16, useTLS bool) (net.Conn, error) {
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "tcp", u.Addr())
 	if err != nil {
@@ -202,6 +211,20 @@ func (u Upstream) dialHTTPConnect(ctx context.Context, targetHost string, destPo
 	}
 	if dl, ok := ctx.Deadline(); ok {
 		_ = c.SetDeadline(dl)
+	}
+
+	if useTLS {
+		tlsConn := tls.Client(c, &tls.Config{
+			ServerName: strings.TrimSpace(u.Host),
+			MinVersion: tls.VersionTLS12,
+			NextProtos: []string{"http/1.1"},
+			RootCAs:    u.tlsRootCAs,
+		})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			_ = tlsConn.Close()
+			return nil, fmt.Errorf("TLS handshake with %s: %w", u.Addr(), err)
+		}
+		c = tlsConn
 	}
 
 	target := net.JoinHostPort(targetHost, strconv.Itoa(int(destPort)))
@@ -237,7 +260,7 @@ func (u Upstream) dialHTTPConnect(ctx context.Context, targetHost string, destPo
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = c.Close()
-		return nil, fmt.Errorf("HTTP CONNECT %s failed: %s", target, resp.Status)
+		return nil, fmt.Errorf("%s CONNECT %s failed: %s", u.NormalizedType(), target, resp.Status)
 	}
 
 	_ = c.SetDeadline(time.Time{})

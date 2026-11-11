@@ -119,3 +119,43 @@ func TestRulesJSONRoundTrip(t *testing.T) {
 		t.Fatalf("round-trip failed: %+v, %v", rules2, err)
 	}
 }
+
+func TestHTTPSProxyRoundTripAndValidation(t *testing.T) {
+	raw := `{
+  "Version": "1.0",
+  "Name": "https-profile",
+  "DefaultProxyId": 1,
+  "ProxyConfigs": [
+    { "Id": 1, "Name": "edge-tls", "Type": "HTTPS", "Host": "proxy.example.com", "Port": 443, "Username": "u", "Password": "p", "SendDomainToProxy": true }
+  ],
+  "ProxyRules": []
+}`
+	prof, err := ParseProfile(strings.NewReader(raw))
+	if err != nil {
+		t.Fatalf("ParseProfile(HTTPS): %v", err)
+	}
+	if len(prof.Proxies) != 1 || prof.Proxies[0].Type != ProxyHTTPS {
+		t.Fatalf("expected ProxyHTTPS, got %+v", prof.Proxies)
+	}
+	b, err := MarshalProfile(prof)
+	if err != nil {
+		t.Fatalf("MarshalProfile: %v", err)
+	}
+	prof2, err := ParseProfile(bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("re-parse HTTPS profile: %v", err)
+	}
+	if len(prof2.Proxies) != 1 || prof2.Proxies[0].Type != ProxyHTTPS {
+		t.Fatalf("expected ProxyHTTPS after round-trip, got %+v", prof2.Proxies)
+	}
+
+	invalid := Profile{
+		Name: "bad",
+		Proxies: []ProxyConfig{{
+			ID: "p1", Name: "bad", Type: ProxyType("SOCKS4"), Host: "127.0.0.1", Port: 1080,
+		}},
+	}
+	if err := ValidateProfile(&invalid); err == nil {
+		t.Fatal("expected validation error for unsupported proxy type SOCKS4")
+	}
+}

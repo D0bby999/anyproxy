@@ -329,6 +329,7 @@ export function ProxiesPage({
                   >
                     <option value="socks5">SOCKS5</option>
                     <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
                   </select>
                 </div>
 

@@ -7,7 +7,7 @@ export function parseProxy(line: string): ProxyConfig | null {
   const match = /^(?:(https?|socks5):\/\/)?(?:([^\s@/]+)@)?(\[[^\]\s]+\]|[^:\s/@?#]+):(\d{1,5})(?::([^:\s]*):(.*))?\/?$/i.exec(input)
   if (!match) return null
   const [, scheme, userInfo, rawHost, rawPort, colonUser, colonPassword] = match
-  if (scheme && !['http', 'socks5'].includes(scheme.toLowerCase())) return null
+  if (scheme && !['http', 'https', 'socks5'].includes(scheme.toLowerCase())) return null
   if (userInfo && colonUser !== undefined) return null
   const port = Number(rawPort)
   if (port < 1 || port > 65535) return null

@@ -27,6 +27,7 @@ type ProxyType string
 const (
 	ProxySOCKS5 ProxyType = "SOCKS5"
 	ProxyHTTP   ProxyType = "HTTP"
+	ProxyHTTPS  ProxyType = "HTTPS"
 )
 
 type RuleProtocol string
@@ -617,8 +618,8 @@ func ValidateProfile(p *Profile) error {
 		if px.Port < 1 || px.Port > 65535 {
 			return fmt.Errorf("proxy %q has invalid port %d (must be 1..65535)", px.ID, px.Port)
 		}
-		if px.Type != ProxySOCKS5 && px.Type != ProxyHTTP {
-			return fmt.Errorf("proxy %q has invalid type %q (must be SOCKS5 or HTTP)", px.ID, px.Type)
+		if px.Type != ProxySOCKS5 && px.Type != ProxyHTTP && px.Type != ProxyHTTPS {
+			return fmt.Errorf("proxy %q has invalid type %q (must be SOCKS5, HTTP, or HTTPS)", px.ID, px.Type)
 		}
 		if px.Type == ProxySOCKS5 && (len(px.Username) > 255 || len(px.Password) > 255) {
 			return fmt.Errorf("proxy %q has SOCKS5 username or password exceeding 255 bytes", px.ID)
@@ -883,8 +884,10 @@ func normalizeProxyType(t string) ProxyType {
 	switch strings.ToUpper(strings.TrimSpace(t)) {
 	case "SOCKS5", "SOCKS5H", "SOCKS":
 		return ProxySOCKS5
-	case "HTTP", "HTTPS":
+	case "HTTP":
 		return ProxyHTTP
+	case "HTTPS":
+		return ProxyHTTPS
 	default:
 		return ProxyType(strings.ToUpper(strings.TrimSpace(t)))
 	}

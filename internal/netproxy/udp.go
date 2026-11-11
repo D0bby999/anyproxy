@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	ErrUDPNotSupportedOnHTTP = errors.New("HTTP proxies do not support raw UDP relay (SOCKS5 required)")
+	ErrUDPNotSupportedOnHTTP = errors.New("HTTP/HTTPS proxies do not support raw UDP relay (SOCKS5 required)")
 	ErrUDPFragmented         = errors.New("fragmented SOCKS5 UDP datagrams are not supported")
 	ErrUDPAssociationClosed  = errors.New("SOCKS5 UDP association is closed")
 )

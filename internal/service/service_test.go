@@ -232,3 +232,30 @@ func TestSaveRuleExcludeValidation(t *testing.T) {
 		t.Fatalf("unexpected saved exclude rule: %+v", prof.Rules)
 	}
 }
+
+func TestSaveHTTPSProxy(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "anyproxyxa.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vault := secrets.NewVault(filepath.Join(dir, "secrets.enc"), secrets.NewMemory())
+	svc := New(st, vault, driver.NewMockDriver("test", nil, nil, nil))
+	t.Cleanup(func() { _ = svc.Close() })
+
+	prof, err := svc.SaveProxy(pbprofile.ProxyConfig{
+		Name:              "TLS Edge",
+		Type:              pbprofile.ProxyType("https"),
+		Host:              "proxy.example.com",
+		Port:              443,
+		Username:          "u",
+		Password:          "p",
+		SendDomainToProxy: true,
+	})
+	if err != nil {
+		t.Fatalf("SaveProxy(https): %v", err)
+	}
+	if len(prof.Proxies) != 1 || prof.Proxies[0].Type != pbprofile.ProxyHTTPS || prof.Proxies[0].Password != "••••••••" {
+		t.Fatalf("unexpected saved HTTPS proxy: %+v", prof.Proxies)
+	}
+}

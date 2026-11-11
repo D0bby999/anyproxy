@@ -47,6 +47,36 @@ it('tests, selects, and deletes a proxy without relying on native window.confirm
   expect(onDeleteProxy).toHaveBeenCalledWith('1')
 })
 
+it('adds an https proxy via modal and bulk paste', async () => {
+  const onSaveProxy = vi.fn().mockResolvedValue(undefined)
+  render(<ProxiesPage proxies={[]} defaultProxyId="" onSaveProxy={onSaveProxy} onDeleteProxy={vi.fn()} onSetDefault={vi.fn()} onTestProxy={vi.fn()} />)
+
+  fireEvent.click(screen.getAllByRole('button', { name: t.proxies.newBtn })[0])
+  fireEvent.change(screen.getByPlaceholderText(t.proxies.namePlaceholder), { target: { value: 'Edge TLS' } })
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'https' } })
+  fireEvent.change(screen.getByPlaceholderText('127.0.0.1'), { target: { value: 'proxy.example.com' } })
+  fireEvent.change(screen.getByDisplayValue('1080'), { target: { value: '443' } })
+  fireEvent.click(screen.getByRole('button', { name: t.actions.save }))
+
+  await waitFor(() => expect(onSaveProxy).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'Edge TLS',
+    type: 'https',
+    host: 'proxy.example.com',
+    port: 443,
+  })))
+
+  const bulkInput = screen.getByRole('textbox', { name: t.proxies.bulkTitle }) as HTMLTextAreaElement
+  fireEvent.change(bulkInput, { target: { value: 'https://u:p@edge.example.com:8443' } })
+  fireEvent.click(screen.getByRole('button', { name: t.proxies.bulkAdd }))
+  await waitFor(() => expect(onSaveProxy).toHaveBeenCalledWith(expect.objectContaining({
+    type: 'https',
+    host: 'edge.example.com',
+    port: 8443,
+    username: 'u',
+    password: 'p',
+  })))
+})
+
 it('opens Buy proxies dialog with partner cards, filters by type, opens external link, and closes on Escape', () => {
   const openExternal = vi.spyOn(api, 'openExternal').mockImplementation(() => {})
   const proxy = { id: '1', name: 'Existing', type: 'http', host: 'example.com', port: 8001 } as ProxyConfig

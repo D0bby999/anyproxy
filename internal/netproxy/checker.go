@@ -54,7 +54,7 @@ type CheckReport struct {
 //  2. Proxy authentication & tunnel setup to targetHost:targetPort
 //  3. HTTP probe over tunnel (or banner check)
 //  4. 3x sequential tunnel setup latency measurement (min/avg/max ms)
-//  5. SOCKS5 UDP ASSOCIATE probe (warning if unsupported on SOCKS5; skipped on HTTP)
+//  5. SOCKS5 UDP ASSOCIATE probe (warning if unsupported on SOCKS5; skipped on HTTP/HTTPS)
 //
 // If emit is non-nil, it is called as each step completes so the UI or CLI can stream live progress.
 func CheckProxyEx(ctx context.Context, u Upstream, targetHost string, targetPort uint16, emit func(CheckStep)) CheckReport {
@@ -241,7 +241,7 @@ func CheckProxyEx(ctx context.Context, u Upstream, targetHost string, targetPort
 			Step:    5,
 			Name:    "SOCKS5 UDP Associate",
 			Status:  StepSkip,
-			Message: "Skipped for HTTP proxy (TCP only)",
+			Message: fmt.Sprintf("Skipped for %s proxy (TCP only)", u.NormalizedType()),
 		})
 	}
 
