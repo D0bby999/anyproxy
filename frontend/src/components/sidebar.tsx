@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { t } from '../i18n'
 import { Icon, LogoMark } from './icons'
+import { BuyProxies } from './buy-proxies'
 import type { CheckReport, EngineStatus, ProfileListSummary, ProxyConfig } from '../types'
 
 export type Page = 'connections' | 'activity' | 'proxies' | 'rules' | 'settings'
@@ -287,6 +288,7 @@ export function Sidebar({
       </nav>
 
       <div className="sidefoot nodrag">
+        <BuyProxies className="navitem nodrag" compact={collapsed} />
         <button
           className="navitem"
           aria-current={page === 'settings' ? 'page' : undefined}

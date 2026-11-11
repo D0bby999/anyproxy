@@ -1,44 +1,112 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { t } from '../i18n'
-import { providers, type ProviderType } from '../lib/proxy-providers'
+import { providerLogo, providers, providerTypes, type ProviderType } from '../lib/proxy-providers'
 import { Icon } from './icons'
 
-const types: ProviderType[] = ['residential', 'isp', 'mobile', 'datacenter']
-
-export function BuyProxies() {
+export function BuyProxies({ className = 'btn buy nodrag', compact = false }: { className?: string; compact?: boolean }) {
   const [open, setOpen] = useState(false)
-  const [type, setType] = useState<ProviderType | ''>('')
-  const dialog = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
-    if (open) dialog.current?.showModal()
-  }, [open])
+  return (
+    <>
+      <button
+        type="button"
+        className={className}
+        onClick={() => setOpen(true)}
+        title={t.proxies.buy}
+        aria-label={compact ? t.proxies.buy : undefined}
+      >
+        <Icon name="cart" />
+        {!compact && <span>{t.proxies.buy}</span>}
+      </button>
+      {open && <BuyProxyDialog onClose={() => setOpen(false)} />}
+    </>
+  )
+}
 
-  return <>
-    <button type="button" className="btn nodrag" onClick={() => setOpen(true)}><Icon name="cart" />{t.proxies.buy}</button>
-    {open && <dialog ref={dialog} className="provider-dialog" aria-labelledby="buy-proxies-title" onClose={() => setOpen(false)}>
-      <div className="dialog-head">
-        <h2 id="buy-proxies-title">{t.proxies.buy}</h2>
-        <button type="button" className="iconbtn sm" aria-label={t.actions.cancel} onClick={() => dialog.current?.close()}><Icon name="close" /></button>
-      </div>
-      <div className="dialog-body">
-        <p className="provider-guide">{t.proxies.buyGuide}</p>
-        <p className="provider-disclosure">{t.proxies.buyDisclosure}</p>
-        <div className="provider-filters" role="group" aria-label={t.proxies.type}>
-          {(['', ...types] as const).map((kind) => <button key={kind || 'all'} type="button" className={`btn sm ${type === kind ? 'primary' : ''}`} aria-pressed={type === kind} onClick={() => setType(kind)}>{kind ? t.proxies[kind] : t.proxies.filterAll}</button>)}
+export function BuyProxyDialog({ onClose }: { onClose: () => void }) {
+  const [type, setType] = useState<ProviderType | ''>('')
+  const ref = useRef<HTMLDivElement>(null)
+  const shown = providers.filter((p) => !type || p.types.includes(type))
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const all = document.querySelectorAll('.backdrop')
+      if (all[all.length - 1] === ref.current) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return createPortal(
+    <div className="backdrop" ref={ref} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dialog partnerdialog" role="dialog" aria-modal="true" aria-label={t.proxies.buy}>
+        <div className="dialog-head">
+          <Icon name="cart" />
+          <h2>{t.proxies.buy}</h2>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="iconbtn sm"
+            onClick={onClose}
+            aria-label={t.actions.close}
+            title={t.actions.close}
+          >
+            <Icon name="close" />
+          </button>
         </div>
-        <ul className="provider-list">
-          {providers.filter((p) => !type || p.types.includes(type)).map((p) => <li key={p.name}>
-            <button type="button" className="provider-link" onClick={() => api.openExternal(p.url)}>
-              <span className="provider-name">{p.name}</span>
-              <span className="provider-types">{p.types.map((kind) => t.proxies[kind]).join(' · ')}</span>
-              <Icon name="chevron" className="icon sm" />
-            </button>
-          </li>)}
-        </ul>
+
+        <div className="dialog-body">
+          <p className="partner-guide muted">{t.partners.guide}</p>
+          <div className="seg" role="group" aria-label={t.partners.filter}>
+            {(['', ...providerTypes] as const).map((k) => (
+              <button
+                key={k || 'all'}
+                type="button"
+                aria-pressed={type === k}
+                onClick={() => setType(k)}
+              >
+                {k ? t.partners.types[k] : t.partners.all}
+              </button>
+            ))}
+          </div>
+          <ul className="partnergrid">
+            {shown.map((p) => {
+              const logo = providerLogo(p)
+              return (
+                <li key={p.id}>
+                  <button type="button" className="partner" onClick={() => api.openExternal(p.url)}>
+                    {logo
+                      ? <img className="partner-mark" src={logo} alt="" draggable={false} />
+                      : <span className="partner-mark letter" aria-hidden="true">{p.name[0]}</span>}
+                    <span className="partner-main">
+                      <span className="partner-head">
+                        <b>{p.name}</b>
+                        <span className="partner-corner">
+                          {p.recommended && <span className="chip accent">{t.partners.recommended}</span>}
+                          <Icon name="external" className="icon sm" />
+                        </span>
+                      </span>
+                      <span className="muted">{t.partners.desc[p.id]}</span>
+                      <span className="partner-tags">
+                        {p.types.map((k) => <span key={k} className="chip">{t.partners.types[k]}</span>)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="partner-note faint">{t.partners.disclosure}</p>
+        </div>
+
+        <div className="dialog-foot">
+          <button type="button" className="btn" onClick={onClose}>{t.actions.close}</button>
+        </div>
       </div>
-      <div className="dialog-foot"><button type="button" className="btn" onClick={() => dialog.current?.close()}>{t.actions.cancel}</button></div>
-    </dialog>}
-  </>
+    </div>,
+    document.body,
+  )
 }

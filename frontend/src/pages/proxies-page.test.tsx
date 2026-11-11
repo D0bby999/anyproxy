@@ -1,6 +1,9 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { api } from '../api'
+import { t } from '../i18n'
+import { providers } from '../lib/proxy-providers'
 import { ProxiesPage } from './proxies-page'
 import type { ProxyConfig } from '../types'
 
@@ -42,4 +45,31 @@ it('tests, selects, and deletes a proxy without relying on native window.confirm
   expect(onSetDefault).toHaveBeenCalledWith('1')
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
   expect(onDeleteProxy).toHaveBeenCalledWith('1')
+})
+
+it('opens Buy proxies dialog with partner cards, filters by type, opens external link, and closes on Escape', () => {
+  const openExternal = vi.spyOn(api, 'openExternal').mockImplementation(() => {})
+  const proxy = { id: '1', name: 'Existing', type: 'http', host: 'example.com', port: 8001 } as ProxyConfig
+  render(<ProxiesPage proxies={[proxy]} defaultProxyId="" onSaveProxy={vi.fn()} onDeleteProxy={vi.fn()} onSetDefault={vi.fn()} onTestProxy={vi.fn()} />)
+
+  fireEvent.click(screen.getByRole('button', { name: t.proxies.buy }))
+  const dialog = screen.getByRole('dialog', { name: t.proxies.buy })
+  expect(within(dialog).getAllByRole('listitem').map((el) => el.querySelector('b')?.textContent))
+    .toEqual(providers.map((p) => p.name))
+  expect(within(dialog).getAllByRole('listitem')[0].textContent).toContain(t.partners.recommended)
+
+  fireEvent.click(within(within(dialog).getByRole('group', { name: t.partners.filter })).getByRole('button', { name: t.partners.types.mobile }))
+  const mobile = providers.filter((p) => p.types.includes('mobile'))
+  expect(within(dialog).getAllByRole('listitem').map((el) => el.querySelector('b')?.textContent))
+    .toEqual(mobile.map((p) => p.name))
+  expect(within(dialog).queryByText('Massive')).toBeNull()
+
+  fireEvent.click(within(dialog).getByRole('button', { name: t.partners.all }))
+  expect(within(dialog).getAllByRole('listitem')).toHaveLength(providers.length)
+
+  fireEvent.click(within(dialog).getByRole('button', { name: /Oxylabs/ }))
+  expect(openExternal).toHaveBeenCalledWith('https://oxylabs.go2cloud.org/aff_c?offer_id=7&aff_id=2794')
+
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: t.proxies.buy })).toBeNull()
 })

@@ -155,10 +155,13 @@ export function ProxiesPage({
                 title={t.proxies.emptyTitle}
                 text={t.proxies.emptyText}
               >
-                <button className="btn primary" onClick={handleOpenAdd}>
-                  <Icon name="plus" />
-                  {t.proxies.newBtn}
-                </button>
+                <div className="row">
+                  <BuyProxies className="btn buy" />
+                  <button className="btn primary" onClick={handleOpenAdd}>
+                    <Icon name="plus" />
+                    {t.proxies.newBtn}
+                  </button>
+                </div>
               </EmptyState>
             ) : (
               <table className="table proxies">

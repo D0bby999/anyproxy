@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Copy,
   Download,
+  ExternalLink,
   FolderOpen,
   GitBranch,
   Globe,
@@ -26,7 +27,7 @@ import {
   Search,
   Server,
   ShieldCheck,
-  ShoppingBag,
+  ShoppingCart,
   SlidersHorizontal,
   Trash2,
   TriangleAlert,
@@ -70,6 +71,7 @@ export type IconName =
   | 'shield'
   | 'globe'
   | 'ban'
+  | 'external'
 
 const ICON_MAP: Record<IconName, LucideIcon> = {
   power: Power,
@@ -82,7 +84,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   more: MoreHorizontal,
   chevron: ChevronRight,
   search: Search,
-  cart: ShoppingBag,
+  cart: ShoppingCart,
   trash: Trash2,
   filter: ListFilter,
   refresh: RefreshCw,
@@ -104,6 +106,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   shield: ShieldCheck,
   globe: Globe,
   ban: Ban,
+  external: ExternalLink,
 }
 
 export function Icon({ name, className = 'icon' }: { name: IconName; className?: string }) {

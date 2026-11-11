@@ -128,6 +128,18 @@ input, textarea { caret-color: var(--accent); }
   box-shadow: none;
 }
 
+.btn.buy {
+  color: var(--success-ink);
+  background: var(--success-soft);
+  border-color: var(--success-line);
+}
+.btn.buy .icon { color: currentColor; }
+.btn.buy:hover:not(:disabled) {
+  color: var(--success-ink);
+  background: var(--success-line);
+  border-color: var(--success);
+}
+
 .btn.danger {
   color: var(--danger-ink);
 }
@@ -138,6 +150,38 @@ input, textarea { caret-color: var(--accent); }
 
 .btn.sm { height: 26px; padding: 0 8px; font-size: var(--t-xs); border-radius: var(--r-sm); }
 .btn.block { width: 100%; }
+
+/* Segmented control (AnyProfile pattern) */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--raised);
+  border-color: var(--line);
+  box-shadow: var(--sh-ctl);
+}
+.seg button[aria-pressed="true"]:hover { box-shadow: var(--sh-ctl-hover); }
 
 /* Form inputs */
 .field {
