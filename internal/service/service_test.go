@@ -119,6 +119,21 @@ func TestServiceEndToEnd(t *testing.T) {
 	}
 	r2ID := prof.Rules[1].ID
 
+	// Reject empty/wildcard ProcessNames when ExcludeProcess is enabled
+	if _, err := svc.SaveRule(pbprofile.ProxyRule{
+		Name:           "Bad Exclude",
+		ProcessNames:   "*",
+		ExcludeProcess: true,
+		TargetHosts:    "*",
+		TargetPorts:    "*",
+		Protocol:       pbprofile.ProtoBoth,
+		Action:         pbprofile.ActionProxy,
+		ProxyConfigID:  proxyID,
+		Enabled:        true,
+	}); err == nil {
+		t.Fatal("expected SaveRule error for ExcludeProcess with wildcard '*'")
+	}
+
 	// Move r2 above r1
 	prof, err = svc.MoveRule(r2ID, -1)
 	if err != nil || prof.Rules[0].ID != r2ID || prof.Rules[1].ID != r1ID {
@@ -177,5 +192,43 @@ func TestRecoverSystemProxyStopsDriverOnce(t *testing.T) {
 	}
 	if v, _ := st.GetSetting(settingSysProxyOn); v != "0" {
 		t.Fatalf("expected sysproxy_on reset to 0, got %q", v)
+	}
+}
+
+func TestSaveRuleExcludeValidation(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(st, nil, driver.NewMockDriver("test", nil, nil, nil))
+	t.Cleanup(func() { _ = svc.Close() })
+
+	for _, bad := range []string{"", "*", ";;;", "Telegram; *"} {
+		if _, err := svc.SaveRule(pbprofile.ProxyRule{
+			Name:           "Bad Exclude",
+			ProcessNames:   bad,
+			ExcludeProcess: true,
+			Action:         pbprofile.ActionDirect,
+			Enabled:        true,
+		}); err == nil {
+			t.Fatalf("expected SaveRule error for ExcludeProcess with %q", bad)
+		}
+	}
+
+	prof, err := svc.SaveRule(pbprofile.ProxyRule{
+		Name:           "All Except Telegram",
+		ProcessNames:   "Telegram; Safari",
+		ExcludeProcess: true,
+		TargetHosts:    "*",
+		TargetPorts:    "*",
+		Protocol:       pbprofile.ProtoBoth,
+		Action:         pbprofile.ActionDirect,
+		Enabled:        true,
+	})
+	if err != nil {
+		t.Fatalf("SaveRule valid exclude: %v", err)
+	}
+	if len(prof.Rules) != 1 || !prof.Rules[0].ExcludeProcess || prof.Rules[0].ProcessNames != "Telegram; Safari" {
+		t.Fatalf("unexpected saved exclude rule: %+v", prof.Rules)
 	}
 }

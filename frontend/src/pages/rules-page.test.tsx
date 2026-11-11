@@ -63,7 +63,80 @@ it('creates a rule with quick-pick app chips, segmented protocol/action controls
     expect.objectContaining({
       name: 'Proxy Google Chrome',
       processNames: 'Google Chrome',
+      excludeProcess: false,
       protocol: 'tcp',
+      action: 'proxy',
+      proxyConfigId: 'p1',
+    })
+  )
+})
+
+it('creates an exclude ("All except") rule, validates empty apps, and lets users clear Active Proxy fallback', async () => {
+  const proxy: ProxyConfig = {
+    id: 'p1',
+    name: 'SG Fast',
+    type: 'socks5',
+    host: '1.2.3.4',
+    port: 1080,
+  }
+  const onSaveRule = vi.fn().mockResolvedValue(undefined)
+  const onSetDefaultProxy = vi.fn().mockResolvedValue(undefined)
+
+  render(
+    <RulesPage
+      rules={[
+        {
+          id: 'r-existing',
+          name: 'System Except Chat',
+          enabled: true,
+          processNames: 'Telegram; Safari',
+          excludeProcess: true,
+          targetHosts: '*',
+          targetPorts: '*',
+          protocol: 'both',
+          action: 'proxy',
+          proxyConfigId: 'p1',
+        },
+      ]}
+      proxies={[proxy]}
+      defaultProxyId="p1"
+      onSaveRule={onSaveRule}
+      onSetDefaultProxy={onSetDefaultProxy}
+      onDeleteRule={vi.fn()}
+      onToggleRule={vi.fn()}
+      onMoveRule={vi.fn()}
+      onCloneRule={vi.fn()}
+    />
+  )
+
+  expect(screen.getByText(`${t.rules.exceptPrefix}: Telegram; Safari`)).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: t.rules.newBtn }))
+  const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
+
+  fireEvent.click(within(dialog).getByRole('button', { name: t.rules.matchExclude }))
+  fireEvent.change(within(dialog).getByLabelText(t.rules.name), { target: { value: 'All except Telegram' } })
+
+  // Submitting without any excluded app shows validation error
+  fireEvent.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain(t.rules.excludeRequired))
+  expect(onSaveRule).not.toHaveBeenCalled()
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Telegram' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Safari' }))
+  expect(dialog.textContent).toContain(`${t.rules.exceptPrefix}: Telegram, Safari`)
+
+  // Switch active proxy fallback to Direct in one click
+  fireEvent.click(within(dialog).getByRole('button', { name: t.rules.switchFallbackDirect }))
+  await waitFor(() => expect(onSetDefaultProxy).toHaveBeenCalledWith(''))
+
+  fireEvent.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
+  expect(onSaveRule).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: 'All except Telegram',
+      processNames: 'Telegram; Safari',
+      excludeProcess: true,
       action: 'proxy',
       proxyConfigId: 'p1',
     })

@@ -76,6 +76,7 @@ type ProxyRule struct {
 	Action            RuleAction   `json:"action"`
 	ProxyConfigID     string       `json:"proxyConfigId,omitempty"`
 	Enabled           bool         `json:"enabled"`
+	ExcludeProcess    bool         `json:"excludeProcess,omitempty"`
 	LocalhostViaProxy bool         `json:"localhostViaProxy"`
 }
 
@@ -278,6 +279,7 @@ type macRuleJSON struct {
 	LocalID           string `json:"localId"`
 	Name              string `json:"name"`
 	ProcessNames      string `json:"processNames"`
+	ExcludeProcess    bool   `json:"excludeProcess,omitempty"`
 	TargetHosts       string `json:"targetHosts"`
 	TargetPorts       string `json:"targetPorts"`
 	Protocol          string `json:"protocol"`
@@ -387,6 +389,7 @@ func parseMacProfile(raw map[string]json.RawMessage) (Profile, error) {
 			ID:                id,
 			Name:              rl.Name,
 			ProcessNames:      defaultWildcard(rl.ProcessNames),
+			ExcludeProcess:    rl.ExcludeProcess,
 			TargetHosts:       hosts,
 			TargetDomains:     domains,
 			TargetPorts:       defaultWildcard(rl.TargetPorts),
@@ -432,6 +435,7 @@ type winProxyJSON struct {
 type winRuleJSON struct {
 	Name              string `json:"Name"`
 	ProcessName       string `json:"ProcessName"`
+	ExcludeProcess    bool   `json:"ExcludeProcess,omitempty"`
 	TargetHosts       string `json:"TargetHosts"`
 	TargetDomains     string `json:"TargetDomains"`
 	TargetPorts       string `json:"TargetPorts"`
@@ -555,6 +559,7 @@ func parseWinLinuxProfile(data []byte) (Profile, error) {
 			ID:                fmt.Sprintf("rule-%d", i+1),
 			Name:              rl.Name,
 			ProcessNames:      defaultWildcard(rl.ProcessName),
+			ExcludeProcess:    rl.ExcludeProcess,
 			TargetHosts:       hosts,
 			TargetDomains:     domains,
 			TargetPorts:       defaultWildcard(rl.TargetPorts),
@@ -709,6 +714,7 @@ func MarshalProfile(p Profile) ([]byte, error) {
 		winRules = append(winRules, map[string]any{
 			"Name":              rl.Name,
 			"ProcessName":       defaultWildcard(rl.ProcessNames),
+			"ExcludeProcess":    rl.ExcludeProcess,
 			"TargetHosts":       hosts,
 			"TargetDomains":     domains,
 			"TargetPorts":       defaultWildcard(rl.TargetPorts),
@@ -722,6 +728,7 @@ func MarshalProfile(p Profile) ([]byte, error) {
 			"localId":           rl.ID,
 			"name":              rl.Name,
 			"processNames":      defaultWildcard(rl.ProcessNames),
+			"excludeProcess":    rl.ExcludeProcess,
 			"targetHosts":       rl.CombinedHosts(),
 			"targetPorts":       defaultWildcard(rl.TargetPorts),
 			"protocol":          string(rl.Protocol),
@@ -835,6 +842,7 @@ func ParseRulesJSON(r io.Reader, defaultProxyID string) ([]ProxyRule, error) {
 			ID:                defaultString(getStr("localId", "id"), fmt.Sprintf("rule-%d", i+1)),
 			Name:              getStr("name", "Name"),
 			ProcessNames:      proc,
+			ExcludeProcess:    getBool(false, "excludeProcess", "ExcludeProcess"),
 			TargetHosts:       hosts,
 			TargetDomains:     doms,
 			TargetPorts:       ports,
@@ -861,6 +869,7 @@ func MarshalRulesJSON(rules []ProxyRule) ([]byte, error) {
 			"action":            act,
 			"enabled":           rl.Enabled,
 			"processNames":      defaultWildcard(rl.ProcessNames),
+			"excludeProcess":    rl.ExcludeProcess,
 			"protocol":          string(rl.Protocol),
 			"targetHosts":       rl.CombinedHosts(),
 			"targetPorts":       defaultWildcard(rl.TargetPorts),

@@ -97,6 +97,7 @@ func TestRulesJSONRoundTrip(t *testing.T) {
     "action": "DIRECT",
     "enabled": true,
     "processNames": "curl",
+    "excludeProcess": true,
     "protocol": "BOTH",
     "targetHosts": "192.168.*.*;*.github.com",
     "targetPorts": "80;443"
@@ -106,7 +107,7 @@ func TestRulesJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseRulesJSON: %v", err)
 	}
-	if len(rules) != 1 || rules[0].TargetHosts != "192.168.*.*" || rules[0].TargetDomains != "*.github.com" {
+	if len(rules) != 1 || !rules[0].ExcludeProcess || rules[0].TargetHosts != "192.168.*.*" || rules[0].TargetDomains != "*.github.com" {
 		t.Fatalf("unexpected parsed rule: %+v", rules[0])
 	}
 	b, err := MarshalRulesJSON(rules)
@@ -114,7 +115,7 @@ func TestRulesJSONRoundTrip(t *testing.T) {
 		t.Fatalf("MarshalRulesJSON: %v", err)
 	}
 	rules2, err := ParseRulesJSON(bytes.NewReader(b), "")
-	if err != nil || len(rules2) != 1 || rules2[0].CombinedHosts() != "192.168.*.*;*.github.com" {
+	if err != nil || len(rules2) != 1 || !rules2[0].ExcludeProcess || rules2[0].CombinedHosts() != "192.168.*.*;*.github.com" {
 		t.Fatalf("round-trip failed: %+v, %v", rules2, err)
 	}
 }

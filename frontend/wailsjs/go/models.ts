@@ -248,6 +248,7 @@ export namespace pbprofile {
 	    action: string;
 	    proxyConfigId?: string;
 	    enabled: boolean;
+	    excludeProcess?: boolean;
 	    localhostViaProxy: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -266,6 +267,7 @@ export namespace pbprofile {
 	        this.action = source["action"];
 	        this.proxyConfigId = source["proxyConfigId"];
 	        this.enabled = source["enabled"];
+	        this.excludeProcess = source["excludeProcess"];
 	        this.localhostViaProxy = source["localhostViaProxy"];
 	    }
 	}

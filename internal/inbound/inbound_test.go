@@ -346,6 +346,26 @@ func TestPerProcessRoutingAndDefaultProxyFallback(t *testing.T) {
 	if dec.Action != pbprofile.ActionDirect {
 		t.Fatalf("expected AnyProxy self process to bypass directly, got %+v", dec)
 	}
+
+	// 5. ExcludeProcess rule: All apps except Telegram -> route through p-default; Telegram stays DIRECT when defaultProxy is empty
+	srv.SyncProfile(proxies, []pbprofile.ProxyRule{{
+		ID:             "r-all-except-telegram",
+		Enabled:        true,
+		ProcessNames:   "Telegram",
+		ExcludeProcess: true,
+		TargetHosts:    "*",
+		TargetPorts:    "*",
+		Action:         pbprofile.ActionProxy,
+		ProxyConfigID:  "p-default",
+	}}, "")
+	dec, px = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 752, Name: "Google Chrome"})
+	if dec.Action != pbprofile.ActionProxy || px == nil || px.ID != "p-default" {
+		t.Fatalf("expected Chrome to match exclude-Telegram rule, got dec=%+v px=%+v", dec, px)
+	}
+	dec, px = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 900, Name: "Telegram"})
+	if dec.Action != pbprofile.ActionDirect || px != nil {
+		t.Fatalf("expected excluded Telegram to go DIRECT when fallback is Direct, got dec=%+v px=%+v", dec, px)
+	}
 }
 
 func TestNetstatParsersAndFriendlyProcessName(t *testing.T) {

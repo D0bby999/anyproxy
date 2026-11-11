@@ -20,6 +20,19 @@ func makeMatcher(proc, hosts, ports string) *Matcher {
 	})
 }
 
+func makeExcludeMatcher(proc, hosts, ports string) *Matcher {
+	return NewMatcher(pbprofile.ProxyRule{
+		ID:             "r-ex",
+		ProcessNames:   proc,
+		TargetHosts:    hosts,
+		TargetPorts:    ports,
+		Protocol:       pbprofile.ProtoBoth,
+		Action:         pbprofile.ActionDirect,
+		Enabled:        true,
+		ExcludeProcess: true,
+	})
+}
+
 func TestMatcherUpstreamVectors(t *testing.T) {
 	chrome := NewFlowProcess("com.google.Chrome", "Google Chrome")
 	curl := NewFlowProcess("curl-abc", "curl")
@@ -40,6 +53,11 @@ func TestMatcherUpstreamVectors(t *testing.T) {
 		{"bundle id glob", makeMatcher("com.google.*", "*", "*").MatchesProcess(chrome), true},
 		{"case insensitive", makeMatcher("CURL", "*", "*").MatchesProcess(curl), true},
 		{"no match", makeMatcher("firefox", "*", "*").MatchesProcess(curl), false},
+		// ExcludeProcess mode
+		{"exclude: listed app is excluded", makeExcludeMatcher("curl", "*", "*").MatchesProcess(curl), false},
+		{"exclude: unlisted app matches", makeExcludeMatcher("curl", "*", "*").MatchesProcess(chrome), true},
+		{"exclude: list excludes both", makeExcludeMatcher("curl;safari", "*", "*").MatchesProcess(curl), false},
+		{"exclude: star excludes everything", makeExcludeMatcher("*", "*", "*").MatchesProcess(chrome), false},
 	}
 	for _, tc := range procCases {
 		if tc.got != tc.want {
@@ -96,6 +114,44 @@ func TestMatcherUpstreamVectors(t *testing.T) {
 		if tc.got != tc.want {
 			t.Errorf("host [%s]: got %v, want %v", tc.name, tc.got, tc.want)
 		}
+	}
+}
+
+func TestEngineExcludeProcess(t *testing.T) {
+	eng := NewEngine([]pbprofile.ProxyRule{
+		{
+			ID:             "r-except",
+			ProcessNames:   "Telegram;Safari",
+			TargetHosts:    "*",
+			TargetPorts:    "*",
+			Protocol:       pbprofile.ProtoBoth,
+			Action:         pbprofile.ActionProxy,
+			ProxyConfigID:  "px1",
+			Enabled:        true,
+			ExcludeProcess: true,
+		},
+	})
+
+	chrome := NewFlowProcess("", "Google Chrome")
+	telegram := NewFlowProcess("", "Telegram")
+	safari := NewFlowProcess("", "Safari")
+
+	// Chrome is not excluded -> should match the rule -> PROXY
+	d := eng.Evaluate(FlowInput{Process: chrome, DestIP: "93.184.216.34", DestPort: 443, Protocol: pbprofile.ProtoTCP, CheckHost: true})
+	if d.Action != pbprofile.ActionProxy {
+		t.Fatalf("expected PROXY for Chrome (not excluded), got %+v", d)
+	}
+
+	// Telegram is excluded -> rule should NOT match -> fallback DIRECT
+	d = eng.Evaluate(FlowInput{Process: telegram, DestIP: "93.184.216.34", DestPort: 443, Protocol: pbprofile.ProtoTCP, CheckHost: true})
+	if d.Action != pbprofile.ActionDirect {
+		t.Fatalf("expected DIRECT for Telegram (excluded), got %+v", d)
+	}
+
+	// Safari is excluded -> rule should NOT match -> fallback DIRECT
+	d = eng.Evaluate(FlowInput{Process: safari, DestIP: "93.184.216.34", DestPort: 443, Protocol: pbprofile.ProtoTCP, CheckHost: true})
+	if d.Action != pbprofile.ActionDirect {
+		t.Fatalf("expected DIRECT for Safari (excluded), got %+v", d)
 	}
 }
 

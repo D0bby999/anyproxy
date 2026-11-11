@@ -510,6 +510,21 @@ func (s *Service) TestProxy(ctx context.Context, proxyID, targetHost string, tar
 func (s *Service) SaveRule(r pbprofile.ProxyRule) (pbprofile.Profile, error) {
 	r.Protocol = pbprofile.RuleProtocol(strings.ToUpper(string(r.Protocol)))
 	r.Action = pbprofile.RuleAction(strings.ToUpper(string(r.Action)))
+	if r.ExcludeProcess {
+		hasApp := false
+		for _, tok := range strings.FieldsFunc(r.ProcessNames, func(c rune) bool { return c == ';' || c == ',' }) {
+			tok = strings.TrimSpace(tok)
+			if tok == "*" {
+				return pbprofile.Profile{}, errors.New("exclude mode cannot use '*' wildcard")
+			}
+			if tok != "" {
+				hasApp = true
+			}
+		}
+		if !hasApp {
+			return pbprofile.Profile{}, errors.New("exclude mode requires at least one application name")
+		}
+	}
 	if strings.TrimSpace(r.ProcessNames) == "" {
 		r.ProcessNames = "*"
 	}

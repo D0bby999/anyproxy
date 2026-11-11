@@ -24,6 +24,7 @@ export interface ProxyRule {
   name: string
   enabled: boolean
   processNames: string
+  excludeProcess?: boolean
   targetHosts: string
   targetPorts: string
   protocol: RuleProtocol

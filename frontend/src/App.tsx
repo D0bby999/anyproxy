@@ -419,7 +419,9 @@ export default function App() {
           <RulesPage
             rules={profile?.rules || []}
             proxies={profile?.proxies || []}
+            defaultProxyId={profile?.defaultProxyId || ''}
             knownApps={knownApps}
+            onSetDefaultProxy={handleSetDefaultProxy}
             onSaveRule={handleSaveRule}
             onDeleteRule={async (id) => {
               try {

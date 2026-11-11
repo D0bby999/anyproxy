@@ -88,6 +88,7 @@ type hostPattern struct {
 type Matcher struct {
 	Rule            pbprofile.ProxyRule
 	processAll      bool
+	excludeProcess  bool
 	processPatterns []procPattern
 	hostAll         bool
 	hostPatterns    []hostPattern
@@ -97,7 +98,7 @@ type Matcher struct {
 }
 
 func NewMatcher(rule pbprofile.ProxyRule) *Matcher {
-	m := &Matcher{Rule: rule}
+	m := &Matcher{Rule: rule, excludeProcess: rule.ExcludeProcess}
 
 	// 1. Process patterns
 	pRaw := strings.TrimSpace(rule.ProcessNames)
@@ -274,8 +275,9 @@ func parseV4Octets(s string) ([4]v4OctetRange, bool) {
 
 func (m *Matcher) MatchesProcess(flow FlowProcess) bool {
 	if m.processAll {
-		return true
+		return !m.excludeProcess // exclude with * means "match nothing"
 	}
+	matched := false
 	for _, cand := range flow.candidates {
 		for _, p := range m.processPatterns {
 			target := cand.file
@@ -283,11 +285,18 @@ func (m *Matcher) MatchesProcess(flow FlowProcess) bool {
 				target = cand.path
 			}
 			if GlobMatch(p.pattern, target) {
-				return true
+				matched = true
+				break
 			}
 		}
+		if matched {
+			break
+		}
 	}
-	return false
+	if m.excludeProcess {
+		return !matched
+	}
+	return matched
 }
 
 func (m *Matcher) MatchesPort(port uint16) bool {

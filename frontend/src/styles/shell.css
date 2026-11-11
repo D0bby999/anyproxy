@@ -541,8 +541,8 @@ button.enginechip:hover {
 
 /* 1. Routing Rules Table */
 .table.rules th.col-no, .table.rules td.col-no { width: 44px; }
-.table.rules th.col-name, .table.rules td.col-name { width: 22%; }
-.table.rules th.col-apps, .table.rules td.col-apps { width: 17%; }
+.table.rules th.col-name, .table.rules td.col-name { width: 20%; }
+.table.rules th.col-apps, .table.rules td.col-apps { width: 19%; }
 .table.rules th.col-targets, .table.rules td.col-targets { width: 18%; }
 .table.rules th.col-ports, .table.rules td.col-ports { width: 10%; }
 .table.rules th.col-proto, .table.rules td.col-proto { width: 75px; }
@@ -842,28 +842,40 @@ button.enginechip:hover {
 
 /* Rule editor dialog & quick-pick chips */
 .dialog.ruledialog {
-  width: 590px;
+  width: 620px;
   max-height: min(740px, 100%);
 }
 .dialog.ruledialog > .dialog-head {
-  padding: 13px 20px;
+  padding: 11px 18px;
 }
 .dialog.ruledialog > .dialog-body {
-  padding: 14px 20px;
-  gap: 11px;
+  padding: 12px 18px;
+  gap: 9px;
 }
 .dialog.ruledialog > .dialog-foot {
-  padding: 12px 20px;
+  padding: 10px 18px;
 }
 .rule-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 11px 13px;
+  gap: 8px;
+  padding: 10px 12px;
   background: var(--surface-sunken);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
 }
+.rule-fallback-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.rule-fallback-note .icon { flex: none; color: var(--warn); }
+.rule-fallback-note .grow { flex: 1; min-width: 0; }
+.rule-fallback-note .btn { flex: none; }
 .rule-field-head {
   display: flex;
   align-items: baseline;
