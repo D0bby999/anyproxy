@@ -2,7 +2,7 @@
 WAILS   ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
 APP     := build/bin/AnyProxy.app
 VERSION ?= $(shell sed -n 's/.*"productVersion": *"\([^"]*\)".*/\1/p' wails.json)
-LDFLAGS := -s -w -X main.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/D0bby999/anyproxy/internal/update.Current=$(VERSION)
 SIGN_ID ?= $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q '"AnyProfile Dev"' && echo 'AnyProfile Dev' || echo -)
 SIGN_FLAGS ?=
 

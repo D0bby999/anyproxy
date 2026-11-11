@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 package cli
 
@@ -14,6 +14,7 @@ import (
 	"github.com/D0bby999/anyproxy/internal/secrets"
 	"github.com/D0bby999/anyproxy/internal/service"
 	"github.com/D0bby999/anyproxy/internal/store"
+	"github.com/D0bby999/anyproxy/internal/update"
 )
 
 func TestVersionUsesAnyProxyName(t *testing.T) {
@@ -21,7 +22,7 @@ func TestVersionUsesAnyProxyName(t *testing.T) {
 	if err := Run(context.Background(), nil, []string{"--version"}, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := out.String(), "AnyProxy v"+Version+"\n"; got != want {
+	if got, want := out.String(), "AnyProxy v"+update.Current+"\n"; got != want {
 		t.Fatalf("version = %q, want %q", got, want)
 	}
 }

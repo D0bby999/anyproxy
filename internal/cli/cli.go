@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package cli implements the headless command-line runner for AnyProxy,
 // compatible with upstream ProxyBridge CLI flags (--profile, --list-profiles,
@@ -19,8 +19,6 @@ import (
 	"github.com/D0bby999/anyproxy/internal/service"
 	"github.com/D0bby999/anyproxy/internal/update"
 )
-
-const Version = "1.0.0"
 
 // Options holds parsed CLI flags.
 type Options struct {
@@ -125,7 +123,7 @@ func Run(ctx context.Context, svc *service.Service, args []string, in io.Reader,
 		return nil
 	}
 	if opts.ShowVersion {
-		_, _ = fmt.Fprintf(out, "AnyProxy v%s\n", Version)
+		_, _ = fmt.Fprintf(out, "AnyProxy v%s\n", update.Current)
 		return nil
 	}
 	if opts.CheckUpdate {

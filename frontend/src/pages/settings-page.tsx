@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import React, { useEffect, useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { Icon } from '../components/icons'
 import { t, setLanguage, getLanguage } from '../i18n'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
+import pkg from '../../package.json'
 import type { Profile } from '../types'
 
 function SwitchRow({
@@ -354,7 +355,7 @@ export function SettingsPage({
             <section className="card settings-card" aria-labelledby="settings-version-h">
               <div className="settings-card-head">
                 <h2 id="settings-version-h">{t.settings.version}</h2>
-                <span className="chip mono">v1.0.0</span>
+                <span className="chip mono">v{pkg.version}</span>
               </div>
 
               <div className="settings-row-copy">
