@@ -102,6 +102,11 @@ input, textarea { caret-color: var(--accent); }
   height: 28px;
   border-radius: var(--r-sm);
 }
+.iconbtn.xs {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+}
 .iconbtn.danger:hover:not(:disabled) {
   color: var(--danger-ink);
   background: var(--danger-soft);
@@ -167,8 +172,8 @@ input, textarea { caret-color: var(--accent); }
 }
 textarea, textarea.input {
   height: auto;
-  min-height: 76px;
-  padding: 10px 12px;
+  min-height: 80px;
+  padding: 12px;
   line-height: 1.5;
 }
 

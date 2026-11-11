@@ -72,7 +72,7 @@ export default function App() {
     let startupTimer: ReturnType<typeof setTimeout>
     const waitForStartup = async () => {
       if (!(await reloadData(true)) && !cancelled) {
-        startupTimer = setTimeout(waitForStartup, 1000)
+        startupTimer = setTimeout(waitForStartup, 150)
       }
     }
     void waitForStartup()
@@ -175,6 +175,25 @@ export default function App() {
 
   const handleCreateProfile = () => {
     setProfileDialog({ mode: 'create', targetName: '', value: '' })
+  }
+
+  const handleDeleteProfile = async (name: string) => {
+    try {
+      const p = await app.DeleteProfile(name)
+      setProfile(p)
+      void reloadData()
+      toast(t.messages.profileDeleted, 'info')
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : String(e), 'error')
+    }
+  }
+
+  const handleRenameProfile = (oldName: string) => {
+    setProfileDialog({
+      mode: 'rename',
+      targetName: oldName,
+      value: oldName,
+    })
   }
 
   const handleProfileDialogSubmit = async (e: React.FormEvent) => {
@@ -307,6 +326,8 @@ export default function App() {
           setProfiles((prev) => ({ ...prev, active: name }))
         }}
         onCreateProfile={handleCreateProfile}
+        onRenameProfile={handleRenameProfile}
+        onDeleteProfile={handleDeleteProfile}
         proxies={profile?.proxies || []}
         defaultProxyId={profile?.defaultProxyId || ''}
         onSetDefaultProxy={handleSetDefaultProxy}
@@ -442,23 +463,8 @@ export default function App() {
                 value: `${srcName} Copy`,
               })
             }}
-            onRenameProfile={(oldName) => {
-              setProfileDialog({
-                mode: 'rename',
-                targetName: oldName,
-                value: oldName,
-              })
-            }}
-            onDeleteProfile={async (name) => {
-              try {
-                const p = await app.DeleteProfile(name)
-                setProfile(p)
-                void reloadData()
-                toast(t.messages.profileDeleted, 'info')
-              } catch (e: unknown) {
-                toast(e instanceof Error ? e.message : String(e), 'error')
-              }
-            }}
+            onRenameProfile={handleRenameProfile}
+            onDeleteProfile={handleDeleteProfile}
             onImportProfile={async (raw) => {
               const p = await app.ImportProfileJSON(raw, true)
               setProfile(p)
@@ -471,6 +477,7 @@ export default function App() {
               await navigator.clipboard.writeText(raw)
               toast(t.messages.profileExported, 'success')
             }}
+            onOpenActivityLogs={() => setPage('activity')}
           />
         )}
 

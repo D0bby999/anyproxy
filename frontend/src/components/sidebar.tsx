@@ -14,6 +14,8 @@ interface SidebarProps {
   profiles: ProfileListSummary
   onSwitchProfile: (name: string) => void
   onCreateProfile: () => void
+  onRenameProfile?: (name: string) => void
+  onDeleteProfile?: (name: string) => void
   proxies: ProxyConfig[]
   defaultProxyId: string
   onSetDefaultProxy: (id: string) => void
@@ -33,6 +35,8 @@ export function Sidebar({
   profiles,
   onSwitchProfile,
   onCreateProfile,
+  onRenameProfile,
+  onDeleteProfile,
   proxies,
   defaultProxyId,
   onSetDefaultProxy,
@@ -130,29 +134,29 @@ export function Sidebar({
         <div className="quick-proxy nodrag">
           <div className="quick-proxy-head">
             <label>{t.engine.activeProxy}</label>
-            <div className="row" style={{ gap: 2 }}>
+            <div className="row" style={{ gap: 4 }}>
               {activePx && onTestProxy && (
                 <button
                   type="button"
-                  className="iconbtn sm"
+                  className="iconbtn xs"
                   disabled={testingActive}
                   aria-busy={testingActive}
                   onClick={() => void handlePingActive()}
                   title={t.actions.test}
                   aria-label={t.actions.test}
                 >
-                  <Icon name="refresh" />
+                  <Icon name="refresh" className="icon xs" />
                 </button>
               )}
               {proxies.length > 0 && (
                 <button
                   type="button"
-                  className="iconbtn sm"
+                  className="iconbtn xs"
                   onClick={handleCycleProxy}
                   title={t.engine.cycleProxy}
                   aria-label={t.engine.cycleProxy}
                 >
-                  <Icon name="zap" />
+                  <Icon name="zap" className="icon xs" />
                 </button>
               )}
             </div>
@@ -205,16 +209,6 @@ export function Sidebar({
 
         <button
           className="navitem"
-          aria-current={page === 'activity' ? 'page' : undefined}
-          onClick={() => onNavigate('activity')}
-          title={t.nav.activity}
-        >
-          <Icon name="list" />
-          {!collapsed && <span>{t.nav.activity}</span>}
-        </button>
-
-        <button
-          className="navitem"
           aria-current={page === 'proxies' ? 'page' : undefined}
           onClick={() => onNavigate('proxies')}
           title={t.nav.proxies}
@@ -248,24 +242,46 @@ export function Sidebar({
               </button>
             </div>
 
-            {profiles.names.map((name) => (
-              <button
-                key={name}
-                className="navitem"
-                style={{
-                  fontWeight: name === profiles.active ? 600 : 400,
-                  color: name === profiles.active ? 'var(--accent-ink)' : undefined,
-                }}
-                onClick={() => onSwitchProfile(name)}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {name}
-                </span>
-                {name === profiles.active && (
-                  <Icon name="check" className="icon xs muted" />
-                )}
-              </button>
-            ))}
+            {profiles.names.map((name) => {
+              const isActive = name === profiles.active
+              return (
+                <div key={name} className="profile-row">
+                  <button
+                    type="button"
+                    className={`profile-row-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => onSwitchProfile(name)}
+                    title={name}
+                  >
+                    <span className="profile-row-name">{name}</span>
+                    {isActive && <Icon name="check" className="icon xs" />}
+                  </button>
+                  <span className="profile-row-actions">
+                    {onRenameProfile && (
+                      <button
+                        type="button"
+                        className="profile-row-act"
+                        onClick={() => onRenameProfile(name)}
+                        title={`${t.settings.renameBtn}: ${name}`}
+                        aria-label={`${t.settings.renameBtn} ${name}`}
+                      >
+                        <Icon name="pencil" className="icon xs" />
+                      </button>
+                    )}
+                    {onDeleteProfile && profiles.names.length > 1 && (
+                      <button
+                        type="button"
+                        className="profile-row-act danger"
+                        onClick={() => onDeleteProfile(name)}
+                        title={`${t.actions.delete}: ${name}`}
+                        aria-label={`${t.actions.delete} ${name}`}
+                      >
+                        <Icon name="trash" className="icon xs" />
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
           </>
         )}
       </nav>

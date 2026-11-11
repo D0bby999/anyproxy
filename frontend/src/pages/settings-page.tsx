@@ -18,6 +18,7 @@ export function SettingsPage({
   onDeleteProfile,
   onImportProfile,
   onExportProfile,
+  onOpenActivityLogs,
 }: {
   profile: Profile | null
   profiles?: string[]
@@ -35,6 +36,7 @@ export function SettingsPage({
   onDeleteProfile?: (name: string) => void
   onImportProfile?: (raw: string) => Promise<void>
   onExportProfile?: (includePasswords: boolean) => Promise<void>
+  onOpenActivityLogs?: () => void
 }) {
   const [includePasswords, setIncludePasswords] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -260,10 +262,16 @@ export function SettingsPage({
           <p className="muted" style={{ margin: 0, fontSize: 'var(--t-sm)' }}>
             AnyProxy v1.0.0
           </p>
-          <div style={{ marginTop: 8 }}>
-            <button className="btn sm" onClick={onCheckUpdates}>
+          <div className="row" style={{ marginTop: 8, gap: 8 }}>
+            <button type="button" className="btn sm" onClick={onCheckUpdates}>
               {t.settings.checkUpdates}
             </button>
+            {onOpenActivityLogs && (
+              <button type="button" className="btn sm" onClick={onOpenActivityLogs}>
+                <Icon name="list" />
+                {t.nav.activity}
+              </button>
+            )}
           </div>
         </div>
       </div>
