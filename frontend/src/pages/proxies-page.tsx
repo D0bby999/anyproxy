@@ -27,6 +27,7 @@ export function ProxiesPage({
   const [editing, setEditing] = useState<ProxyConfig | null>(null)
   const [error, setError] = useState('')
   const [checking, setChecking] = useState('')
+  const [pingingAll, setPingingAll] = useState(false)
   const [results, setResults] = useState<Record<string, CheckReport>>({})
   const [bulkText, setBulkText] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -69,6 +70,21 @@ export function ProxiesPage({
     }
   }
 
+  const handlePingAll = async () => {
+    if (pingingAll || proxies.length === 0) return
+    setPingingAll(true)
+    try {
+      for (const p of proxies) {
+        setChecking(p.id)
+        const report = await onTestProxy(p)
+        if (report) setResults((prev) => ({ ...prev, [p.id]: report }))
+      }
+    } finally {
+      setChecking('')
+      setPingingAll(false)
+    }
+  }
+
   const handleBulkAdd = async () => {
     const lines = bulkText.split(/\r?\n/).map((line) => line.trim())
     setBulkText('')
@@ -90,6 +106,27 @@ export function ProxiesPage({
   return (
     <>
       <PageHead title={t.proxies.title} sub={t.proxies.sub}>
+        {proxies.length > 0 && (
+          <button
+            type="button"
+            className="btn nodrag"
+            disabled={pingingAll || !!checking}
+            onClick={() => void handlePingAll()}
+          >
+            <Icon name="refresh" />
+            {t.engine.pingAll}
+          </button>
+        )}
+        {defaultProxyId && (
+          <button
+            type="button"
+            className="btn nodrag"
+            onClick={() => void onSetDefault('')}
+            title={t.engine.direct}
+          >
+            {t.engine.direct}
+          </button>
+        )}
         <BuyProxies />
         <button className="btn primary nodrag" onClick={handleOpenAdd}>
           <Icon name="plus" />
@@ -139,7 +176,11 @@ export function ProxiesPage({
                   {proxies.map((p) => {
                     const isDefault = p.id === defaultProxyId
                     return (
-                      <tr key={p.id} className={isDefault ? 'active' : ''}>
+                      <tr
+                        key={p.id}
+                        className={`clickable-row ${isDefault ? 'active' : ''}`}
+                        onClick={() => void onSetDefault(isDefault ? '' : p.id)}
+                      >
                         <td className="cellname col-name">
                           <b className="selectable" title={p.name}>
                             {p.name}
@@ -168,19 +209,17 @@ export function ProxiesPage({
                             <span className="faint">—</span>
                           )}
                         </td>
-                        <td className="col-latency">
-                          {results[p.id] ? (
-                            <span className={`chip ${(results[p.id].success ?? results[p.id].ok) ? 'ok' : 'danger'}`} title={results[p.id].summary}>
-                              <span className="dot" />
-                              <span className="chiptext">{(results[p.id].success ?? results[p.id].ok) ? `${results[p.id].avgMs ?? results[p.id].totalDurationMs ?? 0} ms` : t.messages.testFailed}</span>
-                            </span>
-                          ) : <span className="faint">{t.proxies.unchecked}</span>}
-                        </td>
-                        <td className="col-actions">
-                          <span className="row">
+                        <td className="col-latency" onClick={(e) => e.stopPropagation()}>
+                          <span className="row" style={{ justifyContent: 'flex-end' }}>
+                            {results[p.id] ? (
+                              <span className={`chip ${(results[p.id].success ?? results[p.id].ok) ? 'ok' : 'danger'}`} title={results[p.id].summary}>
+                                <span className="dot" />
+                                <span className="chiptext">{(results[p.id].success ?? results[p.id].ok) ? `${results[p.id].avgMs ?? results[p.id].totalDurationMs ?? 0} ms` : t.messages.testFailed}</span>
+                              </span>
+                            ) : <span className="faint" title={t.proxies.unchecked}>{t.proxies.unchecked}</span>}
                             <button
                               className="iconbtn sm"
-                              disabled={!!checking}
+                              disabled={!!checking || pingingAll}
                               aria-busy={checking === p.id}
                               onClick={async () => {
                                 setChecking(p.id)
@@ -194,10 +233,14 @@ export function ProxiesPage({
                             >
                               <Icon name="refresh" />
                             </button>
+                          </span>
+                        </td>
+                        <td className="col-actions" onClick={(e) => e.stopPropagation()}>
+                          <span className="row">
                             {!isDefault ? (
                               <button
                                 className="btn sm"
-                                onClick={() => onSetDefault(p.id)}
+                                onClick={() => void onSetDefault(p.id)}
                                 title={t.actions.setActive}
                               >
                                 {t.actions.setActive}

@@ -539,6 +539,7 @@ export const stubApp = {
     releaseDate: '2026-11-08',
     releaseNotes: 'You are on the latest version of AnyProxy.',
   }),
+  SetCompactMode: async (): Promise<void> => {},
 }
 
 // Attach to window.go.main.App for preview mode

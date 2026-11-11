@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState } from 'react'
 import { api } from './api'
 import { t } from './i18n'
 import { normalizeConnectionLog, normalizeFlow } from './lib/normalize-traffic'
 import { Sidebar, type Page } from './components/sidebar'
+import { CompactView } from './components/compact-view'
 import { StatusBar } from './components/status-bar'
 import { ProxiesPage } from './pages/proxies-page'
 import { RulesPage } from './pages/rules-page'
@@ -23,6 +24,9 @@ import type {
 
 export default function App() {
   const [page, setPage] = useState<Page>('connections')
+  const [compact, setCompact] = useState(false)
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profiles, setProfiles] = useState<ProfileListSummary>({ names: [], active: '' })
   const [engine, setEngine] = useState<EngineStatus | null>(null)
@@ -35,7 +39,7 @@ export default function App() {
     const id = Math.random().toString(36).slice(2)
     setToasts((prev) => [...prev, { id, type, msg }])
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
+      setToasts((prev) => prev.filter((item) => item.id !== id))
     }, 4000)
   }
 
@@ -50,8 +54,8 @@ export default function App() {
       const st = await app.Status()
       setEngine(st)
       return true
-    } catch (e: any) {
-      const message = e.message || String(e)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
       if (silent && message.includes('service is not initialized')) return false
       toast(message, 'error')
       return true
@@ -80,11 +84,11 @@ export default function App() {
       } catch {}
     }, 1200)
 
-    const unsubProfile = api.subscribeEvent('profile:changed', (data: any) => {
-      if (data) setProfile(data)
+    const unsubProfile = api.subscribeEvent('profile:changed', (data: unknown) => {
+      if (data) setProfile(data as Profile)
     })
-    const unsubEngine = api.subscribeEvent('engine:status', (data: any) => {
-      if (data) setEngine(data)
+    const unsubEngine = api.subscribeEvent('engine:status', (data: unknown) => {
+      if (data) setEngine(data as EngineStatus)
     })
 
     return () => {
@@ -96,14 +100,37 @@ export default function App() {
     }
   }, [])
 
+  const handleEnterCompact = async () => {
+    setCompact(true)
+    try {
+      await app.SetCompactMode(true, alwaysOnTop)
+    } catch {}
+  }
+
+  const handleExpandFromCompact = async (targetPage?: Page) => {
+    if (targetPage) setPage(targetPage)
+    setCompact(false)
+    try {
+      await app.SetCompactMode(false, false)
+    } catch {}
+  }
+
+  const handleToggleAlwaysOnTop = async () => {
+    const next = !alwaysOnTop
+    setAlwaysOnTop(next)
+    try {
+      await app.SetCompactMode(true, next)
+    } catch {}
+  }
+
   const handleToggleEngine = async () => {
     try {
       const isRunning = engine?.state === 'running'
       const next = isRunning ? await app.StopEngine() : await app.StartEngine()
       setEngine(next)
       toast(isRunning ? t.messages.engineStopped : t.messages.engineStarted, 'success')
-    } catch (e: any) {
-      toast(e.message || String(e), 'error')
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : String(e), 'error')
     }
   }
 
@@ -112,9 +139,81 @@ export default function App() {
       const updated = await app.SetDefaultProxy(id)
       setProfile(updated)
       toast(t.messages.defaultUpdated, 'success')
-    } catch (e: any) {
-      toast(e.message || String(e), 'error')
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : String(e), 'error')
     }
+  }
+
+  const handleTestProxy = async (px: ProxyConfig) => {
+    toast(`${t.messages.testing} ${px.name}...`, 'info')
+    try {
+      const rep = await app.TestProxy(px.id, 'httpbin.org', 80)
+      const success = rep.success ?? rep.ok
+      toast(
+        success
+          ? `${t.messages.testSuccess}: ${rep.avgMs ?? rep.totalDurationMs} ms`
+          : `${t.messages.testFailed}: ${rep.summary}`,
+        success ? 'success' : 'error'
+      )
+      void reloadData()
+      return rep
+    } catch (e: unknown) {
+      toast(`${t.messages.testError}: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  const handleSaveRule = async (r: ProxyRule) => {
+    const updated = await app.SaveRule(r)
+    setProfile(updated)
+    toast(t.messages.ruleSaved, 'success')
+  }
+
+  const handleCreateProfile = async () => {
+    const name = prompt(t.messages.profilePrompt)
+    if (name?.trim()) {
+      const p = await app.CreateProfile(name.trim())
+      setProfile(p)
+      void reloadData()
+      toast(t.messages.profileCreated, 'success')
+    }
+  }
+
+  const knownApps = Array.from(
+    new Set([
+      ...flows.map((f) => f.processName),
+      ...connLogs.map((l) => l.processName),
+    ])
+  ).filter(Boolean)
+
+  if (compact) {
+    return (
+      <>
+        <CompactView
+          engine={engine}
+          profile={profile}
+          profiles={profiles.names.length > 0 ? profiles.names : [profile?.name || 'Default']}
+          flows={flows}
+          alwaysOnTop={alwaysOnTop}
+          onToggleEngine={handleToggleEngine}
+          onSetDefaultProxy={handleSetDefaultProxy}
+          onTestProxy={handleTestProxy}
+          onSwitchProfile={async (name) => {
+            const p = await app.SwitchProfile(name)
+            setProfile(p)
+            setProfiles((prev) => ({ ...prev, active: name }))
+          }}
+          onToggleAlwaysOnTop={() => void handleToggleAlwaysOnTop()}
+          onExpand={(targetPage) => void handleExpandFromCompact(targetPage)}
+        />
+        <div className="toasts">
+          {toasts.map((item) => (
+            <div key={item.id} className={`toast ${item.type}`}>
+              <span>{item.msg}</span>
+            </div>
+          ))}
+        </div>
+      </>
+    )
   }
 
   return (
@@ -130,19 +229,16 @@ export default function App() {
           setProfile(p)
           setProfiles((prev) => ({ ...prev, active: name }))
         }}
-        onCreateProfile={async () => {
-          const name = prompt(t.messages.profilePrompt)
-          if (name) {
-            const p = await app.CreateProfile(name)
-            setProfile(p)
-            reloadData()
-          }
-        }}
+        onCreateProfile={handleCreateProfile}
         proxies={profile?.proxies || []}
         defaultProxyId={profile?.defaultProxyId || ''}
         onSetDefaultProxy={handleSetDefaultProxy}
+        onTestProxy={handleTestProxy}
         liveFlowCount={flows.filter((f) => f.state === 'open').length}
         rulesCount={profile?.rules?.length || 0}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
+        onEnterCompact={() => void handleEnterCompact()}
       />
 
       <main className="main">
@@ -158,6 +254,7 @@ export default function App() {
               await app.ClearConnectionLogs()
               setConnLogs([])
             }}
+            onQuickCreateRule={handleSaveRule}
           />
         )}
 
@@ -186,21 +283,7 @@ export default function App() {
               toast(t.messages.proxyDeleted, 'info')
             }}
             onSetDefault={handleSetDefaultProxy}
-            onTestProxy={async (px) => {
-              toast(`${t.messages.testing} ${px.name}...`, 'info')
-              try {
-                const rep = await app.TestProxy(px.id, 'httpbin.org', 80)
-                const success = rep.success ?? rep.ok
-                toast(
-                  success ? `${t.messages.testSuccess}: ${rep.avgMs ?? rep.totalDurationMs} ms` : `${t.messages.testFailed}: ${rep.summary}`,
-                  success ? 'success' : 'error'
-                )
-                reloadData()
-                return rep
-              } catch (e: any) {
-                toast(`${t.messages.testError}: ${e.message || String(e)}`, 'error')
-              }
-            }}
+            onTestProxy={handleTestProxy}
           />
         )}
 
@@ -208,11 +291,8 @@ export default function App() {
           <RulesPage
             rules={profile?.rules || []}
             proxies={profile?.proxies || []}
-            onSaveRule={async (r) => {
-              const updated = await app.SaveRule(r)
-              setProfile(updated)
-              toast(t.messages.ruleSaved, 'success')
-            }}
+            knownApps={knownApps}
+            onSaveRule={handleSaveRule}
             onDeleteRule={async (id) => {
               const updated = await app.DeleteRule(id)
               setProfile(updated)
@@ -231,12 +311,24 @@ export default function App() {
               setProfile(updated)
               toast(t.messages.ruleCloned, 'success')
             }}
+            onPickExecutable={async () => app.PickProcessExecutable()}
+            onImportRules={async (raw) => {
+              const updated = await app.ImportRulesJSON(raw)
+              setProfile(updated)
+              toast(t.messages.rulesImported, 'success')
+            }}
+            onExportRules={async () => {
+              const raw = await app.ExportRulesJSON([])
+              await navigator.clipboard.writeText(raw)
+              toast(t.messages.rulesExported, 'success')
+            }}
           />
         )}
 
         {page === 'settings' && (
           <SettingsPage
             profile={profile}
+            profiles={profiles.names}
             onUpdateOptions={async (tl, dns, lgc, clr) => {
               const updated = await app.UpdateOptions(tl, dns, lgc, clr)
               setProfile(updated)
@@ -252,6 +344,47 @@ export default function App() {
                 'info'
               )
             }}
+            onSwitchProfile={async (name) => {
+              const p = await app.SwitchProfile(name)
+              setProfile(p)
+              setProfiles((prev) => ({ ...prev, active: name }))
+            }}
+            onCreateProfile={handleCreateProfile}
+            onDuplicateProfile={async (srcName) => {
+              const newName = prompt(t.settings.duplicatePrompt, `${srcName} Copy`)
+              if (!newName?.trim()) return
+              const p = await app.DuplicateProfile(srcName, newName.trim())
+              setProfile(p)
+              void reloadData()
+              toast(t.messages.profileDuplicated, 'success')
+            }}
+            onRenameProfile={async (oldName) => {
+              const newName = prompt(t.settings.renamePrompt, oldName)
+              if (!newName?.trim() || newName.trim() === oldName) return
+              const p = await app.RenameProfile(oldName, newName.trim())
+              setProfile(p)
+              void reloadData()
+              toast(t.messages.profileRenamed, 'success')
+            }}
+            onDeleteProfile={async (name) => {
+              if (!confirm(`${t.settings.confirmDeleteProfile}\n${name}`)) return
+              const p = await app.DeleteProfile(name)
+              setProfile(p)
+              void reloadData()
+              toast(t.messages.profileDeleted, 'info')
+            }}
+            onImportProfile={async (raw) => {
+              const p = await app.ImportProfileJSON(raw, true)
+              setProfile(p)
+              void reloadData()
+              toast(t.messages.profileImported, 'success')
+            }}
+            onExportProfile={async (includePasswords) => {
+              if (!profile) return
+              const raw = await app.ExportProfileJSON(profile.name, includePasswords)
+              await navigator.clipboard.writeText(raw)
+              toast(t.messages.profileExported, 'success')
+            }}
           />
         )}
 
@@ -263,9 +396,9 @@ export default function App() {
       </main>
 
       <div className="toasts">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.type}`}>
-            <span>{t.msg}</span>
+        {toasts.map((item) => (
+          <div key={item.id} className={`toast ${item.type}`}>
+            <span>{item.msg}</span>
           </div>
         ))}
       </div>

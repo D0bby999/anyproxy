@@ -327,3 +327,24 @@ func (a *App) CheckForUpdates() (update.ReleaseInfo, error) {
 	return update.CheckForUpdates(ctx, "")
 }
 
+// SetCompactMode resizes the native window between compact widget mode (360x520) and full desktop mode (1280x800).
+func (a *App) SetCompactMode(compact bool, alwaysOnTop bool) {
+	ctx := a.ctx
+	if ctx == nil {
+		return
+	}
+	go func() {
+		if compact {
+			runtime.WindowSetSize(ctx, 360, 520)
+			runtime.WindowSetPosition(ctx, 80, 60)
+			runtime.WindowSetAlwaysOnTop(ctx, alwaysOnTop)
+			runtime.WindowShow(ctx)
+		} else {
+			runtime.WindowSetAlwaysOnTop(ctx, false)
+			runtime.WindowSetSize(ctx, 1280, 800)
+			runtime.WindowSetPosition(ctx, 80, 40)
+			runtime.WindowShow(ctx)
+		}
+	}()
+}
+

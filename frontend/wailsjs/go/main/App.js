@@ -102,6 +102,10 @@ export function SaveRule(arg1) {
   return window['go']['main']['App']['SaveRule'](arg1);
 }
 
+export function SetCompactMode(arg1, arg2) {
+  return window['go']['main']['App']['SetCompactMode'](arg1, arg2);
+}
+
 export function SetDefaultProxy(arg1) {
   return window['go']['main']['App']['SetDefaultProxy'](arg1);
 }

@@ -57,6 +57,8 @@ export function SaveProxy(arg1:pbprofile.ProxyConfig):Promise<pbprofile.Profile>
 
 export function SaveRule(arg1:pbprofile.ProxyRule):Promise<pbprofile.Profile>;
 
+export function SetCompactMode(arg1:boolean,arg2:boolean):Promise<void>;
+
 export function SetDefaultProxy(arg1:string):Promise<pbprofile.Profile>;
 
 export function SetEngineEnabled(arg1:boolean):Promise<driver.EngineStatus>;

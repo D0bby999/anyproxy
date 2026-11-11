@@ -1,16 +1,26 @@
 // SPDX-License-Identifier: MIT
-import React from 'react'
+import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
+import { Icon } from '../components/icons'
 import { t, setLanguage, getLanguage } from '../i18n'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
 import type { Profile } from '../types'
 
 export function SettingsPage({
   profile,
+  profiles = [],
   onUpdateOptions,
   onCheckUpdates,
+  onSwitchProfile,
+  onCreateProfile,
+  onDuplicateProfile,
+  onRenameProfile,
+  onDeleteProfile,
+  onImportProfile,
+  onExportProfile,
 }: {
   profile: Profile | null
+  profiles?: string[]
   onUpdateOptions: (
     trafficLogging: boolean,
     dnsViaProxy: boolean,
@@ -18,7 +28,19 @@ export function SettingsPage({
     autoClearLogs: boolean
   ) => Promise<void>
   onCheckUpdates: () => Promise<void>
+  onSwitchProfile?: (name: string) => void
+  onCreateProfile?: () => void
+  onDuplicateProfile?: (srcName: string) => void
+  onRenameProfile?: (oldName: string) => void
+  onDeleteProfile?: (name: string) => void
+  onImportProfile?: (raw: string) => Promise<void>
+  onExportProfile?: (includePasswords: boolean) => Promise<void>
 }) {
+  const [includePasswords, setIncludePasswords] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importError, setImportError] = useState('')
+
   const currentTheme = readTheme()
   const currentLang = getLanguage()
 
@@ -32,11 +54,122 @@ export function SettingsPage({
     window.location.reload()
   }
 
+  const handleImportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!onImportProfile || !importText.trim()) return
+    setImportError('')
+    try {
+      await onImportProfile(importText)
+      setImportText('')
+      setShowImportModal(false)
+    } catch (err) {
+      setImportError(String(err))
+    }
+  }
+
   return (
     <>
       <PageHead title={t.settings.title} sub={t.settings.sub} />
 
       <div className="pagebody" style={{ maxWidth: 760 }}>
+        {profile && onSwitchProfile && (
+          <div className="card pad">
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <h3>{t.settings.profiles}</h3>
+              <div className="row" style={{ gap: 6 }}>
+                {onImportProfile && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => {
+                      setImportError('')
+                      setShowImportModal(true)
+                    }}
+                  >
+                    <Icon name="upload" />
+                    {t.settings.importProfileBtn}
+                  </button>
+                )}
+                {onExportProfile && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => void onExportProfile(includePasswords)}
+                  >
+                    <Icon name="download" />
+                    {t.settings.exportProfileBtn}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="field" style={{ marginTop: 4 }}>
+              <label>{t.settings.activeProfileLabel}</label>
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <select
+                  className="select"
+                  style={{ flex: 1, minWidth: 160 }}
+                  value={profile.name}
+                  onChange={(e) => onSwitchProfile(e.target.value)}
+                >
+                  {profiles.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                {onCreateProfile && (
+                  <button type="button" className="btn sm" onClick={onCreateProfile}>
+                    <Icon name="plus" />
+                    {t.nav.newProfile}
+                  </button>
+                )}
+                {onDuplicateProfile && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => onDuplicateProfile(profile.name)}
+                  >
+                    <Icon name="copy" />
+                    {t.settings.duplicateBtn}
+                  </button>
+                )}
+                {onRenameProfile && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => onRenameProfile(profile.name)}
+                  >
+                    <Icon name="pencil" />
+                    {t.settings.renameBtn}
+                  </button>
+                )}
+                {onDeleteProfile && profiles.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => onDeleteProfile(profile.name)}
+                  >
+                    <Icon name="trash" />
+                    {t.settings.deleteBtn}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {onExportProfile && (
+              <label className="row" style={{ cursor: 'pointer', fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={includePasswords}
+                  onChange={(e) => setIncludePasswords(e.target.checked)}
+                />
+                <span className="muted">{t.settings.includePasswords}</span>
+              </label>
+            )}
+          </div>
+        )}
+
         <div className="card pad">
           <h3>{t.settings.appearance}</h3>
           <div className="row" style={{ gap: 24, marginTop: 8 }}>
@@ -134,6 +267,50 @@ export function SettingsPage({
           </div>
         </div>
       </div>
+
+      {showImportModal && (
+        <div className="dialog-backdrop">
+          <div className="dialog-box">
+            <form onSubmit={handleImportSubmit}>
+              <div className="dialog-head">
+                <h2>{t.settings.importProfileTitle}</h2>
+                <button
+                  type="button"
+                  className="iconbtn sm"
+                  onClick={() => setShowImportModal(false)}
+                  aria-label={t.actions.cancel}
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <div className="dialog-body">
+                {importError && <p role="alert">{importError}</p>}
+                <textarea
+                  className="input mono"
+                  rows={6}
+                  style={{ height: 'auto', padding: 10 }}
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={t.settings.importProfilePlaceholder}
+                  required
+                />
+              </div>
+              <div className="dialog-foot">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowImportModal(false)}
+                >
+                  {t.actions.cancel}
+                </button>
+                <button type="submit" className="btn primary">
+                  {t.actions.import}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   )
 }

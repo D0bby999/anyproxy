@@ -26,6 +26,12 @@ export type IconName =
   | 'upload'
   | 'download'
   | 'close'
+  | 'minimize'
+  | 'maximize'
+  | 'pin'
+  | 'sidebar'
+  | 'folder'
+  | 'zap'
 
 export function Icon({ name, className = 'icon' }: { name: IconName; className?: string }) {
   switch (name) {
@@ -195,6 +201,50 @@ export function Icon({ name, className = 'icon' }: { name: IconName; className?:
         <svg className={className} viewBox="0 0 24 24">
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      )
+    case 'minimize':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <polyline points="4 14 10 14 10 20" />
+          <polyline points="20 10 14 10 14 4" />
+          <line x1="14" y1="10" x2="21" y2="3" />
+          <line x1="3" y1="21" x2="10" y2="14" />
+        </svg>
+      )
+    case 'maximize':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <polyline points="15 3 21 3 21 9" />
+          <polyline points="9 21 3 21 3 15" />
+          <line x1="21" y1="3" x2="14" y2="10" />
+          <line x1="3" y1="21" x2="10" y2="14" />
+        </svg>
+      )
+    case 'pin':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <line x1="12" y1="17" x2="12" y2="22" />
+          <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+        </svg>
+      )
+    case 'sidebar':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <line x1="9" y1="3" x2="9" y2="21" />
+        </svg>
+      )
+    case 'folder':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+      )
+    case 'zap':
+      return (
+        <svg className={className} viewBox="0 0 24 24">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
       )
   }

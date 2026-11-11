@@ -63,6 +63,7 @@ interface WailsApp {
   ): Promise<string>
   PickProcessExecutable(): Promise<string>
   CheckForUpdates(): Promise<ReleaseInfo>
+  SetCompactMode(compact: boolean, alwaysOnTop: boolean): Promise<void>
 }
 
 declare global {

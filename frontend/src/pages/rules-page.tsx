@@ -6,26 +6,57 @@ import { Icon } from '../components/icons'
 import { t } from '../i18n'
 import type { ProxyRule, ProxyConfig } from '../types'
 
+function extractAppNameFromPath(fullPath: string): string {
+  if (!fullPath) return ''
+  const appMatch = fullPath.match(/([^/\\]+)\.app(?:[/\\]|$)/i)
+  if (appMatch && appMatch[1]) return appMatch[1]
+  const base = fullPath.split(/[/\\]/).filter(Boolean).pop() || ''
+  return base.replace(/\.exe$/i, '')
+}
+
 export function RulesPage({
   rules,
   proxies,
+  knownApps = [],
   onSaveRule,
   onDeleteRule,
   onToggleRule,
   onMoveRule,
   onCloneRule,
+  onPickExecutable,
+  onImportRules,
+  onExportRules,
 }: {
   rules: ProxyRule[]
   proxies: ProxyConfig[]
+  knownApps?: string[]
   onSaveRule: (r: ProxyRule) => Promise<void>
   onDeleteRule: (id: string) => Promise<void>
   onToggleRule: (id: string, enabled: boolean) => Promise<void>
   onMoveRule: (id: string, delta: number) => Promise<void>
   onCloneRule: (id: string) => Promise<void>
+  onPickExecutable?: () => Promise<string>
+  onImportRules?: (raw: string) => Promise<void>
+  onExportRules?: () => Promise<void>
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyRule | null>(null)
   const [error, setError] = useState('')
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importError, setImportError] = useState('')
+
+  const quickAppCandidates = Array.from(
+    new Set([
+      '*',
+      ...knownApps.filter((a) => a && a !== 'local-client' && a !== 'AnyProxy'),
+      'Google Chrome',
+      'Safari',
+      'Telegram',
+      'Cursor',
+      'curl',
+    ])
+  ).slice(0, 8)
 
   const handleOpenAdd = () => {
     setError('')
@@ -37,15 +68,50 @@ export function RulesPage({
       targetHosts: '*',
       targetPorts: '*',
       protocol: 'both',
-      action: 'direct',
+      action: 'proxy',
+      proxyConfigId: '',
     })
     setShowModal(true)
   }
 
   const handleEdit = (r: ProxyRule) => {
     setError('')
-    setEditing({ ...r, action: r.action.toLowerCase() as ProxyRule['action'], protocol: r.protocol.toLowerCase() as ProxyRule['protocol'] })
+    setEditing({
+      ...r,
+      action: r.action.toLowerCase() as ProxyRule['action'],
+      protocol: r.protocol.toLowerCase() as ProxyRule['protocol'],
+    })
     setShowModal(true)
+  }
+
+  const handleAddAppToken = (appName: string) => {
+    if (!editing || !appName) return
+    if (appName === '*') {
+      setEditing({ ...editing, processNames: '*' })
+      return
+    }
+    const cur = (editing.processNames || '')
+      .split(';')
+      .flatMap((x) => x.split(','))
+      .map((x) => x.trim())
+      .filter((x) => x && x !== '*')
+    if (!cur.includes(appName)) {
+      cur.push(appName)
+    }
+    setEditing({
+      ...editing,
+      processNames: cur.join('; '),
+      name: editing.name.trim() ? editing.name : `Proxy ${appName}`,
+    })
+  }
+
+  const handleBrowseExecutable = async () => {
+    if (!onPickExecutable) return
+    const path = await onPickExecutable()
+    const extracted = extractAppNameFromPath(path)
+    if (extracted) {
+      handleAddAppToken(extracted)
+    }
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -59,9 +125,45 @@ export function RulesPage({
     }
   }
 
+  const handleImportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!onImportRules || !importText.trim()) return
+    setImportError('')
+    try {
+      await onImportRules(importText)
+      setImportText('')
+      setShowImportModal(false)
+    } catch (err) {
+      setImportError(String(err))
+    }
+  }
+
   return (
     <>
       <PageHead title={t.rules.title} sub={t.rules.sub}>
+        {onImportRules && (
+          <button
+            type="button"
+            className="btn nodrag"
+            onClick={() => {
+              setImportError('')
+              setShowImportModal(true)
+            }}
+          >
+            <Icon name="upload" />
+            {t.rules.importBtn}
+          </button>
+        )}
+        {onExportRules && rules.length > 0 && (
+          <button
+            type="button"
+            className="btn nodrag"
+            onClick={() => void onExportRules()}
+          >
+            <Icon name="download" />
+            {t.rules.exportBtn}
+          </button>
+        )}
         <button className="btn primary nodrag" onClick={handleOpenAdd}>
           <Icon name="plus" />
           {t.rules.newBtn}
@@ -141,33 +243,36 @@ export function RulesPage({
                                 : 'ok'
                             }`}
                             title={
-                              action === 'proxy' && matchedProxy
-                                ? `Proxy: ${matchedProxy.name}`
-                                : r.action.toUpperCase()
+                              action === 'proxy'
+                                ? `Proxy: ${matchedProxy ? matchedProxy.name : t.rules.defaultProxy}`
+                                : action.toUpperCase()
                             }
                           >
                             <span className="dot" />
                             <span className="chiptext">
-                              {r.action.toUpperCase()}
-                              {action === 'proxy' && matchedProxy
-                                ? `: ${matchedProxy.name}`
-                                : ''}
+                              {action === 'proxy'
+                                ? matchedProxy
+                                  ? `Proxy: ${matchedProxy.name}`
+                                  : t.rules.defaultProxy
+                                : action.toUpperCase()}
                             </span>
                           </span>
                         </td>
                         <td className="col-actions">
                           <span className="row">
                             <button
-                              className="btn sm"
-                              onClick={() => onToggleRule(r.id, !r.enabled)}
-                              title={r.enabled ? t.rules.disable : t.rules.enable}
-                            >
-                              {r.enabled ? t.actions.disable : t.actions.enable}
-                            </button>
+                              type="button"
+                              role="switch"
+                              aria-checked={r.enabled}
+                              aria-label={`${r.enabled ? t.rules.disable : t.rules.enable}: ${r.name}`}
+                              title={r.enabled ? t.rules.enabled : t.rules.disabled}
+                              className={`switch ${r.enabled ? 'on' : ''}`}
+                              onClick={() => void onToggleRule(r.id, !r.enabled)}
+                            />
                             <button
                               className="iconbtn sm"
                               disabled={idx === 0}
-                              onClick={() => onMoveRule(r.id, -1)}
+                              onClick={() => void onMoveRule(r.id, -1)}
                               title={t.actions.moveUp}
                               aria-label={t.actions.moveUp}
                             >
@@ -176,7 +281,7 @@ export function RulesPage({
                             <button
                               className="iconbtn sm"
                               disabled={idx === rules.length - 1}
-                              onClick={() => onMoveRule(r.id, 1)}
+                              onClick={() => void onMoveRule(r.id, 1)}
                               title={t.actions.moveDown}
                               aria-label={t.actions.moveDown}
                             >
@@ -184,7 +289,7 @@ export function RulesPage({
                             </button>
                             <button
                               className="iconbtn sm"
-                              onClick={() => onCloneRule(r.id)}
+                              onClick={() => void onCloneRule(r.id)}
                               title={t.actions.clone}
                               aria-label={t.actions.clone}
                             >
@@ -200,7 +305,11 @@ export function RulesPage({
                             </button>
                             <button
                               className="iconbtn sm"
-                              onClick={() => { if (window.confirm(`${t.rules.confirmDelete}\n${r.name}`)) void onDeleteRule(r.id) }}
+                              onClick={() => {
+                                if (window.confirm(`${t.rules.confirmDelete}\n${r.name}`)) {
+                                  void onDeleteRule(r.id)
+                                }
+                              }}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >
@@ -248,7 +357,21 @@ export function RulesPage({
                 </div>
 
                 <div className="field">
-                  <label>{t.rules.applications} ({t.rules.processHint})</label>
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <label>
+                      {t.rules.applications} ({t.rules.processHint})
+                    </label>
+                    {onPickExecutable && (
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => void handleBrowseExecutable()}
+                      >
+                        <Icon name="folder" />
+                        {t.rules.browseApp}
+                      </button>
+                    )}
+                  </div>
                   <input
                     className="input mono"
                     value={editing.processNames}
@@ -256,11 +379,26 @@ export function RulesPage({
                       setEditing({ ...editing, processNames: e.target.value })
                     }
                   />
+                  <div className="quick-chip-bar">
+                    <span className="muted" style={{ fontSize: 11 }}>{t.rules.quickApps}</span>
+                    {quickAppCandidates.map((appName) => (
+                      <button
+                        key={appName}
+                        type="button"
+                        className="chip-btn"
+                        onClick={() => handleAddAppToken(appName)}
+                      >
+                        {appName}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="row" style={{ gap: 8 }}>
                   <div className="field" style={{ flex: 2 }}>
-                    <label>{t.rules.targets} ({t.rules.targetHint})</label>
+                    <label>
+                      {t.rules.targets} ({t.rules.targetHint})
+                    </label>
                     <input
                       className="input mono"
                       value={editing.targetHosts}
@@ -270,7 +408,9 @@ export function RulesPage({
                     />
                   </div>
                   <div className="field" style={{ flex: 1 }}>
-                    <label>{t.rules.ports} ({t.rules.portHint})</label>
+                    <label>
+                      {t.rules.ports} ({t.rules.portHint})
+                    </label>
                     <input
                       className="input mono"
                       value={editing.targetPorts}
@@ -350,6 +490,50 @@ export function RulesPage({
                 </button>
                 <button type="submit" className="btn primary">
                   {t.actions.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="dialog-backdrop">
+          <div className="dialog-box">
+            <form onSubmit={handleImportSubmit}>
+              <div className="dialog-head">
+                <h2>{t.rules.importTitle}</h2>
+                <button
+                  type="button"
+                  className="iconbtn sm"
+                  onClick={() => setShowImportModal(false)}
+                  aria-label={t.actions.cancel}
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <div className="dialog-body">
+                {importError && <p role="alert">{importError}</p>}
+                <textarea
+                  className="input mono"
+                  rows={6}
+                  style={{ height: 'auto', padding: 10 }}
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={t.rules.importPlaceholder}
+                  required
+                />
+              </div>
+              <div className="dialog-foot">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowImportModal(false)}
+                >
+                  {t.actions.cancel}
+                </button>
+                <button type="submit" className="btn primary">
+                  {t.actions.import}
                 </button>
               </div>
             </form>

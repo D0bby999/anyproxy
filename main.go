@@ -39,8 +39,8 @@ func main() {
 		Title:     "AnyProxy",
 		Width:     1280,
 		Height:    800,
-		MinWidth:  980,
-		MinHeight: 620,
+		MinWidth:  340,
+		MinHeight: 420,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

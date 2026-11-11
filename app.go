@@ -28,6 +28,7 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	runtime.WindowSetPosition(ctx, 80, 40)
 
 	dirs, err := paths.Default()
 	if err != nil {
