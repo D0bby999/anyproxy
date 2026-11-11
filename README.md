@@ -1,138 +1,69 @@
 # AnyProxy
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+**AnyProxy** là công cụ điều hướng và giám sát lưu lượng mạng theo tiến trình (Per-application Proxy Router & Traffic Inspector) dành cho **macOS** và **Windows**, thuộc hệ sinh thái **AnyTools** (cùng với `anyprofile`, `anybrowser`, `anymobile`).
 
-**AnyProxy** là công cụ điều hướng lưu lượng mạng hệ thống (System-level Network Traffic Interceptor & Proxy Router) thuộc hệ sinh thái **AnyTools** (cùng với `anyprofile`, `anybrowser`, `any mobile`).
-
-Dự án được xỉa và tái thiết kế hoàn toàn bằng **Go + Wails v2 + React/TypeScript** từ [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge), bổ sung kiến trúc native driver hiện đại (macOS Network Extension & Windows WinDivert), mã hóa credential an toàn (OS Keychain / Credential Manager), cùng giao diện desktop chuẩn `framed-sheet` không phụ thuộc electron cồng kềnh.
+Dự án được xây dựng bằng **Go + Wails v2 + React/TypeScript**, phát triển từ [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) với định dạng profile `.pbprofile` tương thích, lưu trữ trạng thái atomic JSON, mã hóa mật khẩu AES-256-GCM (khóa giữ trong OS Keychain / Credential Manager), và hỗ trợ cả **Desktop GUI** lẫn **Headless CLI** trong cùng một binary.
 
 ---
 
-> **Trạng thái hiện tại:** Ứng dụng hoạt động với 2 tầng kết hợp:
-> 1. **System Proxy toàn máy (macOS `networksetup` / Windows Registry)**: Khi bấm **Start Engine**, ứng dụng tự động bật System Proxy (SOCKS5, HTTP, HTTPS) trỏ về `127.0.0.1:10800` và tự động tắt/khôi phục khi bấm **Stop Engine** hoặc thoát app.
-> 2. **Local Inbound Proxy (`127.0.0.1:10800`) kèm nhận diện tiến trình (`PID` / `ProcessName`)**: Tự động dò tên ứng dụng nguồn (như `Google Chrome`, `curl`, `Telegram`...) để áp dụng đúng **Rules theo ứng dụng/domain/port**. Nếu không khớp rule nào nhưng đã chọn **Active Proxy (Default Proxy)**, lưu lượng sẽ tự động đi qua Default Proxy đó.
->
-> Ví dụ dùng riêng lẻ: `curl --proxy socks5h://127.0.0.1:10800 https://example.com`.
+## Tài liệu
 
-## Tính năng chính
-
-1. **Dual-Mode Binary (GUI & Headless CLI)**:
-   - Chạy không cờ: Mở giao diện desktop native Wails v2 siêu nhẹ.
-   - Chạy kèm cờ (`--profile`, `--list-profiles`, `--test-proxy`, `--verbose`): Chạy headless trực tiếp trên terminal/server hoặc tích hợp CI/CD scripts.
-2. **Rule Engine mạnh mẽ**:
-   - Khớp luồng theo Process name, Domain (exact, wildcard, regex), IP/CIDR, Port, Protocol (TCP/UDP).
-   - Hỗ trợ Action: `DIRECT`, `BLOCK`, hoặc chuyển tiếp qua Proxy cụ thể.
-   - Fallback bypass tự động cho DNS hệ thống (`127.0.0.53`, `::1`, multicast DNS) và local loopback để không bao giờ làm đơ mạng máy tính.
-3. **5-Step Proxy Checker chuyên sâu**:
-   - Tự động kiểm tra proxy trước khi sử dụng qua 5 bước nghiêm ngặt:
-     1. TCP Handshake & Latency.
-     2. Proxy Auth & Protocol Negotiation (SOCKS5/HTTP/HTTPS).
-     3. Upstream HTTP HEAD (kiểm tra phản hồi HTTP thực tế).
-     4. Đo độ trễ thiết lập tunnel 3 lần (không phải kiểm tra DNS leak).
-     5. UDP Relay Capability (RFC 1928, kiểm tra hỗ trợ voice/game/WebRTC).
-4. **Bảo mật chuẩn AnyProfile**:
-   - Toàn bộ mật khẩu proxy được lưu trực tiếp vào OS Keychain (macOS) hoặc Credential Manager (Windows) qua `internal/secrets.Vault`.
-   - File cấu hình và SQLite database được tạo với quyền hạn người dùng chặt chẽ (`0700` cho thư mục, `0600` cho file).
-   - Tương thích 100% với định dạng file `.pbprofile` JSON chuẩn của ProxyBridge gốc.
-5. **Drivers đa nền tảng**:
-   - **macOS**: Swift System Extension (`macos/extension/`) sử dụng `NEAppProxyProvider` và `NEDNSProxyProvider`.
-   - **Windows**: WinDivert packet filter service (`internal/driver/windows/`) kết hợp connection tracking (`conntrack`).
-   - **Testing**: `MockDriver` chỉ được sử dụng khi test chủ động truyền vào; driver mặc định không giả lập chặn lưu lượng.
+- **[Hướng dẫn sử dụng (User Guide)](docs/user-guide.md)** — Cách dùng GUI, tạo/sắp xếp Routing Rules, kiểm tra proxy 5 bước, Compact Mode, CLI flags, tích hợp `curl` / Burp Suite / AnyProfile, và xử lý sự cố.
+- **[Kiến trúc & Phát triển (Architecture & Dev)](docs/architecture.md)** — Quyết định thiết kế, bản đồ module, và quy trình build / test / lint qua `Makefile`.
 
 ---
 
-## Kiến trúc thư mục
+## Tổng quan nhanh
 
-```
-anyproxy/
-├── cmd/
-├── internal/
-│   ├── cli/            # Headless CLI runner
-│   ├── dnsmap/         # Reverse DNS cache & IP-to-domain mapper
-│   ├── driver/         # Driver abstraction & MockDriver
-│   │   ├── darwin/     # macOS Extension IPC coordinator
-│   │   └── windows/    # WinDivert packet filter & conntrack
-│   ├── flows/          # Live flow tracker & circular activity log
-│   ├── netproxy/       # SOCKS5/HTTP upstream relay & 5-step checker
-│   ├── paths/          # OS-specific application data directories
-│   ├── pbprofile/      # .pbprofile import/export serializer
-│   ├── rules/          # Rule matcher engine (Domain/IP/Process/Port)
-│   ├── secrets/        # OS Keychain / Credential Manager vault
-│   ├── service/        # Engine state coordinator
-│   └── store/          # modernc.org/sqlite database store
-├── macos/extension/    # Swift Network Extension driver source
-├── frontend/           # React 18 + TypeScript + Vite UI (Framed-sheet design)
-├── main.go             # Application entrypoint (CLI or GUI router)
-├── app.go              # Wails application lifecycle & Go bindings
-└── Makefile            # Build targets & cross-compilation helpers
+### Cơ chế hoạt động 2 tầng
+1. **Local Inbound Proxy (`127.0.0.1:10800`)**: Luôn lắng nghe SOCKS5 (`CONNECT`) và HTTP/HTTPS (`CONNECT`), tự động nhận diện tiến trình nguồn (`PID` / tên ứng dụng) để áp dụng **Routing Rules** hoặc chuyển tiếp qua **Active Proxy**.
+2. **OS System Proxy**: Khi bật **Enable AnyProxy** (hoặc chạy CLI), ứng dụng tự động cấu hình System Proxy của macOS (`networksetup`) hoặc Windows (`Registry`) trỏ về `127.0.0.1:10800`, và tự động tắt khi dừng hoặc thoát app.
+
+### Tính năng chính
+- **Dual-mode Binary**: Mở không cờ để chạy Desktop GUI (Full & Compact Mini Mode); truyền cờ (`--profile`, `--list-profiles`, `--test-proxy`, `--verbose`, `--update`) để chạy Headless CLI.
+- **Rule Engine ưu tiên từ trên xuống**: Khớp theo tên ứng dụng/tiến trình, domain/wildcard, IP/CIDR/dải IP, cổng, và giao thức với hành động `PROXY`, `DIRECT`, hoặc `BLOCK`; tự động bypass loopback/multicast/stub-DNS (`:53`).
+- **5-Step Proxy Checker**: Kiểm tra TCP reachability, handshake & auth, HTTP probe, benchmark độ trễ 3 lần, và SOCKS5 UDP Associate.
+- **Bảo mật dữ liệu**: File cấu hình `state.json` và `secrets.vault` (AES-256-GCM) đặt quyền owner-only (`0700`/`0600`), chỉ lưu khóa vault 32-byte trong OS Keychain / Credential Manager.
+- **Tương thích `.pbprofile`**: Import/Export profile JSON chuẩn ProxyBridge (tùy chọn kèm hoặc ẩn mật khẩu) và tạo rule 1 chạm trực tiếp từ bảng **Live Flows** / **History Logs**.
+
+---
+
+## Bắt đầu nhanh
+
+### Dùng CLI nhanh
+```bash
+# Xem toàn bộ tùy chọn CLI
+anyproxy --help
+
+# Liệt kê profile hiện có
+anyproxy --list-profiles
+
+# Chạy headless với profile đã lưu
+anyproxy --profile "Default" --verbose 3
+
+# Dùng trực tiếp local inbound listener với curl
+curl --proxy socks5h://127.0.0.1:10800 https://api.ipify.org
 ```
 
----
-
-## Cài đặt & Build
-
-### Yêu cầu hệ thống
-- **Go**: 1.22 trở lên.
-- **Node.js**: 18+ và `npm`.
-- **Wails CLI**: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`.
-
-### Lệnh build
+### Build & Test từ mã nguồn
+Yêu cầu **Go 1.26+**, **Node.js 18+**, và **Wails CLI v2** (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
 
 ```bash
-# 1. Cài đặt dependency frontend và build bundle
-cd frontend && npm install && npm run build && cd ..
+# Chạy toàn bộ test (Go race + TypeScript + Vitest)
+make test
 
-# 2. Chạy test toàn bộ backend Go
-go test -race ./...
+# Chạy GUI ở chế độ dev
+make dev
 
-# 3. Build binary bất đối xứng (Dual GUI/CLI binary)
-go build -o build/bin/anyproxy .
+# Build app bundle macOS (arm64) hoặc bộ cài Windows (amd64)
+make build
+make build-windows
 ```
 
----
-
-Logo giao diện nằm tại `frontend/src/assets/anyproxy-mark.svg`; thiết kế icon ứng dụng riêng nằm tại `build/appicon.svg`. Sau khi sửa icon, tạo lại PNG cho Wails (cần `rsvg-convert`):
-
-```bash
-rsvg-convert -w 1024 -h 1024 build/appicon.svg -o build/appicon.png
-```
-
-## Dữ liệu từ phiên bản cũ
-
-Bản mới dùng thư mục dữ liệu `AnyProxy`. Nếu chỉ có thư mục `AnyProxyXa` cũ, ứng dụng tiếp tục dùng dữ liệu đó mà không tự di chuyển trong khi ứng dụng cũ có thể đang chạy. Để đổi tên thư mục, thoát cả hai bản, sao lưu rồi đổi tên thư mục cũ thành `AnyProxy`. Tên database và định danh vault cũ được giữ nội bộ để đọc dữ liệu và mật khẩu hiện có. Nếu cả hai thư mục cùng tồn tại, ứng dụng dừng để tránh chọn nhầm. Biến `ANYPROXY_DATA_DIR` tiếp tục được hỗ trợ.
-
-## Hướng dẫn sử dụng CLI
-
-```bash
-# Xem trợ giúp
-./build/bin/anyproxy --help
-
-# Liệt kê các profile hiện có
-./build/bin/anyproxy --list-profiles
-
-# Chạy headless với một profile đã lưu
-./build/bin/anyproxy --profile "BurpSuite Intercept" --verbose 2
-
-# Chạy headless trực tiếp từ file .pbprofile ngoài
-./build/bin/anyproxy -p /path/to/custom.pbprofile
-
-# Kiểm tra độ trễ và tính toàn vẹn của một proxy
-./build/bin/anyproxy --test-proxy "proxy-uuid-hoac-ten"
-```
-
----
-
-## Tích hợp cùng AnyProfile / AnyTools
-
-AnyProxy kết hợp hoàn hảo với hệ thống trình duyệt ẩn danh và anti-detect profile của **AnyProfile**:
-
-- **Định tuyến độc lập từng Profile**: Định tuyến luồng mạng của từng tiến trình Chromium / Firefox riêng lẻ đi qua các proxy chain khác nhau mà không cần cấu hình extension proxy trên browser.
-- **Pentest Bridge**: Chuyển tiếp toàn bộ traffic từ các app không hỗ trợ proxy (như game client, desktop app, terminal tool) đi xuyên qua Burp Suite hoặc Caido qua luật `Action: PROXY -> 127.0.0.1:8080`.
-- **DNS**: Chưa có bảo đảm chống rò rỉ DNS toàn hệ thống; cấu hình ứng dụng khách và proxy phù hợp, rồi tự kiểm tra trước khi sử dụng.
+Xem chi tiết các bước cài đặt, sử dụng và phát triển trong [docs/user-guide.md](docs/user-guide.md) và [docs/architecture.md](docs/architecture.md).
 
 ---
 
 ## Giấy phép
 
-Dự án này được phát hành theo giấy phép [MIT](LICENSE), ghi nhận bản quyền từ dự án gốc [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge). Chi tiết xem tại file [NOTICE](NOTICE).
-
+Phát hành theo giấy phép **AGPL-3.0-or-later**, ghi nhận đóng góp từ [InterceptSuite/ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) (MIT) và AnyProfile (AGPL-3.0-or-later). Chi tiết xem tại [NOTICE](NOTICE).
