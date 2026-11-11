@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import React, { useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'

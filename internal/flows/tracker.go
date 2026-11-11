@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package flows manages the Live Connections table, Connection Log ring buffer
 // (with deduplication, 30s UDP silence window, and Include/Exclude LogFilters),

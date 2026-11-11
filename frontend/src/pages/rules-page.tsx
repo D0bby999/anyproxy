@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PageHead } from '../components/page-head'

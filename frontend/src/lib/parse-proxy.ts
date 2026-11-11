@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import type { ProxyConfig } from '../types'
 
 // Parse the two paste formats without including credentials in errors or generated names.

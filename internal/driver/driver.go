@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package driver abstracts the OS-level transparent packet/flow interception
 // backend (macOS NetworkExtension System Extension, Windows WinDivert service,

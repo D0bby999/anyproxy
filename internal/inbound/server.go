@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package inbound implements a local dual-protocol (SOCKS5 and HTTP CONNECT)
 // forward proxy server, allowing AnyProfile, browsers, curl, and CLI tools

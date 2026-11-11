@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package service coordinates SQLite profile persistence, the encrypted secrets
 // vault, the rule & DNS engines, the 5-step proxy checker, and the OS interception driver.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package update checks for new AnyProxy releases against an update manifest
 // or GitHub Releases, comparing versions and providing release metadata.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package netproxy implements SOCKS5 (TCP + UDP ASSOCIATE) and HTTP CONNECT
 // upstream dialing, bidirectional stream piping with live byte counters, and

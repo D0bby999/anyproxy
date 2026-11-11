@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 export type ProxyType = 'socks5' | 'socks4' | 'http' | 'https'
 export type RuleProtocol = 'tcp' | 'udp' | 'both'

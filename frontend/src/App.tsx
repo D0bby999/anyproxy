@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { t } from './i18n'
