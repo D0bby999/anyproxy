@@ -36,19 +36,18 @@ input, textarea { caret-color: var(--accent); }
 }
 
 .icon {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex: 0 0 auto;
   display: block;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .icon.xs { width: 12px; height: 12px; }
-.icon.sm { width: 14px; height: 14px; }
-.icon.lg { width: 20px; height: 20px; }
+.icon.sm { width: 13.5px; height: 13.5px; }
+.icon.lg { width: 19px; height: 19px; }
 
 .mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; }
 .muted { color: var(--muted); }
@@ -103,6 +102,11 @@ input, textarea { caret-color: var(--accent); }
   height: 28px;
   border-radius: var(--r-sm);
 }
+.iconbtn.danger:hover:not(:disabled) {
+  color: var(--danger-ink);
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+}
 
 .btn.primary {
   color: var(--on-fill);
@@ -152,15 +156,20 @@ input, textarea { caret-color: var(--accent); }
   box-shadow: var(--sh-field);
   outline: none;
 }
+.select, select {
+  padding-right: 24px;
+  text-overflow: ellipsis;
+}
 :root[data-theme="dark"] input::placeholder,
 :root[data-theme="dark"] textarea::placeholder { color: var(--faint); opacity: 1; }
 .input:focus, .select:focus, select:focus, textarea:focus {
   border-color: var(--accent);
 }
-textarea {
+textarea, textarea.input {
   height: auto;
-  min-height: 64px;
-  padding: 8px 10px;
+  min-height: 76px;
+  padding: 10px 12px;
+  line-height: 1.5;
 }
 
 /* Badges / Chips (AnyProfile .chip with .dot) */

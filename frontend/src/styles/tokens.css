@@ -83,9 +83,9 @@
   --ring: 0 0 0 3px rgba(51, 102, 230, .38);
   --ease: cubic-bezier(.2, .8, .3, 1);
 
-  --sidebar-w: 236px;
-  --titlebar-h: 38px; /* room for macOS traffic lights */
-  --statusbar-h: 30px;
+  --sidebar-w: 226px;
+  --titlebar-h: 36px; /* room for macOS traffic lights */
+  --statusbar-h: 28px;
   --font: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace;
 
@@ -108,11 +108,11 @@ html.win { --titlebar-h: 12px; }
   --surface-active: #34343f;
   --ink: #f5f5f8;
   --ink-soft: #dedee6;
-  --muted: #b8b8c4;
-  --faint: #aaaab7;
-  --line: #41414d;
-  --line-soft: #34343f;
-  --line-strong: #60606e;
+  --muted: #9898a6;
+  --faint: #7e7e8c;
+  --line: #292933;
+  --line-soft: #202028;
+  --line-strong: #3d3d4a;
   --accent: #5e88f0;
   --accent-hover: #7a9df4;
   --accent-fill-hover: #4573e9;
@@ -140,9 +140,9 @@ html.win { --titlebar-h: 12px; }
   --warn-line: #543d1c;
   --warn-ink: #f3c07a;
 
-  --ctl: linear-gradient(180deg, #2a2a32, #232329);
-  --ctl-hover: linear-gradient(180deg, #31313b, #2a2a32);
-  --ctl-border: #51515f;
+  --ctl: linear-gradient(180deg, #24242c, #1f1f26);
+  --ctl-hover: linear-gradient(180deg, #2b2b35, #24242c);
+  --ctl-border: #333340;
   --raised: #2f2f39;
   --shadow-rgb: 0, 0, 0;
   --sh-card: 0 1px 2px rgba(0, 0, 0, .22);

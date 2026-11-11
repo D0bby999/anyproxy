@@ -201,27 +201,37 @@
   white-space: nowrap;
 }
 .sb-copy-pill {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 6px;
-  font-size: 10.5px;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  margin-top: 4px;
+  padding: 0 8px;
+  font-size: 11px;
   color: var(--ink-soft);
   background: var(--surface-sunken);
   border: 1px solid var(--line);
-  border-radius: var(--r-xs);
+  border-radius: var(--r-sm);
   cursor: pointer;
-  flex-shrink: 0;
 }
 .sb-copy-pill:hover {
   background: var(--surface-hover);
   border-color: var(--line-strong);
   color: var(--ink);
 }
+.sb-copy-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink);
+}
 .sb-copy-pill .icon {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
 }
 .engine-notice {
   margin: 4px 6px 6px;
@@ -262,17 +272,28 @@ button.enginechip:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 88px;
-  padding: calc(var(--titlebar-h) + 4px) 20px 4px;
+  min-height: 62px;
+  padding: 18px 20px 8px;
   flex: 0 0 auto;
 }
-.pagehead h1 {
-  font-size: var(--t-lg);
-  font-weight: 700;
-  letter-spacing: -0.03em;
+.pagehead > div:first-child {
+  min-width: 0;
 }
-.pagehead .sub { margin-top: 3px; color: var(--faint); font-size: var(--t-sm); line-height: 1.45; }
-@media (max-width: 1100px) {
+.pagehead h1 {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.pagehead .sub {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: var(--t-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 980px) {
   .pagehead:has(.connection-toolbar) { flex-wrap: wrap; row-gap: 8px; }
   .pagehead:has(.connection-toolbar) > div:first-child { flex: 1 1 100%; }
   .pagehead:has(.connection-toolbar) > .spacer { display: none; }
@@ -460,14 +481,14 @@ button.enginechip:hover {
 .table.rules th.col-actions, .table.rules td.col-actions { width: 180px; }
 
 /* 2. Proxies Table */
-.table.proxies th.col-name, .table.proxies td.col-name { width: 24%; }
-.table.proxies th.col-type, .table.proxies td.col-type { width: 75px; }
-.table.proxies th.col-server, .table.proxies td.col-server { width: 20%; }
-.table.proxies th.col-auth, .table.proxies td.col-auth { width: 120px; }
-.table.proxies th.col-latency, .table.proxies td.col-latency { width: 145px; text-align: right; font-variant-numeric: tabular-nums; }
+.table.proxies th.col-name, .table.proxies td.col-name { width: 22%; }
+.table.proxies th.col-type, .table.proxies td.col-type { width: 78px; }
+.table.proxies th.col-server, .table.proxies td.col-server { width: 23%; }
+.table.proxies th.col-auth, .table.proxies td.col-auth { width: 112px; }
+.table.proxies th.col-latency, .table.proxies td.col-latency { width: 148px; text-align: right; font-variant-numeric: tabular-nums; }
 .table.proxies td.col-latency .row > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table.proxies td.col-latency .iconbtn { flex-shrink: 0; }
-.table.proxies th.col-actions, .table.proxies td.col-actions { width: 190px; text-align: right; }
+.table.proxies th.col-actions, .table.proxies td.col-actions { width: 164px; text-align: right; }
 .table tbody tr.clickable-row { cursor: pointer; }
 
 /* 3. Live Flows Table */
@@ -495,10 +516,10 @@ button.enginechip:hover {
 .table.activity th.col-msg, .table.activity td.col-msg { width: auto; }
 
 /* Proxy import and provider directory */
-.proxy-import { flex: 0 0 auto; }
-.proxy-import h2 { font-size: var(--t-md); }
-.proxy-import p { margin: 3px 0 0; color: var(--muted); font-size: var(--t-sm); }
-.proxy-import .proxy-paste { width: 100%; min-height: 72px; resize: vertical; }
+.proxy-import { flex: 0 0 auto; padding: 12px 16px; gap: 8px; }
+.proxy-import h2 { font-size: 14px; }
+.proxy-import p { margin: 2px 0 0; color: var(--muted); font-size: var(--t-xs); }
+.proxy-import .proxy-paste { width: 100%; min-height: 76px; padding: 10px 12px; line-height: 1.5; resize: vertical; }
 .proxy-import-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .proxy-import-foot .muted { font-size: var(--t-xs); }
 .proxy-import .proxy-import-result { margin: 0; color: var(--ink-soft); }
@@ -824,6 +845,7 @@ button.enginechip:hover {
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-soft);
+  white-space: nowrap;
 }
 .compact-proxy-list {
   flex: 1;
@@ -832,6 +854,9 @@ button.enginechip:hover {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+.compact-proxy-list::-webkit-scrollbar {
+  width: 4px;
 }
 .compact-proxy-item {
   display: flex;

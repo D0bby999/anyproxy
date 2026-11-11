@@ -283,24 +283,21 @@ export function Sidebar({
 
         {!collapsed && (
           <>
-            <div className="enginechip-row">
-              <div className="enginechip">
+            <button
+              type="button"
+              className="sb-copy-pill"
+              onClick={() => void handleCopyLocal()}
+              title={`${t.engine.copyEndpoint} — ${t.engine.localNotice}`}
+            >
+              <span className="enginechip">
                 <span className={`state ${isRunning ? 'ok' : 'warn'}`} />
-                <span>{engine?.backend || 'System Driver'}</span>
-              </div>
-              <button
-                type="button"
-                className="sb-copy-pill mono"
-                onClick={() => void handleCopyLocal()}
-                title={t.engine.copyEndpoint}
-              >
-                <Icon name={copiedEndpoint ? 'check' : 'copy'} />
+                <span>Local</span>
+              </span>
+              <span className="sb-copy-val mono">
                 <span>{copiedEndpoint ? '10800 ✓' : '127.0.0.1:10800'}</span>
-              </button>
-            </div>
-            {engine && !engine.extensionInstalled && (
-              <p className="engine-notice" role="status">{t.engine.localNotice}</p>
-            )}
+                <Icon name={copiedEndpoint ? 'check' : 'copy'} />
+              </span>
+            </button>
             {engine?.state === 'error' && engine.message && (
               <p className="engine-notice" role="alert">{engine.message}</p>
             )}
