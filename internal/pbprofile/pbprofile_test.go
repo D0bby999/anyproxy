@@ -118,4 +118,3 @@ func TestRulesJSONRoundTrip(t *testing.T) {
 		t.Fatalf("round-trip failed: %+v, %v", rules2, err)
 	}
 }
-

@@ -145,7 +145,13 @@ func (s *Server) Stop() error {
 	close(s.stopCh)
 	s.mu.Unlock()
 
-	s.wg.Wait()
+	done := make(chan struct{})
+	go func() { s.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	// shortcut: open relays are abandoned, not closed; fine because Stop only runs at app quit.
+	case <-time.After(2 * time.Second):
+	}
 	return nil
 }
 

@@ -13,4 +13,3 @@ func appMenu(_ *App) *menu.Menu {
 	m.Append(menu.WindowMenu())
 	return m
 }
-

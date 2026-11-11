@@ -171,4 +171,3 @@ func (s *Store) LoadHostsFile(path string) error {
 	}
 	return sc.Err()
 }
-

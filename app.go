@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -89,26 +88,12 @@ func (a *App) startup(ctx context.Context) {
 	vault := secrets.NewVault(dirs.Vault(), secrets.Keychain{})
 
 	a.svc = service.New(st, vault, nil)
+	a.svc.RecoverSystemProxy()
 	a.svc.SetEventEmitter(func(topic string, payload any) {
 		if a.ctx != nil {
 			runtime.EventsEmit(a.ctx, topic, payload)
 		}
 	})
-
-	go a.trackWindowPosition(ctx)
-}
-
-func (a *App) trackWindowPosition(ctx context.Context) {
-	ticker := time.NewTicker(800 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			a.saveCurrentWindowPosition()
-		}
-	}
 }
 
 func (a *App) saveCurrentWindowPosition() {

@@ -52,4 +52,3 @@ func ShouldBypassProxy(destIP string, destPort uint16, isUDP bool, localhostViaP
 	}
 	return false
 }
-

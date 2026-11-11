@@ -24,40 +24,51 @@ type ProcessInfo struct {
 type ProcessResolverFunc func(clientAddr net.Addr) ProcessInfo
 
 type pidResolver struct {
-	mu          sync.Mutex
-	pidCache    map[int]ProcessInfo
-	lastNetstat string
-	lastAt      time.Time
+	mu       sync.Mutex
+	pidCache map[int]ProcessInfo
+	snap     string
+	snapAt   time.Time                            // when the netstat that produced snap started
+	inflight chan struct{}                        // non-nil while a netstat runs
+	run      func(args ...string) ([]byte, error) // exec.Command in prod, fake in tests
 }
 
 func newPIDResolver() *pidResolver {
 	return &pidResolver{
 		pidCache: make(map[int]ProcessInfo, 256),
+		run:      func(a ...string) ([]byte, error) { return exec.Command("netstat", a...).Output() },
 	}
 }
 
-func (r *pidResolver) netstatSnapshot(args ...string) string {
-	r.mu.Lock()
-	if time.Since(r.lastAt) < 250*time.Millisecond && r.lastNetstat != "" {
-		snap := r.lastNetstat
+// snapshotSince returns a netstat snapshot whose run started at or after t.
+func (r *pidResolver) snapshotSince(t time.Time, args ...string) string {
+	for {
+		r.mu.Lock()
+		if !r.snapAt.Before(t) {
+			s := r.snap
+			r.mu.Unlock()
+			return s
+		}
+		if ch := r.inflight; ch != nil {
+			r.mu.Unlock()
+			<-ch
+			continue
+		}
+		ch := make(chan struct{})
+		r.inflight = ch
 		r.mu.Unlock()
-		return snap
-	}
-	r.mu.Unlock()
 
-	out, err := exec.Command("netstat", args...).Output()
-	if err != nil {
-		return ""
+		start := time.Now()
+		out, _ := r.run(args...)
+		r.mu.Lock()
+		r.snap, r.snapAt, r.inflight = string(out), start, nil
+		r.mu.Unlock()
+		close(ch)
+		return string(out)
 	}
-	snap := string(out)
-	r.mu.Lock()
-	r.lastNetstat = snap
-	r.lastAt = time.Now()
-	r.mu.Unlock()
-	return snap
 }
 
 func (r *pidResolver) Resolve(clientAddr net.Addr) ProcessInfo {
+	t := time.Now()
 	_, port := parseHostPort(clientAddr)
 	if port == 0 {
 		return ProcessInfo{Name: "unknown"}
@@ -65,31 +76,16 @@ func (r *pidResolver) Resolve(clientAddr net.Addr) ProcessInfo {
 
 	switch runtime.GOOS {
 	case "darwin":
-		snap := r.netstatSnapshot("-anv", "-p", "tcp")
+		snap := r.snapshotSince(t, "-anv", "-p", "tcp")
 		pid, shortName := parseDarwinNetstatPort(snap, port)
-		if pid <= 0 {
-			// Port opened after cached snapshot; refresh once.
-			r.mu.Lock()
-			r.lastAt = time.Time{}
-			r.mu.Unlock()
-			snap = r.netstatSnapshot("-anv", "-p", "tcp")
-			pid, shortName = parseDarwinNetstatPort(snap, port)
-		}
 		if pid <= 0 {
 			return ProcessInfo{Name: "unknown"}
 		}
 		return r.resolveDarwinPID(pid, shortName)
 
 	case "windows":
-		snap := r.netstatSnapshot("-ano", "-p", "tcp")
+		snap := r.snapshotSince(t, "-ano", "-p", "tcp")
 		pid := parseWindowsNetstatPort(snap, port)
-		if pid <= 0 {
-			r.mu.Lock()
-			r.lastAt = time.Time{}
-			r.mu.Unlock()
-			snap = r.netstatSnapshot("-ano", "-p", "tcp")
-			pid = parseWindowsNetstatPort(snap, port)
-		}
 		if pid <= 0 {
 			return ProcessInfo{Name: "unknown"}
 		}
@@ -229,4 +225,3 @@ func (r *pidResolver) resolveWindowsPID(pid int) ProcessInfo {
 	r.mu.Unlock()
 	return info
 }
-

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { t } from './i18n'
 import { normalizeConnectionLog, normalizeFlow } from './lib/normalize-traffic'
@@ -49,6 +49,26 @@ export default function App() {
   }
 
   const app = api.getApp()
+  const live = useRef({ page, engine, compact })
+  live.current = { page, engine, compact }
+
+  const pollLive = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    const { page: curPage, engine: curEngine, compact: isCompact } = live.current
+    const active = curEngine?.state === 'running' || curEngine?.state === 'paused'
+    const wantConn = !isCompact && (curPage === 'connections' || curPage === 'rules')
+    const wantAct = !isCompact && curPage === 'activity'
+    try {
+      const [fl, cl, al] = await Promise.all([
+        active ? app.GetFlows(100) : null,
+        active && wantConn ? app.GetConnectionLogs(100) : null,
+        wantAct ? app.GetActivityLogs(100) : null,
+      ])
+      if (fl) setFlows(fl.map(normalizeFlow))
+      if (cl) setConnLogs(cl.map(normalizeConnectionLog))
+      if (al) setActivityLogs(al)
+    } catch {}
+  }
 
   const reloadData = async (silent = false): Promise<boolean> => {
     try {
@@ -58,6 +78,7 @@ export default function App() {
       setProfiles(list)
       const st = await app.Status()
       setEngine(st)
+      live.current.engine = st
       return true
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e)
@@ -73,37 +94,42 @@ export default function App() {
     const waitForStartup = async () => {
       if (!(await reloadData(true)) && !cancelled) {
         startupTimer = setTimeout(waitForStartup, 150)
+      } else if (!cancelled) {
+        void pollLive()
       }
     }
     void waitForStartup()
-    const timer = setInterval(async () => {
-      try {
-        const [fl, cl, al] = await Promise.all([
-          app.GetFlows(100),
-          app.GetConnectionLogs(100),
-          app.GetActivityLogs(100),
-        ])
-        setFlows((fl ?? []).map(normalizeFlow))
-        setConnLogs((cl ?? []).map(normalizeConnectionLog))
-        setActivityLogs(al ?? [])
-      } catch {}
-    }, 1200)
+    const timer = setInterval(() => void pollLive(), 1200)
+    const onVis = () => {
+      if (!document.hidden) void pollLive()
+    }
+    document.addEventListener('visibilitychange', onVis)
 
     const unsubProfile = api.subscribeEvent('profile:changed', (data: unknown) => {
       if (data) setProfile(data as Profile)
     })
     const unsubEngine = api.subscribeEvent('engine:status', (data: unknown) => {
-      if (data) setEngine(data as EngineStatus)
+      if (data) {
+        const st = data as EngineStatus
+        live.current.engine = st
+        setEngine(st)
+        void pollLive()
+      }
     })
 
     return () => {
       cancelled = true
       clearTimeout(startupTimer)
       clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVis)
       unsubProfile()
       unsubEngine()
     }
   }, [])
+
+  useEffect(() => {
+    void pollLive()
+  }, [page, compact])
 
   const handleEnterCompact = async () => {
     setCompact(true)

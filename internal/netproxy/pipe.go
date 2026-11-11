@@ -4,9 +4,12 @@ package netproxy
 
 import (
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 )
+
+var bufPool = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
 
 // Pipe relays bytes bidirectionally between client and upstream until either side
 // closes or neither direction transfers data for idleTimeout.
@@ -20,7 +23,9 @@ func Pipe(client, upstream net.Conn, onSent, onRecv func(int64)) (sentTotal, rec
 	done := make(chan struct{}, 2)
 
 	cp := func(dst, src net.Conn, counter *atomic.Int64, cb func(int64)) {
-		buf := make([]byte, 32*1024)
+		bp := bufPool.Get().(*[]byte)
+		defer bufPool.Put(bp)
+		buf := *bp
 		for {
 			_ = src.SetReadDeadline(time.Now().Add(idleTimeout))
 			n, err := src.Read(buf)
@@ -66,4 +71,3 @@ func Pipe(client, upstream net.Conn, onSent, onRecv func(int64)) (sentTotal, rec
 
 	return sentAtom.Load(), recvAtom.Load()
 }
-

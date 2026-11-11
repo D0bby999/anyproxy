@@ -6,4 +6,3 @@ package main
 // user's %AppData%, whose inherited ACL already admits only the user,
 // SYSTEM and administrators.
 func ownerOnlyFiles() {}
-

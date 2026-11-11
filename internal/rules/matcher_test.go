@@ -180,4 +180,3 @@ func BenchmarkRuleEvaluate(b *testing.B) {
 		_ = eng.Evaluate(in)
 	}
 }
-

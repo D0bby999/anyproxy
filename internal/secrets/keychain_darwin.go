@@ -59,4 +59,3 @@ func (Keychain) Delete(service, account string) error {
 	}
 	return err
 }
-

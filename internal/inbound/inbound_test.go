@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -365,6 +367,83 @@ tcp4       0      0  127.0.0.1.58937        127.0.0.1.10800        ESTABLISHED 4
 
 	if got := friendlyProcessName("/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper", "Google Chrome He"); got != "Google Chrome" {
 		t.Fatalf("unexpected friendlyProcessName: %q", got)
+	}
+}
+
+func TestStopDoesNotWaitForIdleRelays(t *testing.T) {
+	hold := make(chan struct{})
+	defer close(hold)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			defer c.Close()
+			<-hold
+		}
+	}()
+
+	srv := NewServer(Config{ListenAddr: "127.0.0.1:0"})
+	srv.SyncProfile(nil, []pbprofile.ProxyRule{{
+		ID: "direct", Enabled: true, TargetHosts: "*", TargetPorts: "*", Action: pbprofile.ActionDirect,
+	}}, "")
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := net.Dial("tcp", srv.ListenAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	_, _ = fmt.Fprintf(client, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", ln.Addr().String(), ln.Addr().String())
+	br := bufio.NewReader(client)
+	if _, err := br.ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if err := srv.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed >= 3*time.Second {
+		t.Fatalf("Stop took too long with idle relay: %v", elapsed)
+	}
+}
+
+func TestSnapshotSinceCoalescesAndRefreshes(t *testing.T) {
+	var calls atomic.Int32
+	r := newPIDResolver()
+	r.run = func(args ...string) ([]byte, error) {
+		calls.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		return []byte("snap"), nil
+	}
+
+	var wg sync.WaitGroup
+	t0 := time.Now()
+	for range 30 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got := r.snapshotSince(t0, "-anv"); got != "snap" {
+				t.Errorf("unexpected snapshot: %q", got)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := calls.Load(); n > 2 {
+		t.Fatalf("expected coalesced calls <= 2, got %d", n)
+	}
+
+	before := calls.Load()
+	time.Sleep(2 * time.Millisecond)
+	r.snapshotSince(time.Now(), "-anv")
+	if got := calls.Load(); got != before+1 {
+		t.Fatalf("expected 1 refresh call for later caller, got %d (was %d)", got, before)
 	}
 }
 

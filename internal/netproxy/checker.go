@@ -259,4 +259,3 @@ type checkProbeResult struct {
 	line string
 	err  error
 }
-

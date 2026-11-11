@@ -204,4 +204,3 @@ func skipName(b []byte, start int) (int, bool) {
 	}
 	return 0, false
 }
-

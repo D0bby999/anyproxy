@@ -166,4 +166,3 @@ func TestLoadHostsFile(t *testing.T) {
 		t.Fatalf("DomainsForIP = %v", got)
 	}
 }
-

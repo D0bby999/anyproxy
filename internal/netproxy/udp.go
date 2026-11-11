@@ -320,4 +320,3 @@ func UnpackSOCKS5UDPDatagram(pkt []byte) (host string, port uint16, payload []by
 	offset += 2
 	return host, port, pkt[offset:], nil
 }
-

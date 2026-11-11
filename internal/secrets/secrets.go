@@ -74,4 +74,3 @@ func Wipe(b []byte) {
 		b[i] = 0
 	}
 }
-

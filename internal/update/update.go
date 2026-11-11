@@ -176,4 +176,3 @@ func ValidateManifest(m *Manifest) error {
 	}
 	return nil
 }
-

@@ -192,4 +192,3 @@ func (v *Vault) Delete(service, account string) error {
 	}
 	return nil
 }
-

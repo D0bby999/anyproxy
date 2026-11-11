@@ -387,4 +387,3 @@ func readSOCKS5Reply(r io.Reader) (bindHost string, bindPort uint16, err error) 
 	bindPort = binary.BigEndian.Uint16(portBuf[:])
 	return bindHost, bindPort, nil
 }
-

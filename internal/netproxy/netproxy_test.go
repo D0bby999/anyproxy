@@ -417,4 +417,3 @@ func TestHTTPConnectAndPipeByteCounters(t *testing.T) {
 		t.Fatalf("unexpected HTTP CheckProxyEx report: %+v", report)
 	}
 }
-
