@@ -19,6 +19,10 @@ Dự án được xây dựng bằng **Go + Wails v2 + React/TypeScript**, phát
 1. **Local Inbound Proxy (`127.0.0.1:10800`)**: Luôn lắng nghe SOCKS5 (`CONNECT`) và HTTP/HTTPS (`CONNECT`), tự động nhận diện tiến trình nguồn (`PID` / tên ứng dụng) để áp dụng **Routing Rules** hoặc chuyển tiếp qua **Active Proxy**.
 2. **OS System Proxy**: Khi bật **Enable AnyProxy** (hoặc chạy CLI), ứng dụng tự động cấu hình System Proxy của macOS (`networksetup`) hoặc Windows (`Registry`) trỏ về `127.0.0.1:10800`, và tự động tắt khi dừng hoặc thoát app.
 
+> **Lưu ý phạm vi System Proxy & bản Early Access:**
+> - Nhánh `main` chạy hoàn toàn ở **user-space bằng OS System Proxy**, **không cài kernel driver / System Extension**. Các trình duyệt và app đọc System Proxy sẽ đi qua AnyProxy tự động; riêng các công cụ CLI/app bỏ qua System Proxy (`curl`, `git`, CLI dev, hoặc game/UDP thuần không qua proxy) cần cấu hình trực tiếp `--proxy socks5h://127.0.0.1:10800` hoặc biến `ALL_PROXY=socks5h://127.0.0.1:10800`.
+> - Các bản đóng gói Early Access hiện chưa ký Apple Developer ID / Authenticode: trên **macOS** bấm chuột phải → **Open** (hoặc chạy `xattr -cr /Applications/AnyProxy.app`), trên **Windows** chọn **More info → Run anyway** ở cảnh báo SmartScreen.
+
 ### Tính năng chính
 - **Dual-mode Binary**: Mở không cờ để chạy Desktop GUI (Full & Compact Mini Mode); truyền cờ (`--profile`, `--list-profiles`, `--test-proxy`, `--verbose`, `--update`) để chạy Headless CLI.
 - **Rule Engine ưu tiên từ trên xuống**: Khớp theo tên ứng dụng/tiến trình, domain/wildcard, IP/CIDR/dải IP, cổng, và giao thức với hành động `PROXY`, `DIRECT`, hoặc `BLOCK`; tự động bypass loopback/multicast/stub-DNS (`:53`).
