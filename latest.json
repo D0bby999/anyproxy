@@ -1,16 +1,16 @@
 {
   "version": "1.0.0",
   "date": "2026-11-08",
-  "notes": "Initial release of AnyProxyXa - Universal transparent proxy client in Go + Wails v2 for AnyTools.",
+  "notes": "Initial release of AnyProxy - proxy client in Go + Wails v2 for AnyTools.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxyxa/releases/latest/download/AnyProxyXa-darwin-arm64.dmg"
+      "url": "https://github.com/D0bby999/anyproxy/releases/latest/download/AnyProxy-darwin-arm64.dmg"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxyxa/releases/latest/download/AnyProxyXa-darwin-amd64.dmg"
+      "url": "https://github.com/D0bby999/anyproxy/releases/latest/download/AnyProxy-darwin-amd64.dmg"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxyxa/releases/latest/download/AnyProxyXa-windows-amd64.exe"
+      "url": "https://github.com/D0bby999/anyproxy/releases/latest/download/AnyProxy-windows-amd64.exe"
     }
   }
 }

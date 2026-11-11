@@ -8,9 +8,11 @@ Dự án được xỉa và tái thiết kế hoàn toàn bằng **Go + Wails v2
 
 ---
 
-> **Trạng thái hiện tại:** Ứng dụng hỗ trợ proxy cục bộ SOCKS5/HTTP CONNECT tại `127.0.0.1:10800` cho các ứng dụng được cấu hình sử dụng địa chỉ này. Driver chặn lưu lượng toàn hệ thống trên macOS và Windows chưa được kết nối; không dùng ứng dụng này để đảm bảo chống rò rỉ DNS hoặc định tuyến bắt buộc toàn máy. Proxy cục bộ chỉ hỗ trợ TCP, không nhận diện tiến trình nguồn, và các rule không khớp sẽ đi trực tiếp. Listener vẫn chạy khi nút engine được tắt và chỉ dừng khi thoát ứng dụng.
+> **Trạng thái hiện tại:** Ứng dụng hoạt động với 2 tầng kết hợp:
+> 1. **System Proxy toàn máy (macOS `networksetup` / Windows Registry)**: Khi bấm **Start Engine**, ứng dụng tự động bật System Proxy (SOCKS5, HTTP, HTTPS) trỏ về `127.0.0.1:10800` và tự động tắt/khôi phục khi bấm **Stop Engine** hoặc thoát app.
+> 2. **Local Inbound Proxy (`127.0.0.1:10800`) kèm nhận diện tiến trình (`PID` / `ProcessName`)**: Tự động dò tên ứng dụng nguồn (như `Google Chrome`, `curl`, `Telegram`...) để áp dụng đúng **Rules theo ứng dụng/domain/port**. Nếu không khớp rule nào nhưng đã chọn **Active Proxy (Default Proxy)**, lưu lượng sẽ tự động đi qua Default Proxy đó.
 >
-> Ví dụ: `curl --proxy socks5h://127.0.0.1:10800 https://example.com`. Cần tạo rule PROXY phù hợp trong ứng dụng để chuyển tiếp qua proxy upstream; chỉ chọn proxy mặc định không tự động chuyển mọi kết nối qua nó.
+> Ví dụ dùng riêng lẻ: `curl --proxy socks5h://127.0.0.1:10800 https://example.com`.
 
 ## Tính năng chính
 
@@ -35,7 +37,7 @@ Dự án được xỉa và tái thiết kế hoàn toàn bằng **Go + Wails v2
 5. **Drivers đa nền tảng**:
    - **macOS**: Swift System Extension (`macos/extension/`) sử dụng `NEAppProxyProvider` và `NEDNSProxyProvider`.
    - **Windows**: WinDivert packet filter service (`internal/driver/windows/`) kết hợp connection tracking (`conntrack`).
-   - **Dev / Testing**: `MockDriver` cho phép chạy và kiểm thử toàn bộ UI & Logic mà không cần cấp quyền root kernel/system extension.
+   - **Testing**: `MockDriver` chỉ được sử dụng khi test chủ động truyền vào; driver mặc định không giả lập chặn lưu lượng.
 
 ---
 

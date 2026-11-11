@@ -26,3 +26,5 @@ Thumbs.db
 *.out
 *.test
 .taste-skill/inspect/
+
+graphify-out/

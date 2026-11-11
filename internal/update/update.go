@@ -22,7 +22,7 @@ var Current = "1.0.0"
 
 // DefaultManifestURL is the default endpoint hosting latest.json.
 // Overridable at runtime via the ANYPROXY_UPDATE_URL environment variable.
-var DefaultManifestURL = "https://raw.githubusercontent.com/D0bby999/anyproxyxa/main/latest.json"
+var DefaultManifestURL = "https://raw.githubusercontent.com/D0bby999/anyproxy/main/latest.json"
 
 const EnvManifestURL = "ANYPROXY_UPDATE_URL"
 
