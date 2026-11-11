@@ -1,10 +1,47 @@
 // SPDX-License-Identifier: MIT
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { Icon } from '../components/icons'
 import { t, setLanguage, getLanguage } from '../i18n'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
 import type { Profile } from '../types'
+
+function SwitchRow({
+  id,
+  label,
+  description,
+  checked,
+  onToggle,
+}: {
+  id: string
+  label: string
+  description: string
+  checked: boolean
+  onToggle: (next: boolean) => void
+}) {
+  const descId = `${id}-desc`
+  return (
+    <div className="settings-row">
+      <div className="settings-row-copy">
+        <label htmlFor={id} className="settings-row-title">
+          {label}
+        </label>
+        <span id={descId} className="hint">
+          {description}
+        </span>
+      </div>
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-describedby={descId}
+        className="switch"
+        onClick={() => onToggle(!checked)}
+      />
+    </div>
+  )
+}
 
 export function SettingsPage({
   profile,
@@ -38,22 +75,43 @@ export function SettingsPage({
   onExportProfile?: (includePasswords: boolean) => Promise<void>
   onOpenActivityLogs?: () => void
 }) {
+  const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => readTheme())
   const [includePasswords, setIncludePasswords] = useState(false)
+  const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
 
-  const currentTheme = readTheme()
   const currentLang = getLanguage()
 
+  useEffect(() => {
+    if (!showImportModal) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowImportModal(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showImportModal])
+
   const handleThemeChange = (theme: ThemeChoice) => {
+    setThemeChoice(theme)
     applyTheme(theme)
-    window.location.reload()
   }
 
   const handleLangChange = (lang: 'en' | 'vi') => {
+    if (lang === currentLang) return
     setLanguage(lang)
     window.location.reload()
+  }
+
+  const handleCheckUpdates = async () => {
+    if (checkingUpdates) return
+    setCheckingUpdates(true)
+    try {
+      await onCheckUpdates()
+    } finally {
+      setCheckingUpdates(false)
+    }
   }
 
   const handleImportSubmit = async (e: React.FormEvent) => {
@@ -73,215 +131,276 @@ export function SettingsPage({
     <>
       <PageHead title={t.settings.title} sub={t.settings.sub} />
 
-      <div className="pagebody" style={{ maxWidth: 760 }}>
-        {profile && onSwitchProfile && (
-          <div className="card pad">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <h3>{t.settings.profiles}</h3>
-              <div className="row" style={{ gap: 6 }}>
-                {onImportProfile && (
-                  <button
-                    type="button"
-                    className="btn sm"
-                    onClick={() => {
-                      setImportError('')
-                      setShowImportModal(true)
-                    }}
-                  >
-                    <Icon name="upload" />
-                    {t.settings.importProfileBtn}
-                  </button>
-                )}
-                {onExportProfile && (
-                  <button
-                    type="button"
-                    className="btn sm"
-                    onClick={() => void onExportProfile(includePasswords)}
-                  >
-                    <Icon name="download" />
-                    {t.settings.exportProfileBtn}
-                  </button>
-                )}
-              </div>
-            </div>
+      <div className="pagebody">
+        <div className="settings-grid">
+          <div className="settings-col">
+            {profile && (
+              <section className="card settings-card" aria-labelledby="settings-traffic-h">
+                <div className="settings-card-head">
+                  <h2 id="settings-traffic-h">{t.settings.traffic}</h2>
+                </div>
+                <div className="settings-list">
+                  <SwitchRow
+                    id="opt-traffic-logging"
+                    label={t.settings.trafficLogging}
+                    description={t.settings.trafficLoggingDesc}
+                    checked={profile.trafficLoggingEnabled}
+                    onToggle={(next) =>
+                      void onUpdateOptions(
+                        next,
+                        profile.dnsViaProxy,
+                        profile.logEveryConnection,
+                        profile.autoClearConnectionLogs
+                      )
+                    }
+                  />
+                  <SwitchRow
+                    id="opt-dns-proxy"
+                    label={t.settings.dnsViaProxy}
+                    description={t.settings.dnsViaProxyDesc}
+                    checked={profile.dnsViaProxy}
+                    onToggle={(next) =>
+                      void onUpdateOptions(
+                        profile.trafficLoggingEnabled,
+                        next,
+                        profile.logEveryConnection,
+                        profile.autoClearConnectionLogs
+                      )
+                    }
+                  />
+                  <SwitchRow
+                    id="opt-log-every"
+                    label={t.settings.logEvery}
+                    description={t.settings.logEveryDesc}
+                    checked={profile.logEveryConnection}
+                    onToggle={(next) =>
+                      void onUpdateOptions(
+                        profile.trafficLoggingEnabled,
+                        profile.dnsViaProxy,
+                        next,
+                        profile.autoClearConnectionLogs
+                      )
+                    }
+                  />
+                  <SwitchRow
+                    id="opt-autoclear-logs"
+                    label={t.settings.autoClearLogs}
+                    description={t.settings.autoClearLogsDesc}
+                    checked={profile.autoClearConnectionLogs}
+                    onToggle={(next) =>
+                      void onUpdateOptions(
+                        profile.trafficLoggingEnabled,
+                        profile.dnsViaProxy,
+                        profile.logEveryConnection,
+                        next
+                      )
+                    }
+                  />
+                </div>
+              </section>
+            )}
 
-            <div className="field" style={{ marginTop: 4 }}>
-              <label>{t.settings.activeProfileLabel}</label>
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <select
-                  className="select"
-                  style={{ flex: 1, minWidth: 160 }}
-                  value={profile.name}
-                  onChange={(e) => onSwitchProfile(e.target.value)}
-                >
-                  {profiles.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
+            <section className="card settings-card" aria-labelledby="settings-appearance-h">
+              <div className="settings-card-head">
+                <h2 id="settings-appearance-h">{t.settings.appearance}</h2>
+              </div>
+
+              <div className="field">
+                <span className="field-label">{t.settings.theme}</span>
+                <div className="seg settings-seg" role="group" aria-label={t.settings.theme}>
+                  {(['system', 'light', 'dark'] as const).map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      aria-pressed={themeChoice === choice}
+                      onClick={() => handleThemeChange(choice)}
+                    >
+                      {t.settings[choice]}
+                    </button>
                   ))}
-                </select>
-                {onCreateProfile && (
-                  <button type="button" className="btn sm" onClick={onCreateProfile}>
-                    <Icon name="plus" />
-                    {t.nav.newProfile}
-                  </button>
-                )}
-                {onDuplicateProfile && (
+                </div>
+              </div>
+
+              <div className="field">
+                <span className="field-label">{t.settings.language}</span>
+                <div className="seg settings-seg" role="group" aria-label={t.settings.language}>
                   <button
                     type="button"
-                    className="btn sm"
-                    onClick={() => onDuplicateProfile(profile.name)}
+                    aria-pressed={currentLang === 'en'}
+                    onClick={() => handleLangChange('en')}
                   >
-                    <Icon name="copy" />
-                    {t.settings.duplicateBtn}
+                    English
                   </button>
-                )}
-                {onRenameProfile && (
                   <button
                     type="button"
-                    className="btn sm"
-                    onClick={() => onRenameProfile(profile.name)}
+                    aria-pressed={currentLang === 'vi'}
+                    onClick={() => handleLangChange('vi')}
                   >
-                    <Icon name="pencil" />
-                    {t.settings.renameBtn}
+                    Tiếng Việt
                   </button>
-                )}
-                {onDeleteProfile && profiles.length > 1 && (
-                  <button
-                    type="button"
-                    className="btn sm"
-                    onClick={() => onDeleteProfile(profile.name)}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="settings-col">
+            {profile && onSwitchProfile && (
+              <section className="card settings-card" aria-labelledby="settings-profiles-h">
+                <div className="settings-card-head">
+                  <h2 id="settings-profiles-h">{t.settings.profiles}</h2>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="settings-profile-select">{t.settings.activeProfileLabel}</label>
+                  <select
+                    id="settings-profile-select"
+                    className="select"
+                    value={profile.name}
+                    onChange={(e) => onSwitchProfile(e.target.value)}
                   >
-                    <Icon name="trash" />
-                    {t.settings.deleteBtn}
+                    {profiles.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div
+                  className={`settings-btn-row ${
+                    onDeleteProfile && profiles.length > 1 ? '' : 'three-col'
+                  }`}
+                >
+                  {onCreateProfile && (
+                    <button type="button" className="btn sm" onClick={onCreateProfile}>
+                      <Icon name="plus" />
+                      {t.nav.newProfile}
+                    </button>
+                  )}
+                  {onDuplicateProfile && (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() => onDuplicateProfile(profile.name)}
+                    >
+                      <Icon name="copy" />
+                      {t.settings.duplicateBtn}
+                    </button>
+                  )}
+                  {onRenameProfile && (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() => onRenameProfile(profile.name)}
+                    >
+                      <Icon name="pencil" />
+                      {t.settings.renameBtn}
+                    </button>
+                  )}
+                  {onDeleteProfile && profiles.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn sm danger"
+                      onClick={() => onDeleteProfile(profile.name)}
+                    >
+                      <Icon name="trash" />
+                      {t.settings.deleteBtn}
+                    </button>
+                  )}
+                </div>
+
+                {(onImportProfile || onExportProfile) && (
+                  <div className="settings-divider">
+                    <span className="settings-subhead">{t.settings.portability}</span>
+                    {onExportProfile && (
+                      <SwitchRow
+                        id="opt-include-passwords"
+                        label={t.settings.includePasswords}
+                        description={t.settings.includePasswordsDesc}
+                        checked={includePasswords}
+                        onToggle={setIncludePasswords}
+                      />
+                    )}
+                    <div className="settings-btn-row">
+                      {onImportProfile && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => {
+                            setImportError('')
+                            setShowImportModal(true)
+                          }}
+                        >
+                          <Icon name="upload" />
+                          {t.settings.importProfileBtn}
+                        </button>
+                      )}
+                      {onExportProfile && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => void onExportProfile(includePasswords)}
+                        >
+                          <Icon name="download" />
+                          {t.settings.exportProfileBtn}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            <section className="card settings-card" aria-labelledby="settings-version-h">
+              <div className="settings-card-head">
+                <h2 id="settings-version-h">{t.settings.version}</h2>
+                <span className="chip mono">v1.0.0</span>
+              </div>
+
+              <div className="settings-row-copy">
+                <span className="settings-version-title">{t.appName}</span>
+                <span className="hint">{t.settings.aboutDesc}</span>
+              </div>
+
+              <div className="settings-btn-row">
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={checkingUpdates}
+                  aria-busy={checkingUpdates}
+                  onClick={() => void handleCheckUpdates()}
+                >
+                  <Icon name="refresh" />
+                  {t.settings.checkUpdates}
+                </button>
+                {onOpenActivityLogs && (
+                  <button type="button" className="btn sm" onClick={onOpenActivityLogs}>
+                    <Icon name="list" />
+                    {t.nav.activity}
                   </button>
                 )}
               </div>
-            </div>
-
-            {onExportProfile && (
-              <label className="row" style={{ cursor: 'pointer', fontSize: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={includePasswords}
-                  onChange={(e) => setIncludePasswords(e.target.checked)}
-                />
-                <span className="muted">{t.settings.includePasswords}</span>
-              </label>
-            )}
-          </div>
-        )}
-
-        <div className="card pad">
-          <h3>{t.settings.appearance}</h3>
-          <div className="row" style={{ gap: 24, marginTop: 8 }}>
-            <div className="field" style={{ flex: 1 }}>
-              <label>{t.settings.theme}</label>
-              <select
-                className="select"
-                defaultValue={currentTheme}
-                onChange={(e) => handleThemeChange(e.target.value as ThemeChoice)}
-              >
-                <option value="system">{t.settings.system}</option>
-                <option value="light">{t.settings.light}</option>
-                <option value="dark">{t.settings.dark}</option>
-              </select>
-            </div>
-
-            <div className="field" style={{ flex: 1 }}>
-              <label>{t.settings.language}</label>
-              <select
-                className="select"
-                defaultValue={currentLang}
-                onChange={(e) => handleLangChange(e.target.value as 'en' | 'vi')}
-              >
-                <option value="en">English</option>
-                <option value="vi">Tiếng Việt</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {profile && (
-          <div className="card pad">
-            <h3>{t.settings.traffic}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-              <label className="row" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={profile.trafficLoggingEnabled}
-                  onChange={(e) =>
-                    onUpdateOptions(
-                      e.target.checked,
-                      profile.dnsViaProxy,
-                      profile.logEveryConnection,
-                      profile.autoClearConnectionLogs
-                    )
-                  }
-                />
-                <span>{t.settings.trafficLogging}</span>
-              </label>
-
-              <label className="row" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={profile.dnsViaProxy}
-                  onChange={(e) =>
-                    onUpdateOptions(
-                      profile.trafficLoggingEnabled,
-                      e.target.checked,
-                      profile.logEveryConnection,
-                      profile.autoClearConnectionLogs
-                    )
-                  }
-                />
-                <span>{t.settings.dnsViaProxy}</span>
-              </label>
-
-              <label className="row" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={profile.logEveryConnection}
-                  onChange={(e) =>
-                    onUpdateOptions(
-                      profile.trafficLoggingEnabled,
-                      profile.dnsViaProxy,
-                      e.target.checked,
-                      profile.autoClearConnectionLogs
-                    )
-                  }
-                />
-                <span>{t.settings.logEvery}</span>
-              </label>
-            </div>
-          </div>
-        )}
-
-        <div className="card pad">
-          <h3>{t.settings.version}</h3>
-          <p className="muted" style={{ margin: 0, fontSize: 'var(--t-sm)' }}>
-            AnyProxy v1.0.0
-          </p>
-          <div className="row" style={{ marginTop: 8, gap: 8 }}>
-            <button type="button" className="btn sm" onClick={onCheckUpdates}>
-              {t.settings.checkUpdates}
-            </button>
-            {onOpenActivityLogs && (
-              <button type="button" className="btn sm" onClick={onOpenActivityLogs}>
-                <Icon name="list" />
-                {t.nav.activity}
-              </button>
-            )}
+            </section>
           </div>
         </div>
       </div>
 
       {showImportModal && (
-        <div className="dialog-backdrop">
-          <div className="dialog-box">
+        <div
+          className="dialog-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowImportModal(false)
+          }}
+        >
+          <div
+            className="dialog-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-profile-title"
+          >
             <form onSubmit={handleImportSubmit}>
               <div className="dialog-head">
-                <h2>{t.settings.importProfileTitle}</h2>
+                <h2 id="import-profile-title">{t.settings.importProfileTitle}</h2>
                 <button
                   type="button"
                   className="iconbtn sm"
@@ -292,14 +411,22 @@ export function SettingsPage({
                 </button>
               </div>
               <div className="dialog-body">
-                {importError && <p role="alert">{importError}</p>}
+                {importError && (
+                  <div className="banner danger" role="alert">
+                    <Icon name="warn" />
+                    <span className="grow">{importError}</span>
+                  </div>
+                )}
                 <textarea
-                  className="input mono"
+                  className="input mono settings-import-textarea"
                   rows={6}
-                  style={{ height: 'auto', padding: 10 }}
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
                   placeholder={t.settings.importProfilePlaceholder}
+                  aria-label={t.settings.importProfileTitle}
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoFocus
                   required
                 />
               </div>
