@@ -14,6 +14,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,11 +34,12 @@ const DefaultListenAddr = "127.0.0.1:10800"
 
 // Config configures the Inbound Proxy Server.
 type Config struct {
-	ListenAddr string
-	Vault      secrets.Store
-	DNS        *dnsmap.Store
-	Tracker    *flows.Tracker
-	Logs       *flows.LogManager
+	ListenAddr      string
+	Vault           secrets.Store
+	DNS             *dnsmap.Store
+	Tracker         *flows.Tracker
+	Logs            *flows.LogManager
+	ProcessResolver ProcessResolverFunc
 }
 
 // Server is the local proxy listener accepting SOCKS5 and HTTP CONNECT.
@@ -49,6 +51,7 @@ type Server struct {
 	dns        *dnsmap.Store
 	tracker    *flows.Tracker
 	logs       *flows.LogManager
+	resolver   ProcessResolverFunc
 	engine     *rules.Engine
 	proxies    map[string]pbprofile.ProxyConfig
 	defProxyID string
@@ -63,12 +66,18 @@ func NewServer(cfg Config) *Server {
 	if addr == "" {
 		addr = DefaultListenAddr
 	}
+	res := cfg.ProcessResolver
+	if res == nil {
+		res = newPIDResolver().Resolve
+	}
 	return &Server{
 		listenAddr: addr,
 		vault:      cfg.Vault,
 		dns:        cfg.DNS,
 		tracker:    cfg.Tracker,
 		logs:       cfg.Logs,
+		resolver:   res,
+		engine:     rules.NewEngine(nil),
 		proxies:    make(map[string]pbprofile.ProxyConfig),
 		stopCh:     make(chan struct{}),
 	}
@@ -245,13 +254,14 @@ func (s *Server) handleSOCKS5(client net.Conn, reader *bufio.Reader) {
 	}
 	destPort := binary.BigEndian.Uint16(portBytes[:])
 
-	// Evaluate routing rule
-	decision, targetProxy := s.evaluateTarget(destHost, destPort)
+	// Evaluate routing rule using resolved local process identity
+	proc := s.resolveProcess(client.RemoteAddr())
+	decision, targetProxy := s.evaluateTargetForProcess(destHost, destPort, proc)
 
 	if decision.Action == pbprofile.ActionBlock {
 		// Connection not allowed by ruleset (0x02)
 		_, _ = client.Write([]byte{0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-		s.recordLog(client, destHost, destPort, "block", "", 0, 0)
+		s.recordLog(proc, destHost, destPort, "BLOCK", "", decision.RuleID)
 		return
 	}
 
@@ -276,7 +286,7 @@ func (s *Server) handleSOCKS5(client net.Conn, reader *bufio.Reader) {
 	if dialErr != nil {
 		// Host unreachable (0x04)
 		_, _ = client.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-		s.recordLog(client, destHost, destPort, string(decision.Action), proxyName, 0, 0)
+		s.recordLog(proc, destHost, destPort, string(decision.Action), proxyName, decision.RuleID)
 		return
 	}
 	defer upstream.Close()
@@ -288,7 +298,7 @@ func (s *Server) handleSOCKS5(client net.Conn, reader *bufio.Reader) {
 
 	// Wrap client conn with unread buffer if any
 	wrappedClient := wrapWithReader(client, reader)
-	s.relayTraffic(wrappedClient, upstream, client, destHost, destPort, string(decision.Action), proxyName)
+	s.relayTraffic(wrappedClient, upstream, proc, destHost, destPort, string(decision.Action), proxyName, decision.RuleID)
 }
 
 func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
@@ -302,7 +312,12 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 	}
 	method := parts[0]
 	target := parts[1]
+	protoVer := "HTTP/1.1"
+	if len(parts) >= 3 {
+		protoVer = parts[2]
+	}
 
+	proc := s.resolveProcess(client.RemoteAddr())
 	var destHost string
 	var destPort uint16 = 80
 
@@ -327,10 +342,10 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 			}
 		}
 
-		decision, targetProxy := s.evaluateTarget(destHost, destPort)
+		decision, targetProxy := s.evaluateTargetForProcess(destHost, destPort, proc)
 		if decision.Action == pbprofile.ActionBlock {
 			_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nBlocked by AnyProxy rules\r\n"))
-			s.recordLog(client, destHost, destPort, "block", "", 0, 0)
+			s.recordLog(proc, destHost, destPort, "BLOCK", "", decision.RuleID)
 			return
 		}
 
@@ -352,7 +367,7 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 
 		if dialErr != nil {
 			_, _ = client.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nFailed to connect to upstream\r\n"))
-			s.recordLog(client, destHost, destPort, string(decision.Action), proxyName, 0, 0)
+			s.recordLog(proc, destHost, destPort, string(decision.Action), proxyName, decision.RuleID)
 			return
 		}
 		defer upstream.Close()
@@ -363,16 +378,87 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 		}
 
 		wrappedClient := wrapWithReader(client, reader)
-		s.relayTraffic(wrappedClient, upstream, client, destHost, destPort, string(decision.Action), proxyName)
-	} else {
-		// Plain HTTP request: reject or close with guidance to use HTTPS or SOCKS5
-		_, _ = client.Write([]byte("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nAnyProxy local listener supports HTTPS CONNECT and SOCKS5\r\n"))
+		s.relayTraffic(wrappedClient, upstream, proc, destHost, destPort, string(decision.Action), proxyName, decision.RuleID)
+		return
 	}
+
+	// Plain HTTP proxy request (e.g., GET http://example.com/path HTTP/1.1)
+	parsedURL, err := url.Parse(target)
+	if err != nil || parsedURL.Host == "" {
+		_, _ = client.Write([]byte("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nAnyProxy local listener supports HTTP proxy, HTTPS CONNECT, and SOCKS5\r\n"))
+		return
+	}
+	if h, p, err := net.SplitHostPort(parsedURL.Host); err == nil {
+		destHost = h
+		if parsed, err := strconv.ParseUint(p, 10, 16); err == nil {
+			destPort = uint16(parsed)
+		}
+	} else {
+		destHost = parsedURL.Host
+	}
+
+	decision, targetProxy := s.evaluateTargetForProcess(destHost, destPort, proc)
+	if decision.Action == pbprofile.ActionBlock {
+		_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nBlocked by AnyProxy rules\r\n"))
+		s.recordLog(proc, destHost, destPort, "BLOCK", "", decision.RuleID)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var upstream net.Conn
+	var dialErr error
+	var proxyName string
+
+	if decision.Action == pbprofile.ActionProxy && targetProxy != nil {
+		proxyName = targetProxy.Name
+		up := s.buildUpstream(*targetProxy)
+		upstream, dialErr = up.DialTCP(ctx, destHost, destHost, destPort)
+	} else {
+		targetAddr := net.JoinHostPort(destHost, strconv.Itoa(int(destPort)))
+		upstream, dialErr = net.DialTimeout("tcp", targetAddr, 15*time.Second)
+	}
+	if dialErr != nil {
+		_, _ = client.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nFailed to connect to upstream\r\n"))
+		s.recordLog(proc, destHost, destPort, string(decision.Action), proxyName, decision.RuleID)
+		return
+	}
+	defer upstream.Close()
+
+	relURI := parsedURL.RequestURI()
+	if relURI == "" {
+		relURI = "/"
+	}
+	if _, err := fmt.Fprintf(upstream, "%s %s %s\r\n", method, relURI, protoVer); err != nil {
+		return
+	}
+	wrappedClient := wrapWithReader(client, reader)
+	s.relayTraffic(wrappedClient, upstream, proc, destHost, destPort, string(decision.Action), proxyName, decision.RuleID)
+}
+
+func (s *Server) resolveProcess(addr net.Addr) ProcessInfo {
+	if s.resolver != nil {
+		info := s.resolver(addr)
+		if info.Name != "" {
+			return info
+		}
+	}
+	return ProcessInfo{Name: "unknown"}
 }
 
 func (s *Server) evaluateTarget(host string, port uint16) (rules.Decision, *pbprofile.ProxyConfig) {
+	return s.evaluateTargetForProcess(host, port, ProcessInfo{Name: "anyprofile"})
+}
+
+func (s *Server) evaluateTargetForProcess(host string, port uint16, proc ProcessInfo) (rules.Decision, *pbprofile.ProxyConfig) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	// Prevent AnyProxy's own process from looping back through the proxy
+	if strings.EqualFold(proc.Name, "AnyProxy") {
+		return rules.Decision{Action: pbprofile.ActionDirect, RuleID: "self-bypass"}, nil
+	}
 
 	destIP := ""
 	var domains []string
@@ -385,8 +471,13 @@ func (s *Server) evaluateTarget(host string, port uint16) (rules.Decision, *pbpr
 		domains = append(domains, host)
 	}
 
+	procName := proc.Name
+	if procName == "" {
+		procName = "anyprofile"
+	}
+
 	flowInput := rules.FlowInput{
-		Process:   rules.NewFlowProcess("", "anyprofile"),
+		Process:   rules.NewFlowProcess(procName, proc.Path),
 		DestIP:    destIP,
 		Domains:   domains,
 		DestPort:  port,
@@ -394,11 +485,23 @@ func (s *Server) evaluateTarget(host string, port uint16) (rules.Decision, *pbpr
 		CheckHost: true,
 	}
 
-	if s.engine == nil {
-		return rules.Decision{Action: pbprofile.ActionDirect}, nil
+	var dec rules.Decision
+	if s.engine != nil {
+		dec = s.engine.Evaluate(flowInput)
+	} else {
+		dec = rules.Decision{Action: pbprofile.ActionDirect}
 	}
 
-	dec := s.engine.Evaluate(flowInput)
+	// If no rule matched and the user has selected an Active/Default Proxy, route through it automatically.
+	if !dec.Matched && s.defProxyID != "" {
+		dec = rules.Decision{
+			Matched:       true,
+			Action:        pbprofile.ActionProxy,
+			ProxyConfigID: s.defProxyID,
+			RuleID:        "default",
+		}
+	}
+
 	var px *pbprofile.ProxyConfig
 	if dec.Action == pbprofile.ActionProxy {
 		targetID := dec.ProxyConfigID
@@ -436,18 +539,32 @@ func (s *Server) buildUpstream(cfg pbprofile.ProxyConfig) netproxy.Upstream {
 	}
 }
 
-func (s *Server) relayTraffic(client, upstream net.Conn, rawClient net.Conn, destHost string, destPort uint16, action, proxyName string) {
+func (s *Server) relayTraffic(client, upstream net.Conn, proc ProcessInfo, destHost string, destPort uint16, action, proxyName, ruleID string) {
 	start := time.Now()
 	var flowID string
 
+	procLabel := proc.Name
+	if procLabel == "" {
+		procLabel = "inbound"
+	}
+	proxyLabel := proxyName
+	if proxyLabel == "" {
+		proxyLabel = strings.ToUpper(action)
+	}
+	if ruleID == "" {
+		ruleID = "default"
+	}
+
 	if s.tracker != nil {
 		flowID = s.tracker.StartFlow(flows.Flow{
-			PID:         0,
-			ProcessName: "inbound",
+			PID:         proc.PID,
+			ProcessName: procLabel,
 			DestIP:      destHost,
+			Host:        destHost,
 			Port:        destPort,
 			IsUDP:       false,
-			ProxyLabel:  proxyName,
+			ProxyLabel:  proxyLabel,
+			RuleID:      ruleID,
 			StartedAt:   start.UnixMilli(),
 		})
 	}
@@ -463,27 +580,37 @@ func (s *Server) relayTraffic(client, upstream net.Conn, rawClient net.Conn, des
 		}
 	}
 
-	sent, recv := netproxy.Pipe(client, upstream, onSent, onRecv)
+	_, _ = netproxy.Pipe(client, upstream, onSent, onRecv)
 
 	if s.tracker != nil && flowID != "" {
 		s.tracker.CloseFlow(flowID)
 	}
 
-	s.recordLog(rawClient, destHost, destPort, action, proxyName, recv, sent)
+	s.recordLog(proc, destHost, destPort, action, proxyName, ruleID)
 }
 
-func (s *Server) recordLog(client net.Conn, destHost string, destPort uint16, action, proxyName string, bytesIn, bytesOut int64) {
+func (s *Server) recordLog(proc ProcessInfo, destHost string, destPort uint16, action, proxyName, ruleID string) {
 	if s.logs == nil {
 		return
 	}
+	procLabel := proc.Name
+	if procLabel == "" {
+		procLabel = "inbound"
+	}
+	proxyLabel := proxyName
+	if proxyLabel == "" {
+		proxyLabel = strings.ToUpper(action)
+	}
 	s.logs.RecordConnection(flows.ConnectionLogEntry{
-		ProcessName: "inbound",
+		PID:         proc.PID,
+		ProcessName: procLabel,
 		DestIP:      destHost,
 		Host:        destHost,
 		Port:        destPort,
 		Protocol:    "TCP",
-		Action:      action,
-		ProxyName:   proxyName,
+		Action:      strings.ToUpper(action),
+		ProxyName:   proxyLabel,
+		RuleID:      ruleID,
 	})
 }
 

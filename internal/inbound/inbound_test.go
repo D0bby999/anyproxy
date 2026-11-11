@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/D0bby999/anyproxy/internal/flows"
 	"github.com/D0bby999/anyproxy/internal/pbprofile"
@@ -25,6 +26,61 @@ func TestMissingProxyBlocksInsteadOfConnectingDirectly(t *testing.T) {
 	decision, proxy := srv.evaluateTarget("example.com", 443)
 	if decision.Action != pbprofile.ActionBlock || proxy != nil {
 		t.Fatalf("missing proxy must block, got decision=%+v proxy=%+v", decision, proxy)
+	}
+}
+
+func TestInboundHTTPConnectViaUpstream(t *testing.T) {
+	connected := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			return
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		connected <- r.Host
+		_, _ = io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		_, _ = io.Copy(conn, conn)
+	}))
+	defer upstream.Close()
+	host, portStr, err := net.SplitHostPort(upstream.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var port int
+	if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(Config{ListenAddr: "127.0.0.1:0"})
+	srv.SyncProfile([]pbprofile.ProxyConfig{{ID: "up", Type: pbprofile.ProxyHTTP, Host: host, Port: port, SendDomainToProxy: true}}, []pbprofile.ProxyRule{{
+		ID: "proxy", Enabled: true, TargetHosts: "example.invalid", TargetPorts: "*", Action: pbprofile.ActionProxy, ProxyConfigID: "up",
+	}}, "")
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+
+	client, err := net.Dial("tcp", srv.ListenAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = io.WriteString(client, "CONNECT example.invalid:443 HTTP/1.1\r\nHost: example.invalid:443\r\n\r\n")
+	reader := bufio.NewReader(client)
+	resp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("CONNECT response: %v, %v", resp, err)
+	}
+	if got := <-connected; got != "example.invalid:443" {
+		t.Fatalf("upstream target = %q", got)
+	}
+	_, _ = io.WriteString(client, "hello")
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(reader, buf); err != nil || string(buf) != "hello" {
+		t.Fatalf("tunnel echo = %q, %v", buf, err)
 	}
 }
 
@@ -231,6 +287,84 @@ func TestInboundRuleBlock(t *testing.T) {
 	_, _ = io.ReadFull(client, resp)
 	if resp[1] != 0x02 { // 0x02 = connection not allowed by ruleset
 		t.Fatalf("expected code 0x02 for blocked rule, got %d", resp[1])
+	}
+}
+
+func TestPerProcessRoutingAndDefaultProxyFallback(t *testing.T) {
+	srv := NewServer(Config{})
+	proxies := []pbprofile.ProxyConfig{
+		{ID: "p-chrome", Name: "Chrome Proxy", Type: pbprofile.ProxySOCKS5, Host: "127.0.0.1", Port: 1080},
+		{ID: "p-default", Name: "Default Proxy", Type: pbprofile.ProxySOCKS5, Host: "127.0.0.1", Port: 1081},
+	}
+	ruleList := []pbprofile.ProxyRule{
+		{
+			ID:            "r-chrome",
+			Enabled:       true,
+			ProcessNames:  "Google Chrome;chrome.exe",
+			TargetHosts:   "*",
+			TargetPorts:   "*",
+			Action:        pbprofile.ActionProxy,
+			ProxyConfigID: "p-chrome",
+		},
+		{
+			ID:           "r-curl-block",
+			Enabled:      true,
+			ProcessNames: "curl",
+			TargetHosts:  "*",
+			TargetPorts:  "*",
+			Action:       pbprofile.ActionBlock,
+		},
+	}
+	srv.SyncProfile(proxies, ruleList, "p-default")
+
+	// 1. Chrome matches r-chrome -> p-chrome
+	dec, px := srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{
+		PID:  752,
+		Name: "Google Chrome",
+		Path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+	})
+	if dec.Action != pbprofile.ActionProxy || px == nil || px.ID != "p-chrome" {
+		t.Fatalf("expected Chrome to route via p-chrome, got dec=%+v px=%+v", dec, px)
+	}
+
+	// 2. curl matches r-curl-block -> BLOCK
+	dec, _ = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 800, Name: "curl"})
+	if dec.Action != pbprofile.ActionBlock {
+		t.Fatalf("expected curl to be blocked, got %+v", dec)
+	}
+
+	// 3. Unmatched app (Telegram) falls back to active Default Proxy (p-default)
+	dec, px = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 900, Name: "Telegram"})
+	if dec.Action != pbprofile.ActionProxy || px == nil || px.ID != "p-default" || dec.RuleID != "default" {
+		t.Fatalf("expected unmatched app to fall back to default proxy, got dec=%+v px=%+v", dec, px)
+	}
+
+	// 4. AnyProxy itself bypasses proxy (DIRECT) to prevent self-loop
+	dec, _ = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 999, Name: "AnyProxy"})
+	if dec.Action != pbprofile.ActionDirect {
+		t.Fatalf("expected AnyProxy self process to bypass directly, got %+v", dec)
+	}
+}
+
+func TestNetstatParsersAndFriendlyProcessName(t *testing.T) {
+	darwinSample := `Active Internet connections (including servers)
+Proto Recv-Q Send-Q  Local Address          Foreign Address        (state)     rxbytes txbytes rhiwat shiwat process:pid state
+tcp4       0      0  127.0.0.1.58937        127.0.0.1.10800        ESTABLISHED 40702   7799    388352 146988 Google Chrome He:752 00102
+`
+	pid, name := parseDarwinNetstatPort(darwinSample, 58937)
+	if pid != 752 || name != "Google Chrome He" {
+		t.Fatalf("unexpected darwin parse: pid=%d name=%q", pid, name)
+	}
+
+	winSample := `  Proto  Local Address          Foreign Address        State           PID
+  TCP    127.0.0.1:58937        127.0.0.1:10800        ESTABLISHED     4321
+`
+	if got := parseWindowsNetstatPort(winSample, 58937); got != 4321 {
+		t.Fatalf("unexpected windows parse: pid=%d", got)
+	}
+
+	if got := friendlyProcessName("/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper", "Google Chrome He"); got != "Google Chrome" {
+		t.Fatalf("unexpected friendlyProcessName: %q", got)
 	}
 }
 

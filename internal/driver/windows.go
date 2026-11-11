@@ -9,15 +9,15 @@ import (
 	"github.com/D0bby999/anyproxy/internal/flows"
 )
 
-// NewPlatformDriver returns the default platform Driver (macOS NetworkExtension driver
-// on darwin, Windows WinDivert driver on windows, or loopback driver in dev/other OS).
+// NewPlatformDriver returns the platform driver (using the OS System Proxy when no kernel driver is attached).
 func NewPlatformDriver(dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.LogManager) Driver {
+	sysProxy := NewSysProxyManager(DefaultSysProxyHost, DefaultSysProxyPort)
 	switch runtime.GOOS {
 	case "darwin":
-		return NewDarwinDriver(nil, dns, tracker, logs)
+		return NewDarwinDriverWithSysProxy(nil, sysProxy, dns, tracker, logs)
 	case "windows":
-		return NewMockDriver("windows-mock", dns, tracker, logs)
+		return NewSysProxyDriver("windows-sysproxy", sysProxy, dns, tracker, logs)
 	default:
-		return NewMockDriver("loopback-dev", dns, tracker, logs)
+		return newUnavailableDriver("unsupported", "System traffic interception is not supported on this platform", tracker, logs)
 	}
 }

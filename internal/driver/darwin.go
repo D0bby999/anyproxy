@@ -301,27 +301,40 @@ func ParseExtensionFlows(raw []byte) ([]flows.Flow, error) {
 }
 
 // DarwinDriver manages the macOS NetworkExtension tunnel session when available
-// and falls back seamlessly to the in-process Go engine in dev/test environments.
+// and falls back seamlessly to the OS System Proxy (or in-process Go engine) when unentitled.
 type DarwinDriver struct {
 	mu           sync.RWMutex
 	sender       ProviderMessageSender
+	sysProxy     *SysProxyManager
 	fallback     *MockDriver
 	extInstalled bool
 }
 
 // NewDarwinDriver creates a macOS driver backed by sender (if non-nil) and the shared flow/log stores.
 func NewDarwinDriver(sender ProviderMessageSender, dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.LogManager) *DarwinDriver {
+	return NewDarwinDriverWithSysProxy(sender, nil, dns, tracker, logs)
+}
+
+// NewDarwinDriverWithSysProxy creates a macOS driver that uses sender when available, or sysProxy for OS-wide system proxy routing.
+func NewDarwinDriverWithSysProxy(sender ProviderMessageSender, sysProxy *SysProxyManager, dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.LogManager) *DarwinDriver {
 	extInstalled := sender != nil || detectMacSystemExtensionBundle()
 	backend := "macos-ne"
-	if sender == nil && !extInstalled {
-		backend = "macos-ne-dev"
+	if sender == nil {
+		if sysProxy != nil {
+			backend = "macos-sysproxy"
+		} else if !extInstalled {
+			backend = "macos-ne-dev"
+		}
 	}
 	fb := NewMockDriver(backend, dns, tracker, logs)
-	if !extInstalled && runtime.GOOS == "darwin" {
+	if sender == nil && sysProxy != nil {
+		fb.SetMessage(fmt.Sprintf("System proxy ready (%s:%d)", sysProxy.host, sysProxy.port))
+	} else if !extInstalled && runtime.GOOS == "darwin" {
 		fb.SetMessage("Running in dev/loopback mode (install signed AnyProxy.app to /Applications for System Extension kernel capture)")
 	}
 	return &DarwinDriver{
 		sender:       sender,
+		sysProxy:     sysProxy,
 		fallback:     fb,
 		extInstalled: extInstalled,
 	}
@@ -342,18 +355,36 @@ func detectMacSystemExtensionBundle() bool {
 }
 
 func (d *DarwinDriver) Start(ctx context.Context) error {
+	d.mu.RLock()
+	sender := d.sender
+	sysProxy := d.sysProxy
+	d.mu.RUnlock()
+	if sender == nil {
+		if sysProxy == nil {
+			return fmt.Errorf("macOS Network Extension is not connected; system traffic interception is unavailable")
+		}
+		if err := sysProxy.Enable(); err != nil {
+			d.fallback.SetMessage(err.Error())
+			return err
+		}
+		d.fallback.SetMessage(fmt.Sprintf("System proxy active (%s:%d)", sysProxy.host, sysProxy.port))
+	}
 	return d.fallback.Start(ctx)
 }
 
 func (d *DarwinDriver) Stop() error {
 	d.mu.RLock()
 	sender := d.sender
+	sysProxy := d.sysProxy
 	d.mu.RUnlock()
 
 	if sender != nil {
 		if msg, err := BuildClearConfigMessage(); err == nil {
 			_, _ = sender(msg)
 		}
+	} else if sysProxy != nil {
+		_ = sysProxy.Disable()
+		d.fallback.SetMessage(fmt.Sprintf("System proxy stopped (%s:%d)", sysProxy.host, sysProxy.port))
 	}
 	return d.fallback.Stop()
 }
@@ -361,8 +392,12 @@ func (d *DarwinDriver) Stop() error {
 func (d *DarwinDriver) SetEnabled(enabled bool) error {
 	d.mu.RLock()
 	sender := d.sender
+	sysProxy := d.sysProxy
 	d.mu.RUnlock()
 
+	if sender == nil && sysProxy == nil && enabled {
+		return fmt.Errorf("macOS Network Extension is not connected; system traffic interception is unavailable")
+	}
 	if sender != nil {
 		msg, err := BuildSetEnabledMessage(enabled)
 		if err != nil {
@@ -370,6 +405,17 @@ func (d *DarwinDriver) SetEnabled(enabled bool) error {
 		}
 		if _, err := sender(msg); err != nil {
 			return fmt.Errorf("extension setEnabled: %w", err)
+		}
+	} else if sysProxy != nil {
+		if enabled {
+			if err := sysProxy.Enable(); err != nil {
+				d.fallback.SetMessage(err.Error())
+				return err
+			}
+			d.fallback.SetMessage(fmt.Sprintf("System proxy active (%s:%d)", sysProxy.host, sysProxy.port))
+		} else {
+			_ = sysProxy.Disable()
+			d.fallback.SetMessage("System proxy paused")
 		}
 	}
 	return d.fallback.SetEnabled(enabled)
@@ -380,6 +426,10 @@ func (d *DarwinDriver) Status() EngineStatus {
 	d.mu.RLock()
 	if d.extInstalled {
 		st.ExtensionInstalled = true
+	}
+	if d.sender == nil && d.sysProxy == nil {
+		st.Enabled = false
+		st.Message = "macOS Network Extension is not connected; system traffic interception is unavailable"
 	}
 	d.mu.RUnlock()
 	return st
@@ -472,4 +522,3 @@ func (d *DarwinDriver) DrainLogs() ([]flows.ConnectionLogEntry, []flows.Activity
 func (d *DarwinDriver) Fallback() *MockDriver {
 	return d.fallback
 }
-
