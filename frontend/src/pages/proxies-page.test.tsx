@@ -27,12 +27,11 @@ it('imports valid lines, reports invalid line numbers and clears pasted credenti
   expect(screen.getByRole('status').textContent).not.toContain('secret')
 })
 
-it('tests and selects a proxy, and requires confirmation before deleting', async () => {
+it('tests, selects, and deletes a proxy without relying on native window.confirm', async () => {
   const proxy = { id: '1', name: 'Existing', type: 'http', host: 'example.com', port: 8001 } as ProxyConfig
   const onTestProxy = vi.fn().mockResolvedValue({ success: true, avgMs: 42, summary: 'OK' })
   const onSetDefault = vi.fn()
-  const onDeleteProxy = vi.fn()
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  const onDeleteProxy = vi.fn().mockResolvedValue(undefined)
   render(<ProxiesPage proxies={[proxy]} defaultProxyId="" onSaveProxy={vi.fn()} onDeleteProxy={onDeleteProxy} onSetDefault={onSetDefault} onTestProxy={onTestProxy} />)
   expect(screen.getByRole('button', { name: 'Test' }).closest('td')?.className).toBe('col-latency')
   expect(screen.getByRole('button', { name: 'Set Active' }).closest('td')?.className).toBe('col-actions')
@@ -41,9 +40,6 @@ it('tests and selects a proxy, and requires confirmation before deleting', async
   await waitFor(() => expect(screen.getByText('42 ms')).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: 'Set Active' }))
   expect(onSetDefault).toHaveBeenCalledWith('1')
-  fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-  expect(onDeleteProxy).not.toHaveBeenCalled()
-  confirm.mockReturnValue(true)
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
   expect(onDeleteProxy).toHaveBeenCalledWith('1')
 })

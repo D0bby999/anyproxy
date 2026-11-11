@@ -304,12 +304,9 @@ export function RulesPage({
                               <Icon name="pencil" />
                             </button>
                             <button
-                              className="iconbtn sm"
-                              onClick={() => {
-                                if (window.confirm(`${t.rules.confirmDelete}\n${r.name}`)) {
-                                  void onDeleteRule(r.id)
-                                }
-                              }}
+                              type="button"
+                              className="iconbtn sm danger"
+                              onClick={() => void onDeleteRule(r.id)}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >

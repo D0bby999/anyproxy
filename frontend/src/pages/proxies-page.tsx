@@ -185,9 +185,6 @@ export function ProxiesPage({
                           <b className="selectable" title={p.name}>
                             {p.name}
                           </b>
-                          <span className="mono" title={`${p.type}://${p.host}:${p.port}`}>
-                            {p.type}://{p.host}:{p.port}
-                          </span>
                         </td>
                         <td className="col-type">
                           <span className="chip">
@@ -236,9 +233,10 @@ export function ProxiesPage({
                           </span>
                         </td>
                         <td className="col-actions" onClick={(e) => e.stopPropagation()}>
-                          <span className="row">
+                          <span className="row" style={{ justifyContent: 'flex-end' }}>
                             {!isDefault ? (
                               <button
+                                type="button"
                                 className="btn sm"
                                 onClick={() => void onSetDefault(p.id)}
                                 title={t.actions.setActive}
@@ -252,6 +250,7 @@ export function ProxiesPage({
                               </span>
                             )}
                             <button
+                              type="button"
                               className="iconbtn sm"
                               onClick={() => handleEdit(p)}
                               title={t.actions.edit}
@@ -260,8 +259,16 @@ export function ProxiesPage({
                               <Icon name="pencil" />
                             </button>
                             <button
-                              className="iconbtn sm"
-                              onClick={() => { if (window.confirm(`${t.proxies.confirmDelete}\n${p.name}`)) void onDeleteProxy(p.id) }}
+                              type="button"
+                              className="iconbtn sm danger"
+                              onClick={() => {
+                                setResults((prev) => {
+                                  const next = { ...prev }
+                                  delete next[p.id]
+                                  return next
+                                })
+                                void onDeleteProxy(p.id)
+                              }}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >
@@ -373,6 +380,21 @@ export function ProxiesPage({
               </div>
 
               <div className="dialog-foot">
+                {editing.id && (
+                  <button
+                    type="button"
+                    className="btn danger"
+                    style={{ marginRight: 'auto' }}
+                    onClick={() => {
+                      const targetId = editing.id
+                      setShowModal(false)
+                      void onDeleteProxy(targetId)
+                    }}
+                  >
+                    <Icon name="trash" />
+                    {t.actions.delete}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn"

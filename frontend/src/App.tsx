@@ -34,6 +34,11 @@ export default function App() {
   const [connLogs, setConnLogs] = useState<ConnectionLogEntry[]>([])
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([])
   const [toasts, setToasts] = useState<{ id: string; type: string; msg: string }[]>([])
+  const [profileDialog, setProfileDialog] = useState<{
+    mode: 'create' | 'duplicate' | 'rename'
+    targetName: string
+    value: string
+  } | null>(null)
 
   const toast = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
     const id = Math.random().toString(36).slice(2)
@@ -168,13 +173,35 @@ export default function App() {
     toast(t.messages.ruleSaved, 'success')
   }
 
-  const handleCreateProfile = async () => {
-    const name = prompt(t.messages.profilePrompt)
-    if (name?.trim()) {
-      const p = await app.CreateProfile(name.trim())
-      setProfile(p)
+  const handleCreateProfile = () => {
+    setProfileDialog({ mode: 'create', targetName: '', value: '' })
+  }
+
+  const handleProfileDialogSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!profileDialog) return
+    const nextName = profileDialog.value.trim()
+    if (!nextName) return
+    try {
+      if (profileDialog.mode === 'create') {
+        const p = await app.CreateProfile(nextName)
+        setProfile(p)
+        toast(t.messages.profileCreated, 'success')
+      } else if (profileDialog.mode === 'duplicate') {
+        const p = await app.DuplicateProfile(profileDialog.targetName, nextName)
+        setProfile(p)
+        toast(t.messages.profileDuplicated, 'success')
+      } else if (profileDialog.mode === 'rename') {
+        if (nextName !== profileDialog.targetName) {
+          const p = await app.RenameProfile(profileDialog.targetName, nextName)
+          setProfile(p)
+          toast(t.messages.profileRenamed, 'success')
+        }
+      }
+      setProfileDialog(null)
       void reloadData()
-      toast(t.messages.profileCreated, 'success')
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
     }
   }
 
@@ -205,7 +232,57 @@ export default function App() {
           onToggleAlwaysOnTop={() => void handleToggleAlwaysOnTop()}
           onExpand={(targetPage) => void handleExpandFromCompact(targetPage)}
         />
-        <div className="toasts">
+        {profileDialog && (
+        <div className="dialog-backdrop">
+          <div className="dialog-box">
+            <form onSubmit={handleProfileDialogSubmit}>
+              <div className="dialog-head">
+                <h2>
+                  {profileDialog.mode === 'create'
+                    ? t.nav.newProfile
+                    : profileDialog.mode === 'duplicate'
+                      ? t.settings.duplicateBtn
+                      : t.settings.renameBtn}
+                </h2>
+              </div>
+              <div className="dialog-body">
+                <div className="field">
+                  <label>
+                    {profileDialog.mode === 'create'
+                      ? t.messages.profilePrompt
+                      : profileDialog.mode === 'duplicate'
+                        ? t.settings.duplicatePrompt
+                        : t.settings.renamePrompt}
+                  </label>
+                  <input
+                    className="input"
+                    value={profileDialog.value}
+                    onChange={(e) =>
+                      setProfileDialog({ ...profileDialog, value: e.target.value })
+                    }
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+              <div className="dialog-foot">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setProfileDialog(null)}
+                >
+                  {t.actions.cancel}
+                </button>
+                <button type="submit" className="btn primary">
+                  {t.actions.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="toasts">
           {toasts.map((item) => (
             <div key={item.id} className={`toast ${item.type}`}>
               <span>{item.msg}</span>
@@ -278,9 +355,13 @@ export default function App() {
               toast(t.messages.proxySaved, 'success')
             }}
             onDeleteProxy={async (id) => {
-              const updated = await app.DeleteProxy(id)
-              setProfile(updated)
-              toast(t.messages.proxyDeleted, 'info')
+              try {
+                const updated = await app.DeleteProxy(id)
+                setProfile(updated)
+                toast(t.messages.proxyDeleted, 'info')
+              } catch (e: unknown) {
+                toast(e instanceof Error ? e.message : String(e), 'error')
+              }
             }}
             onSetDefault={handleSetDefaultProxy}
             onTestProxy={handleTestProxy}
@@ -294,9 +375,13 @@ export default function App() {
             knownApps={knownApps}
             onSaveRule={handleSaveRule}
             onDeleteRule={async (id) => {
-              const updated = await app.DeleteRule(id)
-              setProfile(updated)
-              toast(t.messages.ruleDeleted, 'info')
+              try {
+                const updated = await app.DeleteRule(id)
+                setProfile(updated)
+                toast(t.messages.ruleDeleted, 'info')
+              } catch (e: unknown) {
+                toast(e instanceof Error ? e.message : String(e), 'error')
+              }
             }}
             onToggleRule={async (id, en) => {
               const updated = await app.ToggleRule(id, en)
@@ -350,28 +435,29 @@ export default function App() {
               setProfiles((prev) => ({ ...prev, active: name }))
             }}
             onCreateProfile={handleCreateProfile}
-            onDuplicateProfile={async (srcName) => {
-              const newName = prompt(t.settings.duplicatePrompt, `${srcName} Copy`)
-              if (!newName?.trim()) return
-              const p = await app.DuplicateProfile(srcName, newName.trim())
-              setProfile(p)
-              void reloadData()
-              toast(t.messages.profileDuplicated, 'success')
+            onDuplicateProfile={(srcName) => {
+              setProfileDialog({
+                mode: 'duplicate',
+                targetName: srcName,
+                value: `${srcName} Copy`,
+              })
             }}
-            onRenameProfile={async (oldName) => {
-              const newName = prompt(t.settings.renamePrompt, oldName)
-              if (!newName?.trim() || newName.trim() === oldName) return
-              const p = await app.RenameProfile(oldName, newName.trim())
-              setProfile(p)
-              void reloadData()
-              toast(t.messages.profileRenamed, 'success')
+            onRenameProfile={(oldName) => {
+              setProfileDialog({
+                mode: 'rename',
+                targetName: oldName,
+                value: oldName,
+              })
             }}
             onDeleteProfile={async (name) => {
-              if (!confirm(`${t.settings.confirmDeleteProfile}\n${name}`)) return
-              const p = await app.DeleteProfile(name)
-              setProfile(p)
-              void reloadData()
-              toast(t.messages.profileDeleted, 'info')
+              try {
+                const p = await app.DeleteProfile(name)
+                setProfile(p)
+                void reloadData()
+                toast(t.messages.profileDeleted, 'info')
+              } catch (e: unknown) {
+                toast(e instanceof Error ? e.message : String(e), 'error')
+              }
             }}
             onImportProfile={async (raw) => {
               const p = await app.ImportProfileJSON(raw, true)
@@ -394,6 +480,56 @@ export default function App() {
           connRate={flows.filter((f) => f.state === 'open').length}
         />
       </main>
+
+      {profileDialog && (
+        <div className="dialog-backdrop">
+          <div className="dialog-box">
+            <form onSubmit={handleProfileDialogSubmit}>
+              <div className="dialog-head">
+                <h2>
+                  {profileDialog.mode === 'create'
+                    ? t.nav.newProfile
+                    : profileDialog.mode === 'duplicate'
+                      ? t.settings.duplicateBtn
+                      : t.settings.renameBtn}
+                </h2>
+              </div>
+              <div className="dialog-body">
+                <div className="field">
+                  <label>
+                    {profileDialog.mode === 'create'
+                      ? t.messages.profilePrompt
+                      : profileDialog.mode === 'duplicate'
+                        ? t.settings.duplicatePrompt
+                        : t.settings.renamePrompt}
+                  </label>
+                  <input
+                    className="input"
+                    value={profileDialog.value}
+                    onChange={(e) =>
+                      setProfileDialog({ ...profileDialog, value: e.target.value })
+                    }
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+              <div className="dialog-foot">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setProfileDialog(null)}
+                >
+                  {t.actions.cancel}
+                </button>
+                <button type="submit" className="btn primary">
+                  {t.actions.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="toasts">
         {toasts.map((item) => (

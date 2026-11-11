@@ -412,6 +412,11 @@ func (s *Service) DeleteProxy(proxyID string) (pbprofile.Profile, error) {
 			p.DefaultProxyID = p.Proxies[0].ID
 		}
 	}
+	for i := range p.Rules {
+		if p.Rules[i].ProxyConfigID == proxyID {
+			p.Rules[i].ProxyConfigID = p.DefaultProxyID
+		}
+	}
 	saved, err := s.store.SaveProfile(p, true)
 	if err != nil {
 		return pbprofile.Profile{}, err
