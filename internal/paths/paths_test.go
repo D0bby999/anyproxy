@@ -14,7 +14,7 @@ func TestLegacyDataFallbackAndConflict(t *testing.T) {
 	if err := os.Mkdir(legacy, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(legacy, "anyproxyxa.db"), []byte("existing data"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(legacy, "state.json"), []byte("existing data"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	d, err := defaultForBase(base)
@@ -35,42 +35,9 @@ func TestLegacyDataFallbackAndConflict(t *testing.T) {
 	}
 }
 
-func TestRenamedDirectoryKeepsLegacyDatabase(t *testing.T) {
-	base := t.TempDir()
-	legacy, current := filepath.Join(base, "AnyProxyXa"), filepath.Join(base, "AnyProxy")
-	if err := os.Mkdir(legacy, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(legacy, "anyproxyxa.db"), []byte("profile"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(legacy, current); err != nil {
-		t.Fatal(err)
-	}
-	d, err := defaultForBase(base)
-	if err != nil || d.Root != current {
-		t.Fatalf("current root = %q, %v", d.Root, err)
-	}
-	if got, err := os.ReadFile(d.DB()); err != nil || string(got) != "profile" {
-		t.Fatalf("legacy DB after rename: %q, %v", got, err)
-	}
-}
-
-func TestDatabaseConflict(t *testing.T) {
-	d := Dirs{Root: t.TempDir()}
-	for _, name := range []string{"anyproxyxa.db", "anyproxy.db"} {
-		if err := os.WriteFile(filepath.Join(d.Root, name), []byte(name), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := d.Ensure(); err == nil {
-		t.Fatal("expected error for conflicting databases")
-	}
-}
-
 func TestFreshDatabaseName(t *testing.T) {
 	d := Dirs{Root: t.TempDir()}
-	if got := filepath.Base(d.DB()); got != "anyproxy.db" {
+	if got := filepath.Base(d.DB()); got != "state.json" {
 		t.Fatalf("DB = %q", got)
 	}
 }

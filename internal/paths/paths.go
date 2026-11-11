@@ -49,13 +49,7 @@ func defaultForBase(base string) (Dirs, error) {
 	return Dirs{Root: current}, nil
 }
 
-func (d Dirs) DB() string {
-	legacy := filepath.Join(d.Root, "anyproxyxa.db")
-	if _, err := os.Lstat(legacy); err == nil || !os.IsNotExist(err) {
-		return legacy
-	}
-	return filepath.Join(d.Root, "anyproxy.db")
-}
+func (d Dirs) DB() string       { return filepath.Join(d.Root, "state.json") }
 func (d Dirs) Vault() string    { return filepath.Join(d.Root, "secrets.vault") }
 func (d Dirs) Profiles() string { return filepath.Join(d.Root, "profiles") }
 func (d Dirs) Logs() string     { return filepath.Join(d.Root, "logs") }
@@ -63,17 +57,6 @@ func (d Dirs) Backups() string  { return filepath.Join(d.Root, "backups") }
 
 // Ensure creates every directory with owner-only permissions (0700).
 func (d Dirs) Ensure() error {
-	_, oldErr := os.Lstat(filepath.Join(d.Root, "anyproxyxa.db"))
-	_, newErr := os.Lstat(filepath.Join(d.Root, "anyproxy.db"))
-	if oldErr != nil && !os.IsNotExist(oldErr) {
-		return fmt.Errorf("inspect legacy database: %w", oldErr)
-	}
-	if newErr != nil && !os.IsNotExist(newErr) {
-		return fmt.Errorf("inspect database: %w", newErr)
-	}
-	if oldErr == nil && newErr == nil {
-		return fmt.Errorf("both AnyProxy and legacy databases exist; resolve manually before starting")
-	}
 	for _, p := range []string{d.Root, d.Profiles(), d.Logs(), d.Backups()} {
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", p, err)

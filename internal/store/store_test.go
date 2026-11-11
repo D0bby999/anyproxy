@@ -5,6 +5,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/D0bby999/anyproxy/internal/pbprofile"
@@ -77,4 +78,50 @@ func TestStoreSettings(t *testing.T) {
 	}
 }
 
+func TestStorePersistsAcrossReopenAndStripsPasswords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
 
+	p := pbprofile.DefaultProfile("Work")
+	p.Proxies = []pbprofile.ProxyConfig{{
+		Name: "P1", Type: pbprofile.ProxySOCKS5, Host: "127.0.0.1", Port: 1080,
+		Username: "u", Password: "never-on-disk-secret",
+	}}
+	p.Rules = []pbprofile.ProxyRule{{
+		Name: "R1", ProcessNames: "curl", TargetHosts: "*", TargetPorts: "*",
+		Protocol: pbprofile.ProtoTCP, Action: pbprofile.ActionProxy, Enabled: true,
+	}}
+	saved, err := st.SaveProfile(p, true)
+	if err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+	if err := st.SetSetting("k", "v"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	_ = st.Close()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(raw), "never-on-disk-secret") {
+		t.Fatal("password leaked to disk state file")
+	}
+
+	st2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	defer st2.Close()
+
+	act, err := st2.ActiveProfile()
+	if err != nil || act.Name != "Work" || len(act.Proxies) != 1 || act.Proxies[0].ID != saved.Proxies[0].ID {
+		t.Fatalf("reopened ActiveProfile = %+v, err = %v", act, err)
+	}
+	if v, err := st2.GetSetting("k"); err != nil || v != "v" {
+		t.Fatalf("reopened GetSetting = %q, err = %v", v, err)
+	}
+}
