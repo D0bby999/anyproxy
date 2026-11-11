@@ -57,3 +57,24 @@ func TestStoreSaveAndSwitchProfiles(t *testing.T) {
 	}
 }
 
+func TestStoreSettings(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "settings.db")
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+
+	if _, err := st.GetSetting("compact_pos"); err != ErrNotFound {
+		t.Fatalf("GetSetting missing = %v, want ErrNotFound", err)
+	}
+	if err := st.SetSetting("compact_pos", "920,60"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	val, err := st.GetSetting("compact_pos")
+	if err != nil || val != "920,60" {
+		t.Fatalf("GetSetting = %q, err = %v", val, err)
+	}
+}
+
+

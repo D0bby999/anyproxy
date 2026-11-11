@@ -444,3 +444,21 @@ func boolInt(b bool) int {
 	return 0
 }
 
+func (s *Store) GetSetting(key string) (string, error) {
+	var val string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return val, err
+}
+
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value
+	`, key, value)
+	return err
+}
+
+

@@ -37,8 +37,8 @@ func main() {
 	app := NewApp()
 	err := wails.Run(&options.App{
 		Title:     "AnyProxy",
-		Width:     1280,
-		Height:    800,
+		Width:     1080,
+		Height:    680,
 		MinWidth:  340,
 		MinHeight: 420,
 		AssetServer: &assetserver.Options{
