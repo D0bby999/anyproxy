@@ -187,12 +187,19 @@ input, textarea { caret-color: var(--accent); }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  min-width: 0;
 }
-.field label {
-  font-size: var(--t-xs);
+.field label,
+.field .field-label {
+  font-size: var(--t-sm);
   font-weight: 600;
   color: var(--ink-soft);
+}
+.hint {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  line-height: 1.4;
 }
 .input, .select, select, textarea {
   height: 32px;
@@ -213,6 +220,7 @@ input, textarea { caret-color: var(--accent); }
 :root[data-theme="dark"] textarea::placeholder { color: var(--faint); opacity: 1; }
 .input:focus, .select:focus, select:focus, textarea:focus {
   border-color: var(--accent);
+  box-shadow: var(--sh-field), var(--ring);
 }
 textarea, textarea.input {
   height: auto;
@@ -256,3 +264,18 @@ textarea, textarea.input {
   font-weight: 700;
   letter-spacing: .02em;
 }
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-size: var(--t-sm);
+}
+.banner .icon { margin-top: 2px; flex: none; }
+.banner.danger { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger-ink); }
+.banner .grow { flex: 1; min-width: 0; }

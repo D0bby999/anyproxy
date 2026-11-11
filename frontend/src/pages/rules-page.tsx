@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: MIT
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
 import { t } from '../i18n'
 import type { ProxyRule, ProxyConfig } from '../types'
+
+function parseAppTokens(raw: string): string[] {
+  return (raw || '')
+    .split(';')
+    .flatMap((x) => x.split(','))
+    .map((x) => x.trim())
+    .filter((x) => x && x !== '*')
+}
 
 function extractAppNameFromPath(fullPath: string): string {
   if (!fullPath) return ''
@@ -42,6 +51,7 @@ export function RulesPage({
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyRule | null>(null)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
@@ -84,44 +94,48 @@ export function RulesPage({
     setShowModal(true)
   }
 
-  const handleAddAppToken = (appName: string) => {
+  const handleToggleAppToken = (appName: string) => {
     if (!editing || !appName) return
     if (appName === '*') {
       setEditing({ ...editing, processNames: '*' })
       return
     }
-    const cur = (editing.processNames || '')
-      .split(';')
-      .flatMap((x) => x.split(','))
-      .map((x) => x.trim())
-      .filter((x) => x && x !== '*')
-    if (!cur.includes(appName)) {
-      cur.push(appName)
-    }
+    const cur = parseAppTokens(editing.processNames)
+    const exists = cur.includes(appName)
+    const next = exists ? cur.filter((x) => x !== appName) : [...cur, appName]
     setEditing({
       ...editing,
-      processNames: cur.join('; '),
-      name: editing.name.trim() ? editing.name : `Proxy ${appName}`,
+      processNames: next.length > 0 ? next.join('; ') : '*',
+      name: !exists && !editing.name.trim() ? `Proxy ${appName}` : editing.name,
     })
   }
 
   const handleBrowseExecutable = async () => {
-    if (!onPickExecutable) return
+    if (!onPickExecutable || !editing) return
     const path = await onPickExecutable()
     const extracted = extractAppNameFromPath(path)
-    if (extracted) {
-      handleAddAppToken(extracted)
-    }
+    if (!extracted) return
+    const cur = parseAppTokens(editing.processNames)
+    if (!cur.includes(extracted)) cur.push(extracted)
+    setEditing({
+      ...editing,
+      processNames: cur.join('; '),
+      name: editing.name.trim() ? editing.name : `Proxy ${extracted}`,
+    })
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editing) return
+    if (!editing || saving) return
+    setSaving(true)
+    setError('')
     try {
       await onSaveRule(editing)
       setShowModal(false)
     } catch (err) {
       setError(String(err))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -325,173 +339,18 @@ export function RulesPage({
       </div>
 
       {showModal && editing && (
-        <div className="dialog-backdrop">
-          <div className="dialog-box">
-            <form onSubmit={handleSave}>
-              <div className="dialog-head">
-                <h2>{editing.id ? t.actions.edit : t.rules.newBtn}</h2>
-                <button
-                  type="button"
-                  className="iconbtn sm"
-                  onClick={() => setShowModal(false)}
-                  aria-label={t.actions.cancel}
-                >
-                  <Icon name="close" />
-                </button>
-              </div>
-
-              <div className="dialog-body">
-                {error && <p role="alert">{error}</p>}
-                <div className="field">
-                  <label>{t.rules.name}</label>
-                  <input
-                    className="input"
-                    value={editing.name}
-                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                    placeholder={t.rules.namePlaceholder}
-                    required
-                  />
-                </div>
-
-                <div className="field">
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <label>
-                      {t.rules.applications} ({t.rules.processHint})
-                    </label>
-                    {onPickExecutable && (
-                      <button
-                        type="button"
-                        className="btn sm"
-                        onClick={() => void handleBrowseExecutable()}
-                      >
-                        <Icon name="folder" />
-                        {t.rules.browseApp}
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    className="input mono"
-                    value={editing.processNames}
-                    onChange={(e) =>
-                      setEditing({ ...editing, processNames: e.target.value })
-                    }
-                  />
-                  <div className="quick-chip-bar">
-                    <span className="muted" style={{ fontSize: 11 }}>{t.rules.quickApps}</span>
-                    {quickAppCandidates.map((appName) => (
-                      <button
-                        key={appName}
-                        type="button"
-                        className="chip-btn"
-                        onClick={() => handleAddAppToken(appName)}
-                      >
-                        {appName}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="row" style={{ gap: 8 }}>
-                  <div className="field" style={{ flex: 2 }}>
-                    <label>
-                      {t.rules.targets} ({t.rules.targetHint})
-                    </label>
-                    <input
-                      className="input mono"
-                      value={editing.targetHosts}
-                      onChange={(e) =>
-                        setEditing({ ...editing, targetHosts: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="field" style={{ flex: 1 }}>
-                    <label>
-                      {t.rules.ports} ({t.rules.portHint})
-                    </label>
-                    <input
-                      className="input mono"
-                      value={editing.targetPorts}
-                      onChange={(e) =>
-                        setEditing({ ...editing, targetPorts: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="row" style={{ gap: 8 }}>
-                  <div className="field" style={{ flex: 1 }}>
-                    <label>{t.rules.protocol}</label>
-                    <select
-                      className="select"
-                      value={editing.protocol}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          protocol: e.target.value as ProxyRule['protocol'],
-                        })
-                      }
-                    >
-                      <option value="both">{t.rules.both}</option>
-                      <option value="tcp">{t.rules.tcp}</option>
-                      <option value="udp">{t.rules.udp}</option>
-                    </select>
-                  </div>
-
-                  <div className="field" style={{ flex: 1 }}>
-                    <label>{t.rules.action}</label>
-                    <select
-                      className="select"
-                      value={editing.action}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          action: e.target.value as ProxyRule['action'],
-                        })
-                      }
-                    >
-                      <option value="direct">{t.rules.direct}</option>
-                      <option value="proxy">{t.rules.proxy}</option>
-                      <option value="block">{t.rules.block}</option>
-                    </select>
-                  </div>
-                </div>
-
-                {editing.action === 'proxy' && (
-                  <div className="field">
-                    <label>{t.rules.selectProxy}</label>
-                    <select
-                      className="select"
-                      value={editing.proxyConfigId || ''}
-                      onChange={(e) =>
-                        setEditing({ ...editing, proxyConfigId: e.target.value })
-                      }
-                    >
-                      <option value="">{t.rules.defaultProxy}</option>
-                      {proxies.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.type} {p.host}:{p.port})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="dialog-foot">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowModal(false)}
-                >
-                  {t.actions.cancel}
-                </button>
-                <button type="submit" className="btn primary">
-                  {t.actions.save}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <RuleEditorDialog
+          editing={editing}
+          proxies={proxies}
+          quickAppCandidates={quickAppCandidates}
+          error={error}
+          saving={saving}
+          onChange={setEditing}
+          onToggleApp={handleToggleAppToken}
+          onBrowseExecutable={onPickExecutable ? handleBrowseExecutable : undefined}
+          onSave={handleSave}
+          onClose={() => setShowModal(false)}
+        />
       )}
 
       {showImportModal && (
@@ -538,5 +397,282 @@ export function RulesPage({
         </div>
       )}
     </>
+  )
+}
+
+function RuleEditorDialog({
+  editing,
+  proxies,
+  quickAppCandidates,
+  error,
+  saving,
+  onChange,
+  onToggleApp,
+  onBrowseExecutable,
+  onSave,
+  onClose,
+}: {
+  editing: ProxyRule
+  proxies: ProxyConfig[]
+  quickAppCandidates: string[]
+  error: string
+  saving: boolean
+  onChange: (next: ProxyRule) => void
+  onToggleApp: (appName: string) => void
+  onBrowseExecutable?: () => Promise<void>
+  onSave: (e: React.FormEvent) => Promise<void>
+  onClose: () => void
+}) {
+  const backdropRef = useRef<HTMLDivElement>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const title = editing.id ? t.rules.editTitle : t.rules.newBtn
+
+  useEffect(() => {
+    nameRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const all = document.querySelectorAll('.backdrop')
+      if (all[all.length - 1] === backdropRef.current) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const selectedTokens = parseAppTokens(editing.processNames)
+  const isAllApps = (editing.processNames || '').trim() === '*' || selectedTokens.length === 0
+  const matchedProxy = proxies.find((p) => p.id === editing.proxyConfigId)
+
+  const protoLabel = editing.protocol === 'tcp' ? 'TCP' : editing.protocol === 'udp' ? 'UDP' : 'TCP & UDP'
+  const appsSummary = isAllApps ? t.rules.allApps : selectedTokens.join(', ')
+  const hostsSummary = (editing.targetHosts || '').trim() || '*'
+  const portsSummary = (editing.targetPorts || '').trim() || '*'
+  const actionChipClass = editing.action === 'proxy' ? 'accent' : editing.action === 'block' ? 'danger' : 'ok'
+  const actionSummary =
+    editing.action === 'proxy'
+      ? `${t.rules.actionProxy}: ${matchedProxy ? matchedProxy.name : t.rules.defaultProxy}`
+      : editing.action === 'block'
+        ? t.rules.actionBlock
+        : t.rules.actionDirect
+
+  const protocols: { id: ProxyRule['protocol']; label: string }[] = [
+    { id: 'both', label: t.rules.both },
+    { id: 'tcp', label: t.rules.tcp },
+    { id: 'udp', label: t.rules.udp },
+  ]
+
+  const actions: { id: ProxyRule['action']; label: string }[] = [
+    { id: 'proxy', label: t.rules.actionProxy },
+    { id: 'direct', label: t.rules.actionDirect },
+    { id: 'block', label: t.rules.actionBlock },
+  ]
+
+  return createPortal(
+    <div
+      className="backdrop"
+      ref={backdropRef}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <form
+        className="dialog ruledialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onSubmit={(e) => void onSave(e)}
+      >
+        <div className="dialog-head">
+          <Icon name="rules" />
+          <h2>{title}</h2>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="iconbtn sm"
+            onClick={onClose}
+            aria-label={t.actions.close}
+            title={t.actions.close}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+
+        <div className="dialog-body">
+          {error && (
+            <div className="banner danger" role="alert">
+              <Icon name="warn" />
+              <span className="grow">{error}</span>
+            </div>
+          )}
+
+          <div className="field">
+            <label htmlFor="rule-name">{t.rules.name}</label>
+            <input
+              ref={nameRef}
+              id="rule-name"
+              className="input"
+              value={editing.name}
+              onChange={(e) => onChange({ ...editing, name: e.target.value })}
+              placeholder={t.rules.namePlaceholder}
+              required
+            />
+          </div>
+
+          <div className="rule-group">
+            <div className="field">
+              <div className="rule-field-head" style={{ alignItems: 'center' }}>
+                <label htmlFor="rule-apps">{t.rules.applications}</label>
+                {onBrowseExecutable && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => void onBrowseExecutable()}
+                  >
+                    <Icon name="folder" />
+                    {t.rules.browseApp}
+                  </button>
+                )}
+              </div>
+              <input
+                id="rule-apps"
+                className="input mono"
+                value={editing.processNames}
+                onChange={(e) => onChange({ ...editing, processNames: e.target.value })}
+                placeholder={t.rules.processHint}
+                spellCheck={false}
+              />
+              <div className="quick-chip-bar" role="group" aria-label={t.rules.quickApps}>
+                {quickAppCandidates.map((appName) => {
+                  const isWildcard = appName === '*'
+                  const active = isWildcard ? isAllApps : selectedTokens.includes(appName)
+                  return (
+                    <button
+                      key={appName}
+                      type="button"
+                      className={`chip-btn${isWildcard ? '' : ' mono'}${active ? ' active' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => onToggleApp(appName)}
+                    >
+                      {isWildcard ? t.rules.allApps : appName}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="rule-grid">
+              <div className="field">
+                <div className="rule-field-head">
+                  <label htmlFor="rule-targets">{t.rules.targets}</label>
+                  <span className="hint">{t.rules.targetHint}</span>
+                </div>
+                <input
+                  id="rule-targets"
+                  className="input mono"
+                  value={editing.targetHosts}
+                  onChange={(e) => onChange({ ...editing, targetHosts: e.target.value })}
+                  placeholder="*"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="field">
+                <div className="rule-field-head">
+                  <label htmlFor="rule-ports">{t.rules.ports}</label>
+                  <span className="hint">{t.rules.portHint}</span>
+                </div>
+                <input
+                  id="rule-ports"
+                  className="input mono"
+                  value={editing.targetPorts}
+                  onChange={(e) => onChange({ ...editing, targetPorts: e.target.value })}
+                  placeholder="*"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <span id="rule-proto-label" className="field-label">{t.rules.protocol}</span>
+              <div className="seg rule-seg-full" role="group" aria-labelledby="rule-proto-label">
+                {protocols.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={editing.protocol === p.id}
+                    onClick={() => onChange({ ...editing, protocol: p.id })}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rule-group">
+            <div className={editing.action === 'proxy' ? 'rule-route-grid' : 'field'}>
+              <div className="field">
+                <span id="rule-action-label" className="field-label">{t.rules.action}</span>
+                <div className="seg rule-seg-full" role="group" aria-labelledby="rule-action-label">
+                  {actions.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      aria-pressed={editing.action === a.id}
+                      onClick={() => onChange({ ...editing, action: a.id })}
+                    >
+                      <span className={`rule-action-dot ${a.id}`} aria-hidden="true" />
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {editing.action === 'proxy' && (
+                <div className="field">
+                  <label htmlFor="rule-proxy">{t.rules.selectProxy}</label>
+                  <select
+                    id="rule-proxy"
+                    className="select"
+                    value={editing.proxyConfigId || ''}
+                    onChange={(e) => onChange({ ...editing, proxyConfigId: e.target.value })}
+                  >
+                    <option value="">{t.rules.defaultProxy}</option>
+                    {proxies.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {editing.action === 'proxy' && proxies.length === 0 && (
+              <span className="hint">{t.rules.noProxiesHint}</span>
+            )}
+          </div>
+
+          <div className="rule-preview" aria-live="polite">
+            <span className="rule-preview-match mono">
+              {appsSummary} · {hostsSummary}:{portsSummary} · {protoLabel}
+            </span>
+            <span className={`chip ${actionChipClass}`}>
+              <span className="dot" />
+              <span className="chiptext">{actionSummary}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="dialog-foot">
+          <button type="button" className="btn" onClick={onClose}>
+            {t.actions.cancel}
+          </button>
+          <button type="submit" className="btn primary" disabled={saving} aria-busy={saving}>
+            {t.actions.save}
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   )
 }

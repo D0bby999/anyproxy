@@ -840,35 +840,132 @@ button.enginechip:hover {
 .toast.error::before { background: var(--danger); }
 .toast.info::before { background: var(--accent); }
 
-/* Quick-pick app chips in Rule modal */
+/* Rule editor dialog & quick-pick chips */
+.dialog.ruledialog {
+  width: 590px;
+  max-height: min(740px, 100%);
+}
+.dialog.ruledialog > .dialog-head {
+  padding: 13px 20px;
+}
+.dialog.ruledialog > .dialog-body {
+  padding: 14px 20px;
+  gap: 11px;
+}
+.dialog.ruledialog > .dialog-foot {
+  padding: 12px 20px;
+}
+.rule-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px 13px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.rule-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rule-field-head .hint {
+  text-align: right;
+  white-space: nowrap;
+}
+.rule-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.rule-route-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+.rule-seg-full {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  width: 100%;
+  background: var(--surface);
+}
+.rule-seg-full button {
+  justify-content: center;
+  height: 24px;
+}
+.rule-action-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.rule-action-dot.proxy { background: var(--accent); }
+.rule-action-dot.direct { background: var(--success); }
+.rule-action-dot.block { background: var(--danger); }
 .quick-chip-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-top: 4px;
 }
 .chip-btn {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  font-size: 11px;
-  font-family: var(--mono);
+  height: 24px;
+  padding: 0 9px;
+  font-size: var(--t-xs);
+  font-weight: 550;
   color: var(--ink-soft);
-  background: var(--surface-sunken);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   cursor: pointer;
+  transition: background .12s var(--ease), border-color .12s var(--ease), color .12s var(--ease);
+}
+.chip-btn.mono {
+  font-family: var(--mono);
 }
 .chip-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.chip-btn.active {
   background: var(--accent-soft);
   border-color: var(--accent-line);
   color: var(--accent-ink);
+  font-weight: 600;
+}
+.rule-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface-sunken);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.rule-preview-match {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+@media (max-width: 560px) {
+  .rule-grid,
+  .rule-route-grid { grid-template-columns: 1fr; }
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Compact / Mini Widget Mode (360×520)
+   Compact / Phone Widget Mode (336×620)
    ───────────────────────────────────────────────────────────── */
 .compact-shell {
   height: 100%;
