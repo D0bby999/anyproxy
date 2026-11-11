@@ -501,36 +501,6 @@ export const stubApp = {
   ClearActivityLogs: async (): Promise<void> => {
     activityLogs = []
   },
-  SimulateFlow: async (
-    _pid: number,
-    processName: string,
-    destIP: string,
-    domain: string,
-    port: number,
-    _isUDP: boolean
-  ): Promise<string> => {
-    const id = 'flow-' + Date.now()
-    liveFlows.unshift({
-      id,
-      pid: 9999,
-      processName,
-      processPath: `/usr/bin/${processName}`,
-      protocol: 'TCP',
-      destIP,
-      destPort: port,
-      resolvedDomain: domain,
-      ruleId: 'rl-sim',
-      ruleName: 'Simulated Rule',
-      action: 'proxy',
-      proxyId: 'px-clash',
-      proxyName: 'Local Clash SOCKS5',
-      state: 'open',
-      bytesIn: 1024,
-      bytesOut: 512,
-      startedAt: Date.now(),
-    })
-    return `proxy:${id}`
-  },
   PickProcessExecutable: async (): Promise<string> => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   CheckForUpdates: async () => ({
     currentVersion: '1.0.0',

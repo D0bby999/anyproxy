@@ -51,6 +51,3 @@ func (d *unavailableDriver) GetFlows(max int) ([]flows.Flow, error) {
 	return d.tracker.GetFlows(max), nil
 }
 func (d *unavailableDriver) ClearClosedFlows() int { return d.tracker.ClearClosed() }
-func (d *unavailableDriver) DrainLogs() ([]flows.ConnectionLogEntry, []flows.ActivityLogEntry, error) {
-	return d.logs.ConnectionLogs(flows.MaxConnectionLogs), d.logs.ActivityLogs(flows.MaxActivityLogs), nil
-}

@@ -297,18 +297,6 @@ func (a *App) ClearActivityLogs() {
 	}
 }
 
-// SimulateFlow evaluates a synthetic flow against the active rule engine and records it in Live Flows & Connection Logs.
-func (a *App) SimulateFlow(pid int, processName, destIP, domain string, port int, isUDP bool) (string, error) {
-	if err := a.ready(); err != nil {
-		return "", err
-	}
-	if port <= 0 || port > 65535 {
-		port = 443
-	}
-	dec, flowID := a.svc.SimulateFlow(pid, processName, destIP, domain, uint16(port), isUDP)
-	return string(dec.Action) + ":" + flowID, nil
-}
-
 // PickProcessExecutable opens a native file dialog so the user can choose an application or executable for a rule.
 func (a *App) PickProcessExecutable() (string, error) {
 	if a.ctx == nil {
@@ -381,4 +369,3 @@ func (a *App) SetCompactMode(compact bool, alwaysOnTop bool) {
 		a.posMu.Unlock()
 	}()
 }
-

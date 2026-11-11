@@ -63,7 +63,4 @@ type Driver interface {
 	GetFlows(max int) ([]flows.Flow, error)
 	// ClearClosedFlows removes closed flows from the driver's live flow table.
 	ClearClosedFlows() int
-	// DrainLogs drains any newly captured connection and activity log events from the OS driver.
-	DrainLogs() ([]flows.ConnectionLogEntry, []flows.ActivityLogEntry, error)
 }
-

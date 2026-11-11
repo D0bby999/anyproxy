@@ -125,12 +125,6 @@ func TestServiceEndToEnd(t *testing.T) {
 		t.Fatalf("MoveRule failed: %+v, err=%v", prof.Rules, err)
 	}
 
-	// Simulate flow matching r2
-	dec, flowID := svc.SimulateFlow(1234, "curl", "140.82.121.6", "api.github.com", 443, false)
-	if !dec.Matched || dec.Action != pbprofile.ActionProxy || dec.ProxyConfigID != proxyID || flowID == "" {
-		t.Fatalf("unexpected SimulateFlow decision: %+v, flowID=%s", dec, flowID)
-	}
-
 	// Export profile with passwords and import into a new profile
 	exported, err := svc.ExportProfileJSON("", true)
 	if err != nil {
@@ -151,4 +145,37 @@ func TestServiceEndToEnd(t *testing.T) {
 		t.Fatalf("existing profile was changed: %+v, err=%v", unchanged, err)
 	}
 	_ = exported
+}
+
+type stopCountingDriver struct {
+	*driver.MockDriver
+	stops int
+}
+
+func (d *stopCountingDriver) Stop() error {
+	d.stops++
+	return d.MockDriver.Stop()
+}
+
+func TestRecoverSystemProxyStopsDriverOnce(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drv := &stopCountingDriver{MockDriver: driver.NewMockDriver("test", nil, nil, nil)}
+	svc := New(st, nil, drv)
+	t.Cleanup(func() { _ = svc.Close() })
+
+	if err := st.SetSetting(settingSysProxyOn, "1"); err != nil {
+		t.Fatal(err)
+	}
+	svc.RecoverSystemProxy()
+	svc.RecoverSystemProxy()
+
+	if drv.stops != 1 {
+		t.Fatalf("expected Stop called once, got %d", drv.stops)
+	}
+	if v, _ := st.GetSetting(settingSysProxyOn); v != "0" {
+		t.Fatalf("expected sysproxy_on reset to 0, got %q", v)
+	}
 }

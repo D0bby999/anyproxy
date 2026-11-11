@@ -53,14 +53,6 @@ interface WailsApp {
   ClearConnectionLogs(): Promise<void>
   GetActivityLogs(limit: number): Promise<ActivityLogEntry[]>
   ClearActivityLogs(): Promise<void>
-  SimulateFlow(
-    pid: number,
-    processName: string,
-    destIP: string,
-    domain: string,
-    port: number,
-    isUDP: boolean
-  ): Promise<string>
   PickProcessExecutable(): Promise<string>
   CheckForUpdates(): Promise<ReleaseInfo>
   SetCompactMode(compact: boolean, alwaysOnTop: boolean): Promise<void>

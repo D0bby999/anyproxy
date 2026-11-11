@@ -14,7 +14,7 @@ func NewPlatformDriver(dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.Lo
 	sysProxy := NewSysProxyManager(DefaultSysProxyHost, DefaultSysProxyPort)
 	switch runtime.GOOS {
 	case "darwin":
-		return NewDarwinDriverWithSysProxy(nil, sysProxy, dns, tracker, logs)
+		return NewSysProxyDriver("macos-sysproxy", sysProxy, dns, tracker, logs)
 	case "windows":
 		return NewSysProxyDriver("windows-sysproxy", sysProxy, dns, tracker, logs)
 	default:

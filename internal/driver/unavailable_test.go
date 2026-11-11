@@ -21,20 +21,7 @@ func TestUnavailableDriverDoesNotClaimToRun(t *testing.T) {
 	}
 }
 
-func TestDarwinDriverCannotStartWithoutProvider(t *testing.T) {
-	d := NewDarwinDriver(nil, nil, nil, nil)
-	if err := d.Start(context.Background()); err == nil {
-		t.Fatal("start succeeded without a provider connection")
-	}
-	if err := d.SetEnabled(true); err == nil {
-		t.Fatal("enabling succeeded without a provider connection")
-	}
-	if st := d.Status(); st.State == StateRunning || st.Enabled || st.Message == "" {
-		t.Fatalf("driver reports running without a provider: %+v", st)
-	}
-}
-
-func TestDarwinDriverWithSysProxyTogglesOSSystemProxy(t *testing.T) {
+func TestSysProxyDriverTogglesOSSystemProxy(t *testing.T) {
 	var calls []string
 	mgr := &SysProxyManager{
 		goos: "darwin",
@@ -50,7 +37,7 @@ func TestDarwinDriverWithSysProxyTogglesOSSystemProxy(t *testing.T) {
 		},
 	}
 
-	drv := NewDarwinDriverWithSysProxy(nil, mgr, nil, nil, nil)
+	drv := NewSysProxyDriver("macos-sysproxy", mgr, nil, nil, nil)
 	if err := drv.Start(context.Background()); err != nil {
 		t.Fatalf("Start with sysProxy failed: %v", err)
 	}

@@ -20,7 +20,6 @@ import (
 	"github.com/D0bby999/anyproxy/internal/inbound"
 	"github.com/D0bby999/anyproxy/internal/netproxy"
 	"github.com/D0bby999/anyproxy/internal/pbprofile"
-	"github.com/D0bby999/anyproxy/internal/rules"
 	"github.com/D0bby999/anyproxy/internal/secrets"
 	"github.com/D0bby999/anyproxy/internal/store"
 )
@@ -108,9 +107,14 @@ func (s *Service) emit(topic string, payload any) {
 	}
 }
 
-// Close stops the OS interception driver and closes the SQLite store.
+const settingSysProxyOn = "sysproxy_on"
+
+// Close stops the OS interception driver and closes the store.
 func (s *Service) Close() error {
 	_ = s.drv.Stop()
+	if s.store != nil {
+		_ = s.store.SetSetting(settingSysProxyOn, "0")
+	}
 	if s.inbound != nil {
 		_ = s.inbound.Stop()
 	}
@@ -118,6 +122,21 @@ func (s *Service) Close() error {
 		return s.store.Close()
 	}
 	return nil
+}
+
+// RecoverSystemProxy turns off a system proxy left on by a previous crash.
+func (s *Service) RecoverSystemProxy() {
+	if s.store == nil {
+		return
+	}
+	if v, _ := s.store.GetSetting(settingSysProxyOn); v != "1" {
+		return
+	}
+	_ = s.drv.Stop()
+	_ = s.store.SetSetting(settingSysProxyOn, "0")
+	if s.logs != nil {
+		s.logs.LogActivity("WARN", "Turned off a system proxy left on by a previous session")
+	}
 }
 
 // InboundAddr returns the local forward proxy listening endpoint (e.g. "127.0.0.1:10800").
@@ -713,6 +732,9 @@ func (s *Service) StartEngine(ctx context.Context) (driver.EngineStatus, error) 
 	if err := s.drv.Start(ctx); err != nil {
 		return s.drv.Status(), err
 	}
+	if s.store != nil {
+		_ = s.store.SetSetting(settingSysProxyOn, "1")
+	}
 	st := s.drv.Status()
 	s.emit("engine:status", st)
 	return st, nil
@@ -721,6 +743,9 @@ func (s *Service) StartEngine(ctx context.Context) (driver.EngineStatus, error) 
 // StopEngine stops interception and wipes in-memory proxy credentials in the driver.
 func (s *Service) StopEngine() (driver.EngineStatus, error) {
 	err := s.drv.Stop()
+	if s.store != nil {
+		_ = s.store.SetSetting(settingSysProxyOn, "0")
+	}
 	st := s.drv.Status()
 	s.emit("engine:status", st)
 	return st, err
@@ -792,9 +817,8 @@ func (s *Service) ClearClosedFlows() int {
 	return s.drv.ClearClosedFlows()
 }
 
-// GetConnectionLogs drains any pending driver logs and returns up to limit connection log entries.
+// GetConnectionLogs returns up to limit connection log entries.
 func (s *Service) GetConnectionLogs(limit int) ([]flows.ConnectionLogEntry, error) {
-	_, _, _ = s.drv.DrainLogs()
 	return s.logs.ConnectionLogs(limit), nil
 }
 
@@ -803,29 +827,14 @@ func (s *Service) ClearConnectionLogs() {
 	s.logs.ClearConnectionLogs()
 }
 
-// GetActivityLogs drains any pending driver logs and returns up to limit activity log entries.
+// GetActivityLogs returns up to limit activity log entries.
 func (s *Service) GetActivityLogs(limit int) ([]flows.ActivityLogEntry, error) {
-	_, _, _ = s.drv.DrainLogs()
 	return s.logs.ActivityLogs(limit), nil
 }
 
 // ClearActivityLogs clears the activity log buffer.
 func (s *Service) ClearActivityLogs() {
 	s.logs.ClearActivityLogs()
-}
-
-// SimulateFlow evaluates a synthetic flow against the active rule engine and records it in Live Flows & Connection Logs.
-func (s *Service) SimulateFlow(pid int, processName, destIP, domain string, port uint16, isUDP bool) (rules.Decision, string) {
-	if domain != "" && destIP != "" {
-		s.dns.Record(domain, []string{destIP}, dnsmap.NowSec())
-	}
-	if dd, ok := s.drv.(*driver.DarwinDriver); ok {
-		return dd.Fallback().EvaluateAndRecord(pid, processName, "", destIP, domain, port, isUDP)
-	}
-	if md, ok := s.drv.(*driver.MockDriver); ok {
-		return md.EvaluateAndRecord(pid, processName, "", destIP, domain, port, isUDP)
-	}
-	return rules.Decision{Action: pbprofile.ActionDirect}, ""
 }
 
 func (s *Service) syncActiveProfileToDriver() error {

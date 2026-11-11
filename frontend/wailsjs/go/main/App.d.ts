@@ -63,8 +63,6 @@ export function SetDefaultProxy(arg1:string):Promise<pbprofile.Profile>;
 
 export function SetEngineEnabled(arg1:boolean):Promise<driver.EngineStatus>;
 
-export function SimulateFlow(arg1:number,arg2:string,arg3:string,arg4:string,arg5:number,arg6:boolean):Promise<string>;
-
 export function StartEngine():Promise<driver.EngineStatus>;
 
 export function StartupError():Promise<string>;

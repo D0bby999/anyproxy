@@ -114,10 +114,6 @@ export function SetEngineEnabled(arg1) {
   return window['go']['main']['App']['SetEngineEnabled'](arg1);
 }
 
-export function SimulateFlow(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['SimulateFlow'](arg1, arg2, arg3, arg4, arg5, arg6);
-}
-
 export function StartEngine() {
   return window['go']['main']['App']['StartEngine']();
 }
