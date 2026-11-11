@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	goruntime "runtime"
 	"syscall"
 
 	"github.com/wailsapp/wails/v2"
@@ -44,10 +45,12 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 236, G: 235, B: 231, A: 1},
-		Menu:             appMenu(app),
-		OnStartup:        app.startup,
-		OnBeforeClose:    app.beforeClose,
+		BackgroundColour:  &options.RGBA{R: 236, G: 235, B: 231, A: 1},
+		Menu:              appMenu(app),
+		HideWindowOnClose: goruntime.GOOS == "darwin",
+		OnStartup:         app.startup,
+		OnBeforeClose:     app.beforeClose,
+		OnShutdown:        app.shutdown,
 		Bind: []any{
 			app,
 		},

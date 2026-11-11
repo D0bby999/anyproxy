@@ -6,12 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/D0bby999/anyproxy/internal/driver"
 	"github.com/D0bby999/anyproxy/internal/paths"
 	"github.com/D0bby999/anyproxy/internal/secrets"
 	"github.com/D0bby999/anyproxy/internal/service"
@@ -20,16 +23,17 @@ import (
 
 // App is the Wails application host bound to the frontend.
 type App struct {
-	ctx       context.Context
-	store     *store.Store
-	svc       *service.Service
-	startErr  error
-	posMu     sync.Mutex
-	isCompact bool
-	compactX  int
-	compactY  int
-	fullX     int
-	fullY     int
+	ctx          context.Context
+	store        *store.Store
+	svc          *service.Service
+	startErr     error
+	shutdownOnce sync.Once
+	posMu        sync.Mutex
+	isCompact    bool
+	compactX     int
+	compactY     int
+	fullX        int
+	fullY        int
 }
 
 // NewApp creates an uninitialized App instance for Wails binding.
@@ -90,10 +94,17 @@ func (a *App) startup(ctx context.Context) {
 	a.svc = service.New(st, vault, nil)
 	a.svc.RecoverSystemProxy()
 	a.svc.SetEventEmitter(func(topic string, payload any) {
+		if topic == "engine:status" {
+			if st, ok := payload.(driver.EngineStatus); ok {
+				updateTrayStatus(st)
+			}
+		}
 		if a.ctx != nil {
 			runtime.EventsEmit(a.ctx, topic, payload)
 		}
 	})
+	initTray(a)
+	updateTrayStatus(a.svc.Status())
 }
 
 func (a *App) saveCurrentWindowPosition() {
@@ -125,10 +136,76 @@ func (a *App) saveCurrentWindowPosition() {
 
 func (a *App) beforeClose(ctx context.Context) (prevent bool) {
 	a.saveCurrentWindowPosition()
-	if a.svc != nil {
-		_ = a.svc.Close()
+	if goruntime.GOOS == "darwin" {
+		stopTray()
+		if a.ctx != nil {
+			runtime.Hide(a.ctx)
+		}
+		// Return before Wails stops the Cocoa runloop, then wake it in case Quit came from the menu bar while hidden.
+		time.AfterFunc(25*time.Millisecond, wakeTrayRunLoop)
+		return false
 	}
+	a.shutdown(ctx)
 	return false
+}
+
+func (a *App) shutdown(_ context.Context) {
+	a.shutdownOnce.Do(func() {
+		stopTray()
+		if a.svc != nil {
+			_ = a.svc.Close()
+		}
+	})
+}
+
+func (a *App) showMainWindow() {
+	if a.ctx == nil {
+		return
+	}
+	runtime.Show(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+	runtime.WindowShow(a.ctx)
+}
+
+func (a *App) hideMainWindow() {
+	if a.ctx == nil {
+		return
+	}
+	a.saveCurrentWindowPosition()
+	runtime.Hide(a.ctx)
+}
+
+func (a *App) toggleEngineFromTray() {
+	if a.ready() != nil {
+		return
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	st := a.svc.Status()
+	var err error
+	if st.State == driver.StateRunning || st.State == driver.StateStarting {
+		_, err = a.svc.StopEngine()
+	} else {
+		_, err = a.svc.StartEngine(ctx)
+	}
+	updateTrayStatus(a.svc.Status())
+	if err != nil {
+		a.showMainWindow()
+		_, _ = runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "AnyProxy",
+			Message: err.Error(),
+		})
+	}
+}
+
+func (a *App) requestQuit() {
+	if a.ctx == nil {
+		return
+	}
+	runtime.Quit(a.ctx)
 }
 
 func (a *App) ready() error {
