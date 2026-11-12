@@ -10,9 +10,25 @@ permissions:
   contents: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          v="$(jq -r .info.productVersion wails.json)"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag_v="${GITHUB_REF_NAME#v}"
+            if [ "$tag_v" != "$v" ]; then echo "tag $tag_v != wails.json $v" >&2; exit 1; fi
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
   build-macos:
+    needs: version
     name: Build macOS (${{ matrix.arch }})
-    runs-on: macos-latest
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
@@ -31,26 +47,108 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
 
-      - name: Build AnyProxy.app
+      - name: Build, Sign & Package DMG
         env:
           PATH: ${{ env.PATH }}:${{ github.workspace }}/go/bin:/Users/runner/go/bin
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            VERSION="$(sed -n 's/.*"productVersion": *"\([^"]*\)".*/\1/p' wails.json)"
-          fi
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          wails build -clean -platform "darwin/${{ matrix.arch }}" -ldflags "-s -w -X github.com/D0bby999/anyproxy/internal/update.Current=${VERSION}"
-          codesign --force --deep --sign - build/bin/AnyProxy.app
 
-      - name: Package DMG
-        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            for name in MACOS_CERT_P12 MACOS_CERT_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+              if [ -z "${!name:-}" ]; then echo "Missing required release secret: $name" >&2; exit 1; fi
+            done
+          fi
+
+          wails build -clean -platform "darwin/${{ matrix.arch }}" -ldflags "-s -w -X github.com/D0bby999/anyproxy/internal/update.Current=${VERSION}"
+
+          APP="build/bin/AnyProxy.app"
+          DMG="dist/AnyProxy-darwin-${{ matrix.arch }}.dmg"
           mkdir -p dist/dmg-root
-          cp -R build/bin/AnyProxy.app dist/dmg-root/
-          ln -s /Applications dist/dmg-root/Applications
-          hdiutil create -volname "AnyProxy" -srcfolder dist/dmg-root -ov -format UDZO "dist/AnyProxy-darwin-${{ matrix.arch }}.dmg"
+
+          if [ -n "${MACOS_CERT_P12:-}" ]; then
+            KEYCHAIN_PATH="${RUNNER_TEMP}/sign.keychain-db"
+            KEYCHAIN_PASS="$(openssl rand -hex 24)"
+            CERT_PATH="${RUNNER_TEMP}/cert.p12"
+            printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$CERT_PATH"
+
+            security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+            security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "${MACOS_CERT_PASSWORD:-}" -T /usr/bin/codesign
+            rm -f "$CERT_PATH"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH" >/dev/null
+            # shellcheck disable=SC2046
+            security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+            DEV_ID="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+            test -n "$DEV_ID" || { echo "::error::No Developer ID Application identity found in MACOS_CERT_P12" >&2; exit 1; }
+
+            codesign --force --deep --options runtime --timestamp --sign "$DEV_ID" "$APP"
+            codesign --verify --deep --strict "$APP"
+
+            # Verify every Mach-O inside bundle carries Developer ID + secure timestamp before notarizing
+            bad=0
+            while IFS= read -r -d '' f; do
+              file -b "$f" | grep -q 'Mach-O' || continue
+              sig="$(codesign -dv --verbose=4 "$f" 2>&1)"
+              case "$sig" in
+                *"Authority=Developer ID Application:"*Timestamp=*) ;;
+                *) echo "not signed for distribution: $f" >&2; bad=1 ;;
+              esac
+            done < <(find "$APP" -type f -print0)
+            [ "$bad" -eq 0 ] || exit 1
+
+            xattr -cr "$APP"
+
+            NOTARY_ARGS=()
+            if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+              API_KEY_PATH="${RUNNER_TEMP}/api-key.p8"
+              printf '%s' "$APPLE_API_KEY" | base64 --decode > "$API_KEY_PATH"
+              NOTARY_ARGS=(--key "$API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+              ZIP_PATH="${RUNNER_TEMP}/AnyProxy-darwin-${{ matrix.arch }}.zip"
+              ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ZIP_PATH"
+              xcrun notarytool submit "$ZIP_PATH" "${NOTARY_ARGS[@]}" --wait --timeout 30m
+              rm -f "$ZIP_PATH"
+              xcrun stapler staple "$APP"
+              xcrun stapler validate "$APP"
+            else
+              echo "::warning::APPLE_API_KEY_* secrets not set; skipping notarization"
+            fi
+
+            cp -R "$APP" dist/dmg-root/
+            ln -s /Applications dist/dmg-root/Applications
+            hdiutil create -volname "AnyProxy" -srcfolder dist/dmg-root -ov -format UDZO "$DMG"
+            codesign --force --timestamp --sign "$DEV_ID" "$DMG"
+
+            if [ "${#NOTARY_ARGS[@]}" -gt 0 ]; then
+              xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait --timeout 30m
+              xcrun stapler staple "$DMG"
+              xcrun stapler validate "$APP" "$DMG"
+              spctl -a -vvv -t exec "$APP"
+              spctl -a -vv -t open --context context:primary-signature "$DMG"
+            fi
+          else
+            echo "::warning::MACOS_CERT_P12 secret not set; falling back to ad-hoc codesign"
+            codesign --force --deep --sign - "$APP"
+            cp -R "$APP" dist/dmg-root/
+            ln -s /Applications dist/dmg-root/Applications
+            hdiutil create -volname "AnyProxy" -srcfolder dist/dmg-root -ov -format UDZO "$DMG"
+          fi
+
+      - name: Clean temporary Apple signing artifacts
+        if: always()
+        run: |
+          security delete-keychain "${RUNNER_TEMP}/sign.keychain-db" 2>/dev/null || true
+          rm -f "${RUNNER_TEMP}/cert.p12" "${RUNNER_TEMP}/api-key.p8" "${RUNNER_TEMP}/AnyProxy-darwin-${{ matrix.arch }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -58,6 +156,7 @@ jobs:
           path: dist/AnyProxy-darwin-${{ matrix.arch }}.dmg
 
   build-windows:
+    needs: version
     name: Build Windows (amd64)
     runs-on: windows-latest
     steps:
@@ -76,14 +175,14 @@ jobs:
       - name: Install Wails CLI & NSIS
         shell: pwsh
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
           choco install nsis -y --no-progress
 
       - name: Build Windows installer
         shell: pwsh
         run: |
           $env:Path += ";$env:USERPROFILE\go\bin;C:\Program Files (x86)\NSIS"
-          $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { (Get-Content wails.json | ConvertFrom-Json).info.productVersion }
+          $version = "${{ needs.version.outputs.version }}"
           wails build -clean -platform windows/amd64 -nsis -ldflags "-s -w -X github.com/D0bby999/anyproxy/internal/update.Current=$version"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $installer = Get-ChildItem build/bin/*-installer.exe | Select-Object -First 1
@@ -97,7 +196,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [build-macos, build-windows]
+    needs: [version, build-macos, build-windows]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
