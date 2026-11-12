@@ -23,6 +23,30 @@ function extractAppNameFromPath(fullPath: string): string {
   return base.replace(/\.exe$/i, '')
 }
 
+function actionVerb(action: ProxyRule['action']): string {
+  return action === 'block'
+    ? t.rules.actionBlock
+    : action === 'direct'
+      ? t.rules.actionDirect
+      : t.rules.actionProxy
+}
+
+function defaultRuleName(r: ProxyRule): string {
+  const verb = actionVerb(r.action)
+  const tokens = parseAppTokens(r.processNames)
+  const subject =
+    r.excludeProcess && tokens.length > 0
+      ? `${t.rules.exceptPrefix}: ${tokens[0]}`
+      : tokens.length > 0
+        ? tokens[0]
+        : r.targetHosts !== '*'
+          ? r.targetHosts.split(/[;,]/)[0].trim()
+          : r.targetPorts !== '*'
+            ? `:${r.targetPorts.split(/[;,]/)[0].trim()}`
+            : t.rules.allApps
+  return `${verb} ${subject}`.trim()
+}
+
 export function RulesPage({
   rules,
   proxies,
@@ -54,6 +78,9 @@ export function RulesPage({
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyRule | null>(null)
+  const [appMode, setAppMode] = useState<'all' | 'include' | 'exclude'>('all')
+  const [appDraft, setAppDraft] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -69,18 +96,21 @@ export function RulesPage({
       'Cursor',
       'curl',
     ])
-  ).slice(0, 8)
+  ).slice(0, 12)
 
   const handleOpenAdd = () => {
     setError('')
+    setAppMode('all')
+    setAppDraft('')
+    setShowAdvanced(false)
     setEditing({
       id: '',
       name: '',
       enabled: true,
-      processNames: '*',
+      processNames: '',
       excludeProcess: false,
-      targetHosts: '*',
-      targetPorts: '*',
+      targetHosts: '',
+      targetPorts: '',
       protocol: 'both',
       action: 'proxy',
       proxyConfigId: '',
@@ -90,32 +120,70 @@ export function RulesPage({
 
   const handleEdit = (r: ProxyRule) => {
     setError('')
+    const initialMode: 'all' | 'include' | 'exclude' = r.excludeProcess
+      ? 'exclude'
+      : (r.processNames || '*').trim() === '*'
+        ? 'all'
+        : 'include'
+    const normalizedProtocol = r.protocol.toLowerCase() as ProxyRule['protocol']
+    const hasAdvanced =
+      r.action.toLowerCase() !== 'proxy' ||
+      Boolean(r.proxyConfigId) ||
+      ((r.targetHosts || '*').trim() !== '*') ||
+      ((r.targetPorts || '*').trim() !== '*') ||
+      normalizedProtocol !== 'both'
+    setAppMode(initialMode)
+    setAppDraft('')
+    setShowAdvanced(hasAdvanced)
     setEditing({
       ...r,
-      processNames: r.processNames || '*',
+      processNames: initialMode === 'all' ? '' : (r.processNames || ''),
+      targetHosts: (r.targetHosts || '').trim() === '*' ? '' : r.targetHosts,
+      targetPorts: (r.targetPorts || '').trim() === '*' ? '' : r.targetPorts,
       excludeProcess: Boolean(r.excludeProcess),
       action: r.action.toLowerCase() as ProxyRule['action'],
-      protocol: r.protocol.toLowerCase() as ProxyRule['protocol'],
+      protocol: normalizedProtocol,
     })
     setShowModal(true)
   }
 
-  const handleToggleAppToken = (appName: string) => {
-    if (!appName) return
+  const handleAddApps = (tokens: string[]) => {
+    const clean = tokens.map((x) => x.trim()).filter((x) => x && x !== '*')
+    if (clean.length === 0) return
+    const wasAll = appMode === 'all'
+    if (wasAll) setAppMode('include')
     setEditing((prev) => {
       if (!prev) return prev
-      const cur = parseAppTokens(prev.processNames)
-      const exists = cur.includes(appName)
-      const next = exists ? cur.filter((x) => x !== appName) : [...cur, appName]
-      const autoName = prev.excludeProcess
-        ? `${t.rules.exceptPrefix}: ${appName}`
-        : `Proxy ${appName}`
+      const cur = wasAll ? [] : parseAppTokens(prev.processNames)
+      const next = [...cur]
+      for (const appName of clean) {
+        if (!next.includes(appName)) next.push(appName)
+      }
       return {
         ...prev,
         processNames: next.join('; '),
-        name: !exists && !prev.name.trim() ? autoName : prev.name,
       }
     })
+  }
+
+  const handleRemoveApp = (appName: string) => {
+    setEditing((prev) => {
+      if (!prev) return prev
+      const next = parseAppTokens(prev.processNames).filter((x) => x !== appName)
+      if (next.length === 0 && appMode === 'include') {
+        setAppMode('all')
+      }
+      return {
+        ...prev,
+        processNames: next.join('; '),
+      }
+    })
+  }
+
+  const handleCommitAppDraft = () => {
+    const tokens = parseAppTokens(appDraft)
+    if (tokens.length > 0) handleAddApps(tokens)
+    setAppDraft('')
   }
 
   const handleBrowseExecutable = async () => {
@@ -123,32 +191,39 @@ export function RulesPage({
     const path = await onPickExecutable()
     const extracted = extractAppNameFromPath(path)
     if (!extracted) return
-    setEditing((prev) => {
-      if (!prev) return prev
-      const cur = parseAppTokens(prev.processNames)
-      if (!cur.includes(extracted)) cur.push(extracted)
-      const autoName = prev.excludeProcess
-        ? `${t.rules.exceptPrefix}: ${extracted}`
-        : `Proxy ${extracted}`
-      return {
-        ...prev,
-        processNames: cur.join('; '),
-        name: prev.name.trim() ? prev.name : autoName,
-      }
-    })
+    handleAddApps([extracted])
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editing || saving) return
-    if (editing.excludeProcess && parseAppTokens(editing.processNames).length === 0) {
+    const draftTokens = parseAppTokens(appDraft)
+    const baseTokens = appMode === 'all' ? [] : parseAppTokens(editing.processNames)
+    const mergedTokens = [...baseTokens]
+    for (const token of draftTokens) {
+      if (!mergedTokens.includes(token)) mergedTokens.push(token)
+    }
+    const effectiveMode: 'all' | 'include' | 'exclude' =
+      appMode === 'all' && mergedTokens.length > 0 ? 'include' : appMode
+    if (effectiveMode === 'exclude' && mergedTokens.length === 0) {
       setError(t.rules.excludeRequired)
       return
     }
-    const payload =
-      !editing.excludeProcess && !(editing.processNames || '').trim()
-        ? { ...editing, processNames: '*' }
-        : editing
+    if (draftTokens.length > 0) {
+      setAppMode(effectiveMode)
+      setEditing((prev) => (prev ? { ...prev, processNames: mergedTokens.join('; ') } : prev))
+      setAppDraft('')
+    }
+    const normalized: ProxyRule = {
+      ...editing,
+      excludeProcess: effectiveMode === 'exclude',
+      processNames: effectiveMode === 'all' || mergedTokens.length === 0 ? '*' : mergedTokens.join('; '),
+      targetHosts: (editing.targetHosts || '').trim() || '*',
+      targetPorts: (editing.targetPorts || '').trim() || '*',
+    }
+    const payload: ProxyRule = (normalized.name || '').trim()
+      ? normalized
+      : { ...normalized, name: defaultRuleName(normalized) }
     setSaving(true)
     setError('')
     try {
@@ -366,6 +441,9 @@ export function RulesPage({
       {showModal && editing && (
         <RuleEditorDialog
           editing={editing}
+          appMode={appMode}
+          appDraft={appDraft}
+          showAdvanced={showAdvanced}
           rules={rules}
           proxies={proxies}
           defaultProxyId={defaultProxyId}
@@ -373,7 +451,12 @@ export function RulesPage({
           error={error}
           saving={saving}
           onChange={setEditing}
-          onToggleApp={handleToggleAppToken}
+          onAppModeChange={setAppMode}
+          onAppDraftChange={setAppDraft}
+          onToggleAdvanced={() => setShowAdvanced((v) => !v)}
+          onAddApps={handleAddApps}
+          onRemoveApp={handleRemoveApp}
+          onCommitAppDraft={handleCommitAppDraft}
           onSetDefaultProxy={onSetDefaultProxy}
           onBrowseExecutable={onPickExecutable ? handleBrowseExecutable : undefined}
           onSave={handleSave}
@@ -430,6 +513,9 @@ export function RulesPage({
 
 function RuleEditorDialog({
   editing,
+  appMode,
+  appDraft,
+  showAdvanced,
   rules,
   proxies,
   defaultProxyId,
@@ -437,13 +523,21 @@ function RuleEditorDialog({
   error,
   saving,
   onChange,
-  onToggleApp,
+  onAppModeChange,
+  onAppDraftChange,
+  onToggleAdvanced,
+  onAddApps,
+  onRemoveApp,
+  onCommitAppDraft,
   onSetDefaultProxy,
   onBrowseExecutable,
   onSave,
   onClose,
 }: {
   editing: ProxyRule
+  appMode: 'all' | 'include' | 'exclude'
+  appDraft: string
+  showAdvanced: boolean
   rules: ProxyRule[]
   proxies: ProxyConfig[]
   defaultProxyId: string
@@ -451,7 +545,12 @@ function RuleEditorDialog({
   error: string
   saving: boolean
   onChange: (next: ProxyRule) => void
-  onToggleApp: (appName: string) => void
+  onAppModeChange: (mode: 'all' | 'include' | 'exclude') => void
+  onAppDraftChange: (val: string) => void
+  onToggleAdvanced: () => void
+  onAddApps: (tokens: string[]) => void
+  onRemoveApp: (appName: string) => void
+  onCommitAppDraft: () => void
   onSetDefaultProxy?: (proxyId: string) => Promise<void>
   onBrowseExecutable?: () => Promise<void>
   onSave: (e: React.FormEvent) => Promise<void>
@@ -464,6 +563,9 @@ function RuleEditorDialog({
 
   useEffect(() => {
     nameRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       const all = document.querySelectorAll('.backdrop')
@@ -473,13 +575,15 @@ function RuleEditorDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const selectedTokens = parseAppTokens(editing.processNames)
-  const rawProcs = (editing.processNames || '').trim()
-  const appMode: 'all' | 'include' | 'exclude' = editing.excludeProcess
-    ? 'exclude'
-    : rawProcs === '*'
-      ? 'all'
-      : 'include'
+  const selectedTokens = appMode === 'all' ? [] : parseAppTokens(editing.processNames)
+  const draftTokens = parseAppTokens(appDraft)
+  const previewTokens = [
+    ...selectedTokens,
+    ...draftTokens.filter((tok) => !selectedTokens.includes(tok)),
+  ]
+  const availableQuickApps = quickAppCandidates.filter((a) => !selectedTokens.includes(a))
+  const targetsValue = editing.targetHosts
+  const portsValue = editing.targetPorts
   const matchedProxy = proxies.find((p) => p.id === editing.proxyConfigId)
 
   const editIdx = editing.id ? rules.findIndex((r) => r.id === editing.id) : -1
@@ -494,11 +598,13 @@ function RuleEditorDialog({
       r.protocol.toLowerCase() === 'both' &&
       r.action.toLowerCase() === 'direct',
   )
+  const effectiveExclude = appMode === 'exclude'
+  const hasAppFilter = effectiveExclude || previewTokens.length > 0
   const showFallbackWarn =
     Boolean(defaultProxyId) &&
     Boolean(onSetDefaultProxy) &&
     editing.action === 'proxy' &&
-    appMode !== 'all' &&
+    hasAppFilter &&
     !hasCatchAllDirectAfter
 
   const handleSwitchFallbackDirect = async () => {
@@ -511,16 +617,13 @@ function RuleEditorDialog({
   }
 
   const protoLabel = editing.protocol === 'tcp' ? 'TCP' : editing.protocol === 'udp' ? 'UDP' : 'TCP & UDP'
-  const appsSummary =
-    appMode === 'all'
-      ? t.rules.allApps
-      : appMode === 'exclude'
-        ? selectedTokens.length > 0
-          ? `${t.rules.exceptPrefix}: ${selectedTokens.join(', ')}`
-          : t.rules.matchExclude
-        : selectedTokens.length > 0
-          ? selectedTokens.join(', ')
-          : t.rules.matchInclude
+  const appsSummary = effectiveExclude
+    ? previewTokens.length > 0
+      ? `${t.rules.exceptPrefix}: ${previewTokens.join(', ')}`
+      : t.rules.matchExclude
+    : previewTokens.length > 0
+      ? previewTokens.join(', ')
+      : t.rules.allApps
   const hostsSummary = (editing.targetHosts || '').trim() || '*'
   const portsSummary = (editing.targetPorts || '').trim() || '*'
   const actionChipClass = editing.action === 'proxy' ? 'accent' : editing.action === 'block' ? 'danger' : 'ok'
@@ -530,6 +633,15 @@ function RuleEditorDialog({
       : editing.action === 'block'
         ? t.rules.actionBlock
         : t.rules.actionDirect
+
+  const advancedParts: string[] = []
+  if (editing.action !== 'proxy') advancedParts.push(actionVerb(editing.action))
+  else if (editing.proxyConfigId && matchedProxy) advancedParts.push(matchedProxy.name)
+  if (hostsSummary !== '*') advancedParts.push(hostsSummary)
+  if (portsSummary !== '*') advancedParts.push(`:${portsSummary}`)
+  if (editing.protocol !== 'both') advancedParts.push(protoLabel)
+  const advancedSummary =
+    advancedParts.length > 0 ? advancedParts.join(' · ') : t.rules.advancedDefaultHint
 
   const protocols: { id: ProxyRule['protocol']; label: string }[] = [
     { id: 'both', label: t.rules.both },
@@ -552,7 +664,7 @@ function RuleEditorDialog({
       }}
     >
       <form
-        className="dialog ruledialog"
+        className={`dialog ruledialog${showAdvanced ? ' advanced-open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -590,14 +702,99 @@ function RuleEditorDialog({
               value={editing.name}
               onChange={(e) => onChange({ ...editing, name: e.target.value })}
               placeholder={t.rules.namePlaceholder}
-              required
             />
           </div>
 
           <div className="rule-group">
             <div className="field">
-              <div className="rule-field-head" style={{ alignItems: 'center' }}>
-                <label htmlFor="rule-apps">{t.rules.applications}</label>
+              <label htmlFor="rule-apps" className="field-label">{t.rules.applications}</label>
+              <div className="seg rule-seg-full" role="group" aria-label={t.rules.appMatchMode}>
+                <button
+                  type="button"
+                  aria-pressed={appMode === 'all'}
+                  onClick={() => {
+                    onAppModeChange('all')
+                    onChange({ ...editing, excludeProcess: false })
+                  }}
+                >
+                  {t.rules.allApps}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={appMode === 'include'}
+                  onClick={() => {
+                    onAppModeChange('include')
+                    onChange({ ...editing, excludeProcess: false })
+                    appsRef.current?.focus()
+                  }}
+                >
+                  {t.rules.matchInclude}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={appMode === 'exclude'}
+                  onClick={() => {
+                    onAppModeChange('exclude')
+                    onChange({ ...editing, excludeProcess: true })
+                    appsRef.current?.focus()
+                  }}
+                >
+                  {t.rules.matchExclude}
+                </button>
+              </div>
+
+              <div className="rule-apps-row">
+                <div className="rule-app-input-wrap">
+                  <input
+                    ref={appsRef}
+                    id="rule-apps"
+                    className="input"
+                    value={appDraft}
+                    onChange={(e) => onAppDraftChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ',' || e.key === ';') {
+                        if (appDraft.trim()) {
+                          e.preventDefault()
+                          onCommitAppDraft()
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      if (appDraft.trim()) onCommitAppDraft()
+                    }}
+                    placeholder={appMode === 'exclude' ? t.rules.excludeHint : t.rules.processHint}
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    className="iconbtn sm"
+                    disabled={!appDraft.trim()}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={onCommitAppDraft}
+                    aria-label={t.rules.addAppBtn}
+                    title={t.rules.addAppBtn}
+                  >
+                    <Icon name="plus" className="icon sm" />
+                  </button>
+                </div>
+                {availableQuickApps.length > 0 && (
+                  <select
+                    className="select rule-app-picker"
+                    aria-label={t.rules.quickApps}
+                    value=""
+                    onChange={(e) => {
+                      const picked = e.target.value
+                      if (picked) onAddApps([picked])
+                    }}
+                  >
+                    <option value="">{t.rules.pickAppPlaceholder}</option>
+                    {availableQuickApps.map((appName) => (
+                      <option key={appName} value={appName}>
+                        {appName}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 {onBrowseExecutable && (
                   <button
                     type="button"
@@ -609,193 +806,161 @@ function RuleEditorDialog({
                   </button>
                 )}
               </div>
-              <div className="seg rule-seg-full" role="group" aria-label={t.rules.appMatchMode}>
-                <button
-                  type="button"
-                  aria-pressed={appMode === 'all'}
-                  onClick={() => onChange({ ...editing, processNames: '*', excludeProcess: false })}
-                >
-                  {t.rules.allApps}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={appMode === 'include'}
-                  onClick={() => {
-                    onChange({
-                      ...editing,
-                      excludeProcess: false,
-                      processNames: rawProcs === '*' ? '' : editing.processNames,
-                    })
-                    appsRef.current?.focus()
-                  }}
-                >
-                  {t.rules.matchInclude}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={appMode === 'exclude'}
-                  onClick={() => {
-                    onChange({
-                      ...editing,
-                      excludeProcess: true,
-                      processNames: rawProcs === '*' ? '' : editing.processNames,
-                    })
-                    appsRef.current?.focus()
-                  }}
-                >
-                  {t.rules.matchExclude}
-                </button>
-              </div>
-              <input
-                ref={appsRef}
-                id="rule-apps"
-                className="input mono"
-                value={editing.processNames}
-                onChange={(e) => {
-                  const val = e.target.value
-                  onChange({
-                    ...editing,
-                    processNames: val,
-                    excludeProcess: appMode === 'exclude' ? true : false,
-                  })
-                }}
-                placeholder={appMode === 'exclude' ? t.rules.excludeHint : t.rules.processHint}
-                spellCheck={false}
-              />
-              <div className="quick-chip-bar" role="group" aria-label={t.rules.quickApps}>
-                {quickAppCandidates.map((appName) => {
-                  const active = selectedTokens.includes(appName)
-                  return (
-                    <button
-                      key={appName}
-                      type="button"
-                      className={`chip-btn mono${active ? ' active' : ''}`}
-                      aria-pressed={active}
-                      onClick={() => onToggleApp(appName)}
-                    >
-                      {appName}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="rule-grid">
-              <div className="field">
-                <div className="rule-field-head">
-                  <label htmlFor="rule-targets">{t.rules.targets}</label>
-                  <span className="hint">{t.rules.targetHint}</span>
-                </div>
-                <input
-                  id="rule-targets"
-                  className="input mono"
-                  value={editing.targetHosts}
-                  onChange={(e) => onChange({ ...editing, targetHosts: e.target.value })}
-                  placeholder="*"
-                  spellCheck={false}
-                />
-              </div>
-
-              <div className="field">
-                <div className="rule-field-head">
-                  <label htmlFor="rule-ports">{t.rules.ports}</label>
-                  <span className="hint">{t.rules.portHint}</span>
-                </div>
-                <input
-                  id="rule-ports"
-                  className="input mono"
-                  value={editing.targetPorts}
-                  onChange={(e) => onChange({ ...editing, targetPorts: e.target.value })}
-                  placeholder="*"
-                  spellCheck={false}
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <span id="rule-proto-label" className="field-label">{t.rules.protocol}</span>
-              <div className="seg rule-seg-full" role="group" aria-labelledby="rule-proto-label">
-                {protocols.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    aria-pressed={editing.protocol === p.id}
-                    onClick={() => onChange({ ...editing, protocol: p.id })}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+              <div className="selected-chip-bar" role="list" aria-label={t.rules.selectedApps}>
+                {selectedTokens.length === 0 ? (
+                  <span className="hint">
+                    {appMode === 'exclude' ? t.rules.excludeRequired : t.rules.noAppsSelected}
+                  </span>
+                ) : (
+                  selectedTokens.map((appName) => (
+                    <span key={appName} className="app-chip" role="listitem">
+                      <span className="app-chip-name" title={appName}>{appName}</span>
+                      <button
+                        type="button"
+                        className="app-chip-remove"
+                        onClick={() => onRemoveApp(appName)}
+                        aria-label={`${t.rules.removeApp} ${appName}`}
+                        title={`${t.rules.removeApp} ${appName}`}
+                      >
+                        <Icon name="close" className="icon xs" />
+                      </button>
+                    </span>
+                  ))
+                )}
               </div>
             </div>
           </div>
 
-          <div className="rule-group">
-            <div className={editing.action === 'proxy' ? 'rule-route-grid' : 'field'}>
-              <div className="field">
-                <span id="rule-action-label" className="field-label">{t.rules.action}</span>
-                <div className="seg rule-seg-full" role="group" aria-labelledby="rule-action-label">
-                  {actions.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      aria-pressed={editing.action === a.id}
-                      onClick={() => onChange({ ...editing, action: a.id })}
+          <button
+            type="button"
+            className="rule-advanced-toggle"
+            aria-expanded={showAdvanced}
+            aria-controls="rule-advanced-panel"
+            onClick={onToggleAdvanced}
+          >
+            <Icon name="chevron" className="icon sm chevron" />
+            <span>{t.rules.advancedSection}</span>
+            <span className="rule-advanced-summary">{advancedSummary}</span>
+          </button>
+
+          {showAdvanced && (
+            <div id="rule-advanced-panel" className="rule-group">
+              <div className="rule-route-grid">
+                <div className="field">
+                  <span id="rule-action-label" className="field-label">{t.rules.action}</span>
+                  <div className="seg rule-seg-full" role="group" aria-labelledby="rule-action-label">
+                    {actions.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        aria-pressed={editing.action === a.id}
+                        onClick={() => onChange({ ...editing, action: a.id })}
+                      >
+                        <span className={`rule-action-dot ${a.id}`} aria-hidden="true" />
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {editing.action === 'proxy' ? (
+                  <div className="field">
+                    <label htmlFor="rule-proxy">{t.rules.selectProxy}</label>
+                    <select
+                      id="rule-proxy"
+                      className="select"
+                      value={editing.proxyConfigId || ''}
+                      onChange={(e) => onChange({ ...editing, proxyConfigId: e.target.value })}
                     >
-                      <span className={`rule-action-dot ${a.id}`} aria-hidden="true" />
-                      {a.label}
+                      <option value="">{t.rules.defaultProxy}</option>
+                      {proxies.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="field">
+                    <span className="field-label">{t.rules.routeOutcome}</span>
+                    <div className="rule-outcome">
+                      {editing.action === 'block' ? t.rules.blockOutcome : t.rules.directOutcome}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {editing.action === 'proxy' && proxies.length === 0 && (
+                <span className="hint">{t.rules.noProxiesHint}</span>
+              )}
+
+              {showFallbackWarn && (
+                <div className="rule-fallback-note">
+                  <Icon name="warn" />
+                  <span className="grow">{t.rules.fallbackProxyWarn}</span>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => void handleSwitchFallbackDirect()}
+                  >
+                    {t.rules.switchFallbackDirect}
+                  </button>
+                </div>
+              )}
+
+              <div className="rule-grid">
+                <div className="field">
+                  <label htmlFor="rule-targets">{t.rules.targets}</label>
+                  <input
+                    id="rule-targets"
+                    className="input mono"
+                    value={targetsValue}
+                    onChange={(e) => onChange({ ...editing, targetHosts: e.target.value })}
+                    placeholder={t.rules.targetHint}
+                    spellCheck={false}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="rule-ports">{t.rules.ports}</label>
+                  <input
+                    id="rule-ports"
+                    className="input mono"
+                    value={portsValue}
+                    onChange={(e) => onChange({ ...editing, targetPorts: e.target.value })}
+                    placeholder={t.rules.portHint}
+                    spellCheck={false}
+                  />
+                </div>
+              </div>
+
+              <div className="rule-proto-row">
+                <span id="rule-proto-label" className="field-label">{t.rules.protocol}</span>
+                <div className="seg rule-seg-full" role="group" aria-labelledby="rule-proto-label">
+                  {protocols.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      aria-pressed={editing.protocol === p.id}
+                      onClick={() => onChange({ ...editing, protocol: p.id })}
+                    >
+                      {p.label}
                     </button>
                   ))}
                 </div>
               </div>
-
-              {editing.action === 'proxy' && (
-                <div className="field">
-                  <label htmlFor="rule-proxy">{t.rules.selectProxy}</label>
-                  <select
-                    id="rule-proxy"
-                    className="select"
-                    value={editing.proxyConfigId || ''}
-                    onChange={(e) => onChange({ ...editing, proxyConfigId: e.target.value })}
-                  >
-                    <option value="">{t.rules.defaultProxy}</option>
-                    {proxies.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
+          )}
+        </div>
 
-            {editing.action === 'proxy' && proxies.length === 0 && (
-              <span className="hint">{t.rules.noProxiesHint}</span>
-            )}
-
-            {showFallbackWarn && (
-              <div className="rule-fallback-note">
-                <Icon name="warn" />
-                <span className="grow">{t.rules.fallbackProxyWarn}</span>
-                <button
-                  type="button"
-                  className="btn sm"
-                  onClick={() => void handleSwitchFallbackDirect()}
-                >
-                  {t.rules.switchFallbackDirect}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="rule-preview" aria-live="polite">
-            <span className="rule-preview-match mono">
-              {appsSummary} · {hostsSummary}:{portsSummary} · {protoLabel}
-            </span>
-            <span className={`chip ${actionChipClass}`}>
-              <span className="dot" />
-              <span className="chiptext">{actionSummary}</span>
-            </span>
-          </div>
+        <div className="rule-preview" aria-live="polite">
+          <span className="rule-preview-match mono">
+            {appsSummary} · {hostsSummary}:{portsSummary} · {protoLabel}
+          </span>
+          <span className={`chip ${actionChipClass}`}>
+            <span className="dot" />
+            <span className="chiptext">{actionSummary}</span>
+          </span>
         </div>
 
         <div className="dialog-foot">
