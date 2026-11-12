@@ -4,14 +4,16 @@
   "notes": "Initial release of AnyProxy - proxy client in Go + Wails v2 for AnyTools.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/latest/download/AnyProxy-darwin-arm64.dmg"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-darwin-arm64.dmg",
+      "sha256": "cb39b5a77cffbe0e598c0413d604945c350dd856259559d3122abea9317d9ade"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/latest/download/AnyProxy-darwin-amd64.dmg"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-darwin-amd64.dmg",
+      "sha256": "2024cf15eb124332e7946eb4558deb16368ea895e36132dcbce2ab8c0c11ffbd"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/latest/download/AnyProxy-windows-amd64.exe"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-windows-amd64.exe",
+      "sha256": "08790f803d323c177d9dbd5b9f134787ce0f750f5724b0c441eaf6f00e09733a"
     }
   }
 }
-
