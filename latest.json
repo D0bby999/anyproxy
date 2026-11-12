@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "date": "2026-11-08",
+  "date": "2026-11-12",
   "notes": "Initial release of AnyProxy - proxy client in Go + Wails v2 for AnyTools.",
   "assets": {
     "darwin-arm64": {
