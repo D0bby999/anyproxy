@@ -92,6 +92,7 @@ test:
 	cd frontend && npm run typecheck && npm test
 
 lint:
+	@mkdir -p frontend/dist && test -f frontend/dist/index.html || touch frontend/dist/index.html
 	gofmt -l . | (! grep .) || (echo "gofmt needed" >&2; exit 1)
 	go vet ./...
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
