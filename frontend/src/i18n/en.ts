@@ -86,9 +86,10 @@ export const en = {
     bulkTitle: 'Add proxies',
     bulkDesc: 'Paste one proxy per line. HTTP is used when no protocol is specified.',
     bulkPlaceholder: 'http://user:password@host:port\nhost:port:user:password\nsocks5://user:password@host:port',
-    bulkAdd: 'Add proxies', bulkAdding: 'Adding…',
+    bulkAdd: 'Save & Check', bulkAdding: 'Saving & checking…',
     bulkSecret: 'Passwords are stored in the encrypted vault.',
-    bulkAdded: 'Proxies added', bulkFailed: 'Could not add lines',
+    bulkAdded: 'Saved & checked', bulkFailed: 'Could not add lines',
+    saveAndCheck: 'Save & Check',
     buy: 'Buy proxies',
   },
   partners: {

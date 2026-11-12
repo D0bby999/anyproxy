@@ -440,6 +440,10 @@ export default function App() {
               const updated = await app.SaveProxy(px)
               setProfile(updated)
               toast(t.messages.proxySaved, 'success')
+              const found = px.id
+                ? updated.proxies?.find((p) => p.id === px.id)
+                : updated.proxies?.[updated.proxies.length - 1]
+              return found || px
             }}
             onDeleteProxy={async (id) => {
               try {

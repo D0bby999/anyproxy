@@ -18,7 +18,7 @@ export function ProxiesPage({
 }: {
   proxies: ProxyConfig[]
   defaultProxyId: string
-  onSaveProxy: (px: ProxyConfig) => Promise<void>
+  onSaveProxy: (px: ProxyConfig) => Promise<ProxyConfig | void>
   onDeleteProxy: (id: string) => Promise<void>
   onSetDefault: (id: string) => Promise<void>
   onTestProxy: (px: ProxyConfig) => Promise<CheckReport | undefined>
@@ -58,13 +58,23 @@ export function ProxiesPage({
     e.preventDefault()
     if (!editing) return
     try {
-      await onSaveProxy(editing)
+      const saved = await onSaveProxy(editing)
       setResults((prev) => {
         const next = { ...prev }
         delete next[editing.id]
         return next
       })
       setShowModal(false)
+      const target = saved || editing
+      if (target.id) {
+        setChecking(target.id)
+        try {
+          const report = await onTestProxy(target)
+          if (report) setResults((prev) => ({ ...prev, [target.id]: report }))
+        } finally {
+          setChecking('')
+        }
+      }
     } catch (err) {
       setError(String(err))
     }
@@ -92,15 +102,52 @@ export function ProxiesPage({
     setBulkBusy(true)
     let added = 0
     const failed: number[] = []
+    const savedList: ProxyConfig[] = []
     try {
       for (const [index, line] of lines.entries()) {
         if (!line) continue
         const proxy = parseProxy(line)
         if (!proxy) { failed.push(index + 1); continue }
-        try { await onSaveProxy(proxy); added++ } catch { failed.push(index + 1) }
+        try {
+          const saved = await onSaveProxy(proxy)
+          added++
+          savedList.push(saved || proxy)
+        } catch {
+          failed.push(index + 1)
+        }
       }
-      setBulkMessage([added ? `${t.proxies.bulkAdded}: ${added}` : '', failed.length ? `${t.proxies.bulkFailed}: ${failed.join(', ')}` : ''].filter(Boolean).join(' · '))
-    } finally { setBulkBusy(false) }
+
+      const checkedReports: CheckReport[] = []
+      for (const p of savedList) {
+        if (!p.id) continue
+        setChecking(p.id)
+        try {
+          const report = await onTestProxy(p)
+          if (report) {
+            setResults((prev) => ({ ...prev, [p.id]: report }))
+            checkedReports.push(report)
+          }
+        } finally {
+          setChecking('')
+        }
+      }
+
+      let summaryText = added ? `${t.proxies.bulkAdded}: ${added}` : ''
+      if (added === 1 && checkedReports.length === 1) {
+        const rep = checkedReports[0]
+        const success = rep.success ?? rep.ok
+        const ms = rep.avgMs ?? rep.totalDurationMs
+        summaryText += success ? ` (${ms} ms)` : ` (${t.messages.testFailed})`
+      } else if (checkedReports.length > 1) {
+        const successCount = checkedReports.filter((r) => r.success ?? r.ok).length
+        summaryText += ` (${successCount}/${checkedReports.length} ${t.engine.running.toLowerCase()})`
+      }
+
+      setBulkMessage([summaryText, failed.length ? `${t.proxies.bulkFailed}: ${failed.join(', ')}` : ''].filter(Boolean).join(' · '))
+    } finally {
+      setChecking('')
+      setBulkBusy(false)
+    }
   }
 
   return (
@@ -142,7 +189,7 @@ export function ProxiesPage({
           </div>
           <textarea className="input mono proxy-paste" rows={3} value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={t.proxies.bulkPlaceholder} aria-label={t.proxies.bulkTitle} spellCheck={false} autoComplete="off" />
           <div className="proxy-import-foot">
-            <button type="button" className="btn primary" disabled={bulkBusy || !bulkText.trim()} onClick={handleBulkAdd} aria-busy={bulkBusy}><Icon name="plus" />{bulkBusy ? t.proxies.bulkAdding : t.proxies.bulkAdd}</button>
+            <button type="button" className="btn primary" disabled={bulkBusy || !bulkText.trim()} onClick={handleBulkAdd} aria-busy={bulkBusy}><Icon name="zap" />{bulkBusy ? t.proxies.bulkAdding : t.proxies.bulkAdd}</button>
             <span className="muted">{t.proxies.bulkSecret}</span>
           </div>
           {bulkMessage && <p className="proxy-import-result" role="status">{bulkMessage}</p>}

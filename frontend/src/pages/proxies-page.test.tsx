@@ -23,7 +23,7 @@ it('imports valid lines, reports invalid line numbers and clears pasted credenti
   render(<ProxiesPage proxies={[]} defaultProxyId="" onSaveProxy={save} onDeleteProxy={vi.fn()} onSetDefault={vi.fn()} onTestProxy={vi.fn()} />)
   const input = screen.getByRole('textbox', { name: 'Add proxies' }) as HTMLTextAreaElement
   fireEvent.change(input, { target: { value: 'example.com:8001:user:secret\nnot-a-proxy' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Add proxies' }))
+  fireEvent.click(screen.getByRole('button', { name: t.proxies.bulkAdd }))
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('2'))
   expect(input.value).toBe('')
   expect(save).toHaveBeenCalledWith(expect.objectContaining({ host: 'example.com', password: 'secret' }))
@@ -102,4 +102,28 @@ it('opens Buy proxies dialog with partner cards, filters by type, opens external
 
   fireEvent.keyDown(window, { key: 'Escape' })
   expect(screen.queryByRole('dialog', { name: t.proxies.buy })).toBeNull()
+})
+
+it('saves and immediately checks proxy from textarea, displaying latency in summary', async () => {
+  const onSaveProxy = vi.fn().mockImplementation(async (px: ProxyConfig) => ({ ...px, id: 'px-auto-checked' }))
+  const onTestProxy = vi.fn().mockResolvedValue({ success: true, avgMs: 35, summary: 'OK' })
+
+  render(
+    <ProxiesPage
+      proxies={[]}
+      defaultProxyId=""
+      onSaveProxy={onSaveProxy}
+      onDeleteProxy={vi.fn()}
+      onSetDefault={vi.fn()}
+      onTestProxy={onTestProxy}
+    />
+  )
+
+  const bulkInput = screen.getByRole('textbox', { name: t.proxies.bulkTitle }) as HTMLTextAreaElement
+  fireEvent.change(bulkInput, { target: { value: '1.2.3.4:8080' } })
+  fireEvent.click(screen.getByRole('button', { name: t.proxies.bulkAdd }))
+
+  await waitFor(() => expect(onSaveProxy).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(onTestProxy).toHaveBeenCalledWith(expect.objectContaining({ id: 'px-auto-checked' })))
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('35 ms'))
 })

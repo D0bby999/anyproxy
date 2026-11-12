@@ -87,9 +87,10 @@ export const vi: Translations = {
     bulkTitle: 'Thêm proxy',
     bulkDesc: 'Dán mỗi dòng một proxy. Mặc định dùng HTTP nếu không ghi giao thức.',
     bulkPlaceholder: 'http://user:password@host:port\nhost:port:user:password\nsocks5://user:password@host:port',
-    bulkAdd: 'Thêm proxy', bulkAdding: 'Đang thêm…',
+    bulkAdd: 'Lưu & Kiểm tra', bulkAdding: 'Đang lưu & kiểm tra…',
     bulkSecret: 'Mật khẩu được lưu trong kho mã hóa.',
-    bulkAdded: 'Đã thêm proxy', bulkFailed: 'Không thể thêm các dòng',
+    bulkAdded: 'Đã lưu & kiểm tra', bulkFailed: 'Không thể thêm các dòng',
+    saveAndCheck: 'Lưu & Kiểm tra',
     buy: 'Mua proxy',
   },
   partners: {
