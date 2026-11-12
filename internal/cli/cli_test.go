@@ -42,7 +42,7 @@ func TestCLIListProfilesAndStdinProfile(t *testing.T) {
 	}
 	vault := secrets.NewVault(filepath.Join(dir, "secrets.enc"), secrets.NewMemory())
 	drv := driver.NewMockDriver("cli-test", nil, nil, nil)
-	svc := service.New(st, vault, drv)
+	svc := service.NewWithAddr(st, vault, drv, "127.0.0.1:0")
 	t.Cleanup(func() { _ = svc.Close() })
 
 	_, _ = svc.CreateProfile("Pentest")

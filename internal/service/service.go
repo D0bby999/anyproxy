@@ -56,8 +56,16 @@ type Service struct {
 	onEvent    func(topic string, payload any)
 }
 
-// New creates a Service backed by store, vault, and driver. If drv is nil, NewPlatformDriver is used.
+// New creates a Service backed by store, vault, and driver using the default inbound listen address.
 func New(st *store.Store, vault secrets.Store, drv driver.Driver) *Service {
+	return NewWithAddr(st, vault, drv, inbound.DefaultListenAddr)
+}
+
+// NewWithAddr creates a Service listening on listenAddr (useful for tests or custom bindings).
+func NewWithAddr(st *store.Store, vault secrets.Store, drv driver.Driver, listenAddr string) *Service {
+	if listenAddr == "" {
+		listenAddr = inbound.DefaultListenAddr
+	}
 	dns := dnsmap.New(0)
 	_ = dns.LoadHostsFile("/etc/hosts")
 	tracker := flows.NewTracker(flows.MaxLiveFlows)
@@ -66,7 +74,7 @@ func New(st *store.Store, vault secrets.Store, drv driver.Driver) *Service {
 		drv = driver.NewPlatformDriver(dns, tracker, logs)
 	}
 	inboundSrv := inbound.NewServer(inbound.Config{
-		ListenAddr: inbound.DefaultListenAddr,
+		ListenAddr: listenAddr,
 		Vault:      vault,
 		DNS:        dns,
 		Tracker:    tracker,

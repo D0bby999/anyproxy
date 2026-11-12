@@ -64,7 +64,7 @@ func TestServiceEndToEnd(t *testing.T) {
 	vault := secrets.NewVault(filepath.Join(dir, "secrets.enc"), secrets.NewMemory())
 	drv := driver.NewMockDriver("test-driver", nil, nil, nil)
 
-	svc := New(st, vault, drv)
+	svc := NewWithAddr(st, vault, drv, "127.0.0.1:0")
 	t.Cleanup(func() { _ = svc.Close() })
 
 	if _, err := svc.StartEngine(context.Background()); err != nil {

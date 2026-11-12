@@ -95,7 +95,7 @@ func TestShutdownStopsServiceOnce(t *testing.T) {
 		t.Fatalf("store.Open: %v", err)
 	}
 	drv := &countingStopDriver{Driver: driver.NewMockDriver("test", nil, nil, nil)}
-	svc := service.New(st, nil, drv)
+	svc := service.NewWithAddr(st, nil, drv, "127.0.0.1:0")
 	if _, err := svc.StartEngine(context.Background()); err != nil {
 		t.Fatalf("StartEngine: %v", err)
 	}
