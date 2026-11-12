@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/D0bby999/anyproxy/internal/driver"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 	"github.com/D0bby999/anyproxy/internal/service"
 	"github.com/D0bby999/anyproxy/internal/store"
 )
@@ -45,6 +46,46 @@ func TestFormatTrayState(t *testing.T) {
 			t.Fatalf("formatTrayState(%q) = %+v, want active=%v status=%q toggle=%q",
 				tc.state, got, tc.wantActive, tc.wantStatus, tc.wantToggle)
 		}
+	}
+}
+
+func TestBuildTraySnapshot(t *testing.T) {
+	prof := pbprofile.DefaultProfile("Work")
+	prof.DefaultProxyID = "px-2"
+	prof.Proxies = []pbprofile.ProxyConfig{
+		{ID: "px-1", Name: "US SOCKS", Type: pbprofile.ProxySOCKS5, Host: "1.2.3.4", Port: 1080},
+		{ID: "px-2", Name: "JP HTTPS", Type: pbprofile.ProxyHTTPS, Host: "jp.example.com", Port: 443},
+	}
+
+	snap := buildTraySnapshot(
+		driver.EngineStatus{State: driver.StateRunning},
+		"127.0.0.1:10801",
+		&prof,
+		[]string{"Default", "Work", "Default"},
+		true,
+	)
+
+	if !snap.Active || snap.ListenAddr != "127.0.0.1:10801" || !snap.Compact {
+		t.Fatalf("unexpected basic snapshot fields: %+v", snap)
+	}
+	if snap.Tooltip != "AnyProxy — Running (127.0.0.1:10801)" {
+		t.Fatalf("tooltip = %q", snap.Tooltip)
+	}
+	if snap.ActiveProxyText != "JP HTTPS" || snap.DefaultProxyID != "px-2" {
+		t.Fatalf("active proxy = %q (%q), want JP HTTPS (px-2)", snap.ActiveProxyText, snap.DefaultProxyID)
+	}
+	if len(snap.Proxies) != 2 || snap.Proxies[1].Label != "JP HTTPS (HTTPS jp.example.com:443)" {
+		t.Fatalf("unexpected proxies list: %+v", snap.Proxies)
+	}
+	if snap.ActiveProfile != "Work" || len(snap.Profiles) != 2 {
+		t.Fatalf("unexpected profiles: active=%q list=%v", snap.ActiveProfile, snap.Profiles)
+	}
+
+	// Unknown DefaultProxyID falls back cleanly to Direct
+	prof.DefaultProxyID = "missing"
+	snap2 := buildTraySnapshot(driver.EngineStatus{State: driver.StateStopped}, "", &prof, nil, false)
+	if snap2.ListenAddr != defaultTrayListenAddr || snap2.ActiveProxyText != "Direct" || snap2.DefaultProxyID != "" {
+		t.Fatalf("stale default proxy fallback failed: %+v", snap2)
 	}
 }
 

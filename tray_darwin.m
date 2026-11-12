@@ -3,11 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #import <Cocoa/Cocoa.h>
+#include <string.h>
 #include "_cgo_export.h"
 
-#define ANYPROXY_TRAY_TOGGLE 1
-#define ANYPROXY_TRAY_OPEN   2
-#define ANYPROXY_TRAY_QUIT   3
+#define ANYPROXY_TRAY_TOGGLE  1
+#define ANYPROXY_TRAY_OPEN    2
+#define ANYPROXY_TRAY_COMPACT 3
+#define ANYPROXY_TRAY_QUIT    4
 
 static NSImage *anyproxyCreateMenuBarIcon(BOOL active) {
 	NSImage *img = [NSImage imageWithSize:NSMakeSize(18.0, 18.0)
@@ -16,7 +18,7 @@ static NSImage *anyproxyCreateMenuBarIcon(BOOL active) {
 		(void)dstRect;
 		CGContextRef cg = [[NSGraphicsContext currentContext] CGContext];
 		[NSGraphicsContext saveGraphicsState];
-		CGContextSetAlpha(cg, active ? 1.0 : 0.42);
+		CGContextSetAlpha(cg, active ? 1.0 : 0.45);
 		CGContextBeginTransparencyLayer(cg, NULL);
 
 		NSAffineTransform *tx = [NSAffineTransform transform];
@@ -106,21 +108,29 @@ static NSImage *anyproxyCreateMenuBarIcon(BOOL active) {
 	return img;
 }
 
-@interface AnyProxyTrayController : NSObject
+static NSString *anyproxyDictString(NSDictionary *dict, NSString *key, NSString *fallback) {
+	id val = dict[key];
+	return [val isKindOfClass:[NSString class]] ? (NSString *)val : fallback;
+}
+
+static BOOL anyproxyDictBool(NSDictionary *dict, NSString *key) {
+	id val = dict[key];
+	return [val isKindOfClass:[NSNumber class]] ? [(NSNumber *)val boolValue] : NO;
+}
+
+@interface AnyProxyTrayController : NSObject <NSMenuDelegate>
 @property (nonatomic, strong) NSStatusItem *statusItem;
 @property (nonatomic, strong) NSMenu *menu;
-@property (nonatomic, strong) NSMenuItem *statusMenuItem;
-@property (nonatomic, strong) NSMenuItem *toggleMenuItem;
 @property (nonatomic, strong) NSImage *activeIcon;
 @property (nonatomic, strong) NSImage *inactiveIcon;
+@property (nonatomic, copy) NSString *listenAddr;
+@property (nonatomic, assign) BOOL menuOpen;
+@property (nonatomic, strong) NSDictionary *pendingSnapshot;
 @end
 
 @implementation AnyProxyTrayController
 
-- (instancetype)initWithActive:(BOOL)active
-                   statusLabel:(NSString *)statusLabel
-                   toggleLabel:(NSString *)toggleLabel
-                       tooltip:(NSString *)tooltip {
+- (instancetype)initWithJSONData:(NSData *)data {
 	self = [super init];
 	if (!self) {
 		return nil;
@@ -128,46 +138,166 @@ static NSImage *anyproxyCreateMenuBarIcon(BOOL active) {
 
 	_activeIcon = anyproxyCreateMenuBarIcon(YES);
 	_inactiveIcon = anyproxyCreateMenuBarIcon(NO);
+	_listenAddr = @"127.0.0.1:10800";
 
-	_statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
+	_statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
 	_menu = [[NSMenu alloc] initWithTitle:@"AnyProxy"];
 	[_menu setAutoenablesItems:NO];
-
-	_statusMenuItem = [[NSMenuItem alloc] initWithTitle:statusLabel action:nil keyEquivalent:@""];
-	[_statusMenuItem setEnabled:NO];
-
-	_toggleMenuItem = [[NSMenuItem alloc] initWithTitle:toggleLabel action:@selector(onToggle:) keyEquivalent:@""];
-	[_toggleMenuItem setTarget:self];
-
-	NSMenuItem *openItem = [[NSMenuItem alloc] initWithTitle:@"Open AnyProxy" action:@selector(onOpen:) keyEquivalent:@""];
-	[openItem setTarget:self];
-
-	NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit AnyProxy" action:@selector(onQuit:) keyEquivalent:@""];
-	[quitItem setTarget:self];
-
-	[_menu addItem:_statusMenuItem];
-	[_menu addItem:_toggleMenuItem];
-	[_menu addItem:[NSMenuItem separatorItem]];
-	[_menu addItem:openItem];
-	[_menu addItem:[NSMenuItem separatorItem]];
-	[_menu addItem:quitItem];
+	[_menu setDelegate:self];
 
 	_statusItem.menu = _menu;
-	[self applyActive:active statusLabel:statusLabel toggleLabel:toggleLabel tooltip:tooltip];
+	[self applyJSONData:data];
 	return self;
 }
 
-- (void)applyActive:(BOOL)active
-        statusLabel:(NSString *)statusLabel
-        toggleLabel:(NSString *)toggleLabel
-            tooltip:(NSString *)tooltip {
+- (void)menuWillOpen:(NSMenu *)menu {
+	(void)menu;
+	_menuOpen = YES;
+}
+
+- (void)menuDidClose:(NSMenu *)menu {
+	(void)menu;
+	_menuOpen = NO;
+	if (_pendingSnapshot != nil) {
+		NSDictionary *snap = _pendingSnapshot;
+		_pendingSnapshot = nil;
+		[self rebuildMenuWithSnapshot:snap];
+	}
+}
+
+- (void)applyJSONData:(NSData *)data {
+	if (data == nil) {
+		return;
+	}
+	id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+	if (![parsed isKindOfClass:[NSDictionary class]]) {
+		return;
+	}
+	NSDictionary *snap = (NSDictionary *)parsed;
+
+	BOOL active = anyproxyDictBool(snap, @"active");
+	NSString *tooltip = anyproxyDictString(snap, @"tooltip", @"AnyProxy");
 	if (_statusItem.button != nil) {
 		_statusItem.button.image = active ? _activeIcon : _inactiveIcon;
 		_statusItem.button.imagePosition = NSImageOnly;
 		_statusItem.button.toolTip = tooltip;
 	}
-	[_statusMenuItem setTitle:statusLabel];
-	[_toggleMenuItem setTitle:toggleLabel];
+
+	_listenAddr = anyproxyDictString(snap, @"listenAddr", @"127.0.0.1:10800");
+	if (_menuOpen) {
+		_pendingSnapshot = snap;
+		return;
+	}
+	[self rebuildMenuWithSnapshot:snap];
+}
+
+- (void)rebuildMenuWithSnapshot:(NSDictionary *)snap {
+	[_menu removeAllItems];
+
+	NSString *statusLabel = anyproxyDictString(snap, @"statusLabel", @"Status: Stopped");
+	NSString *toggleLabel = anyproxyDictString(snap, @"toggleLabel", @"Enable AnyProxy");
+	NSString *activeProxyText = anyproxyDictString(snap, @"activeProxyText", @"Direct");
+	NSString *defaultProxyID = anyproxyDictString(snap, @"defaultProxyId", @"");
+	NSString *activeProfile = anyproxyDictString(snap, @"activeProfile", @"Default");
+	NSString *listenAddr = anyproxyDictString(snap, @"listenAddr", @"127.0.0.1:10800");
+	BOOL compact = anyproxyDictBool(snap, @"compact");
+
+	NSMenuItem *statusItem = [[NSMenuItem alloc] initWithTitle:statusLabel action:nil keyEquivalent:@""];
+	[statusItem setEnabled:NO];
+	[_menu addItem:statusItem];
+
+	NSMenuItem *toggleItem = [[NSMenuItem alloc] initWithTitle:toggleLabel action:@selector(onToggle:) keyEquivalent:@""];
+	[toggleItem setTarget:self];
+	[_menu addItem:toggleItem];
+
+	[_menu addItem:[NSMenuItem separatorItem]];
+
+	// Active Proxy submenu
+	NSMenuItem *proxyParent = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Active Proxy: %@", activeProxyText]
+	                                                     action:nil
+	                                              keyEquivalent:@""];
+	NSMenu *proxyMenu = [[NSMenu alloc] initWithTitle:@"Active Proxy"];
+	[proxyMenu setAutoenablesItems:NO];
+	NSMenuItem *directItem = [[NSMenuItem alloc] initWithTitle:@"Direct (No Proxy)"
+	                                                    action:@selector(onSelectProxy:)
+	                                             keyEquivalent:@""];
+	[directItem setTarget:self];
+	[directItem setRepresentedObject:@""];
+	[directItem setState:(defaultProxyID.length == 0 ? NSControlStateValueOn : NSControlStateValueOff)];
+	[proxyMenu addItem:directItem];
+
+	id proxiesVal = snap[@"proxies"];
+	if ([proxiesVal isKindOfClass:[NSArray class]] && [(NSArray *)proxiesVal count] > 0) {
+		[proxyMenu addItem:[NSMenuItem separatorItem]];
+		for (id entry in (NSArray *)proxiesVal) {
+			if (![entry isKindOfClass:[NSDictionary class]]) {
+				continue;
+			}
+			NSDictionary *px = (NSDictionary *)entry;
+			NSString *pxID = anyproxyDictString(px, @"id", @"");
+			NSString *pxLabel = anyproxyDictString(px, @"label", @"Proxy");
+			if (pxID.length == 0) {
+				continue;
+			}
+			NSMenuItem *pxItem = [[NSMenuItem alloc] initWithTitle:pxLabel
+			                                                action:@selector(onSelectProxy:)
+			                                         keyEquivalent:@""];
+			[pxItem setTarget:self];
+			[pxItem setRepresentedObject:pxID];
+			[pxItem setState:([pxID isEqualToString:defaultProxyID] ? NSControlStateValueOn : NSControlStateValueOff)];
+			[proxyMenu addItem:pxItem];
+		}
+	}
+	[proxyParent setSubmenu:proxyMenu];
+	[_menu addItem:proxyParent];
+
+	// Profile submenu
+	NSMenuItem *profileParent = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Profile: %@", activeProfile]
+	                                                       action:nil
+	                                                keyEquivalent:@""];
+	NSMenu *profileMenu = [[NSMenu alloc] initWithTitle:@"Profile"];
+	[profileMenu setAutoenablesItems:NO];
+	id profilesVal = snap[@"profiles"];
+	if ([profilesVal isKindOfClass:[NSArray class]]) {
+		for (id entry in (NSArray *)profilesVal) {
+			if (![entry isKindOfClass:[NSString class]]) {
+				continue;
+			}
+			NSString *name = (NSString *)entry;
+			NSMenuItem *profItem = [[NSMenuItem alloc] initWithTitle:name
+			                                                  action:@selector(onSelectProfile:)
+			                                           keyEquivalent:@""];
+			[profItem setTarget:self];
+			[profItem setRepresentedObject:name];
+			[profItem setState:([name isEqualToString:activeProfile] ? NSControlStateValueOn : NSControlStateValueOff)];
+			[profileMenu addItem:profItem];
+		}
+	}
+	[profileParent setSubmenu:profileMenu];
+	[_menu addItem:profileParent];
+
+	NSMenuItem *copyAddrItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Copy Proxy Address (%@)", listenAddr]
+	                                                      action:@selector(onCopyAddress:)
+	                                               keyEquivalent:@""];
+	[copyAddrItem setTarget:self];
+	[_menu addItem:copyAddrItem];
+
+	[_menu addItem:[NSMenuItem separatorItem]];
+
+	NSMenuItem *openItem = [[NSMenuItem alloc] initWithTitle:@"Open AnyProxy" action:@selector(onOpen:) keyEquivalent:@""];
+	[openItem setTarget:self];
+	[_menu addItem:openItem];
+
+	NSMenuItem *compactItem = [[NSMenuItem alloc] initWithTitle:@"Compact Mode" action:@selector(onCompact:) keyEquivalent:@""];
+	[compactItem setTarget:self];
+	[compactItem setState:(compact ? NSControlStateValueOn : NSControlStateValueOff)];
+	[_menu addItem:compactItem];
+
+	[_menu addItem:[NSMenuItem separatorItem]];
+
+	NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit AnyProxy" action:@selector(onQuit:) keyEquivalent:@""];
+	[quitItem setTarget:self];
+	[_menu addItem:quitItem];
 }
 
 - (void)onToggle:(id)sender {
@@ -180,9 +310,35 @@ static NSImage *anyproxyCreateMenuBarIcon(BOOL active) {
 	anyproxyTrayMenuAction(ANYPROXY_TRAY_OPEN);
 }
 
+- (void)onCompact:(id)sender {
+	(void)sender;
+	anyproxyTrayMenuAction(ANYPROXY_TRAY_COMPACT);
+}
+
 - (void)onQuit:(id)sender {
 	(void)sender;
 	anyproxyTrayMenuAction(ANYPROXY_TRAY_QUIT);
+}
+
+- (void)onCopyAddress:(id)sender {
+	(void)sender;
+	NSPasteboard *pb = [NSPasteboard generalPasteboard];
+	[pb clearContents];
+	[pb setString:(_listenAddr.length > 0 ? _listenAddr : @"127.0.0.1:10800") forType:NSPasteboardTypeString];
+}
+
+- (void)onSelectProxy:(NSMenuItem *)sender {
+	NSString *proxyID = [sender representedObject];
+	if ([proxyID isKindOfClass:[NSString class]]) {
+		anyproxyTraySelectProxy((char *)[proxyID UTF8String]);
+	}
+}
+
+- (void)onSelectProfile:(NSMenuItem *)sender {
+	NSString *profileName = [sender representedObject];
+	if ([profileName isKindOfClass:[NSString class]]) {
+		anyproxyTraySelectProfile((char *)[profileName UTF8String]);
+	}
 }
 
 @end
@@ -197,39 +353,58 @@ static void anyproxyOnMainThread(dispatch_block_t block) {
 	}
 }
 
-static NSString *anyproxyNSString(const char *s) {
-	return s != NULL ? [NSString stringWithUTF8String:s] : @"";
+static NSData *anyproxyCopyUTF8Data(const char *json) {
+	if (json == NULL) {
+		return nil;
+	}
+	return [NSData dataWithBytes:json length:strlen(json)];
 }
 
-void anyproxyTrayInit(int active, const char *statusLabel, const char *toggleLabel, const char *tooltip) {
-	BOOL isActive = active != 0;
-	NSString *status = anyproxyNSString(statusLabel);
-	NSString *toggle = anyproxyNSString(toggleLabel);
-	NSString *tip = anyproxyNSString(tooltip);
-
+void anyproxyTrayInitJSON(const char *json) {
+	NSData *data = anyproxyCopyUTF8Data(json);
 	anyproxyOnMainThread(^{
 		if (gAnyProxyTray != nil) {
-			[gAnyProxyTray applyActive:isActive statusLabel:status toggleLabel:toggle tooltip:tip];
+			[gAnyProxyTray applyJSONData:data];
 			return;
 		}
-		gAnyProxyTray = [[AnyProxyTrayController alloc] initWithActive:isActive
-		                                                   statusLabel:status
-		                                                   toggleLabel:toggle
-		                                                       tooltip:tip];
+		gAnyProxyTray = [[AnyProxyTrayController alloc] initWithJSONData:data];
 	});
 }
 
-void anyproxyTrayUpdate(int active, const char *statusLabel, const char *toggleLabel, const char *tooltip) {
-	BOOL isActive = active != 0;
-	NSString *status = anyproxyNSString(statusLabel);
-	NSString *toggle = anyproxyNSString(toggleLabel);
-	NSString *tip = anyproxyNSString(tooltip);
-
+void anyproxyTrayUpdateJSON(const char *json) {
+	NSData *data = anyproxyCopyUTF8Data(json);
 	anyproxyOnMainThread(^{
 		if (gAnyProxyTray == nil) {
 			return;
 		}
-		[gAnyProxyTray applyActive:isActive statusLabel:status toggleLabel:toggle tooltip:tip];
+		[gAnyProxyTray applyJSONData:data];
+	});
+}
+
+void anyproxyTrayActivateApp(void) {
+	anyproxyOnMainThread(^{
+		if (@available(macOS 14.0, *)) {
+			[NSApp activate];
+		} else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+			[NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
+		}
+	});
+}
+
+void anyproxyShowAboutPanel(void) {
+	anyproxyOnMainThread(^{
+		[NSApp orderFrontStandardAboutPanel:nil];
+		if (@available(macOS 14.0, *)) {
+			[NSApp activate];
+		} else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+			[NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
+		}
 	});
 }
 

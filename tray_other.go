@@ -4,11 +4,13 @@
 
 package main
 
-import "github.com/D0bby999/anyproxy/internal/driver"
-
 func initTray(_ *App) {}
 
-func updateTrayStatus(_ driver.EngineStatus) {}
+func updateTraySnapshot(_ traySnapshot) {}
+
+func activateMainApp() {}
+
+func showAboutPanel() {}
 
 func stopTray() {}
 

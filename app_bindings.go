@@ -319,53 +319,60 @@ func (a *App) CheckForUpdates() (update.ReleaseInfo, error) {
 // SetCompactMode resizes the native window between compact phone-sized mode (336x620) and full desktop mode (1080x680),
 // preserving and restoring the user's preferred screen coordinates for each mode.
 func (a *App) SetCompactMode(compact bool, alwaysOnTop bool) {
+	if a.ctx == nil {
+		return
+	}
+	go a.applyCompactMode(compact, alwaysOnTop)
+}
+
+func (a *App) applyCompactMode(compact bool, alwaysOnTop bool) {
 	ctx := a.ctx
 	if ctx == nil {
 		return
 	}
-	go func() {
-		a.posMu.Lock()
-		wasCompact := a.isCompact
-		if compact && !wasCompact {
-			if fx, fy := runtime.WindowGetPosition(ctx); fx >= 0 && fy >= 0 && fx <= 3800 && fy <= 2400 {
-				a.fullX, a.fullY = fx, fy
-				if a.store != nil {
-					_ = a.store.SetSetting("full_pos", fmt.Sprintf("%d,%d", fx, fy))
-				}
+	a.posMu.Lock()
+	wasCompact := a.isCompact
+	if compact && !wasCompact {
+		if fx, fy := runtime.WindowGetPosition(ctx); fx >= 0 && fy >= 0 && fx <= 3800 && fy <= 2400 {
+			a.fullX, a.fullY = fx, fy
+			if a.store != nil {
+				_ = a.store.SetSetting("full_pos", fmt.Sprintf("%d,%d", fx, fy))
 			}
-			a.isCompact = true
-			cx, cy := a.compactX, a.compactY
-			a.posMu.Unlock()
-
-			runtime.WindowSetSize(ctx, 336, 620)
-			runtime.WindowSetPosition(ctx, cx, cy)
-			runtime.WindowSetAlwaysOnTop(ctx, alwaysOnTop)
-			runtime.WindowShow(ctx)
-			return
 		}
-		if compact && wasCompact {
-			a.posMu.Unlock()
-			runtime.WindowSetAlwaysOnTop(ctx, alwaysOnTop)
-			runtime.WindowShow(ctx)
-			return
-		}
-		if !compact && wasCompact {
-			if cx, cy := runtime.WindowGetPosition(ctx); cx >= 0 && cy >= 0 && cx <= 3800 && cy <= 2400 {
-				a.compactX, a.compactY = cx, cy
-				if a.store != nil {
-					_ = a.store.SetSetting("compact_pos", fmt.Sprintf("%d,%d", cx, cy))
-				}
-			}
-			a.isCompact = false
-			fx, fy := a.fullX, a.fullY
-			a.posMu.Unlock()
-
-			runtime.WindowSetAlwaysOnTop(ctx, false)
-			runtime.WindowSetSize(ctx, 1080, 680)
-			runtime.WindowSetPosition(ctx, fx, fy)
-			runtime.WindowShow(ctx)
-			return
-		}
+		a.isCompact = true
+		cx, cy := a.compactX, a.compactY
 		a.posMu.Unlock()
-	}()
+
+		runtime.WindowSetSize(ctx, 336, 620)
+		runtime.WindowSetPosition(ctx, cx, cy)
+		runtime.WindowSetAlwaysOnTop(ctx, alwaysOnTop)
+		runtime.WindowShow(ctx)
+		a.refreshTray()
+		return
+	}
+	if compact && wasCompact {
+		a.posMu.Unlock()
+		runtime.WindowSetAlwaysOnTop(ctx, alwaysOnTop)
+		runtime.WindowShow(ctx)
+		return
+	}
+	if !compact && wasCompact {
+		if cx, cy := runtime.WindowGetPosition(ctx); cx >= 0 && cy >= 0 && cx <= 3800 && cy <= 2400 {
+			a.compactX, a.compactY = cx, cy
+			if a.store != nil {
+				_ = a.store.SetSetting("compact_pos", fmt.Sprintf("%d,%d", cx, cy))
+			}
+		}
+		a.isCompact = false
+		fx, fy := a.fullX, a.fullY
+		a.posMu.Unlock()
+
+		runtime.WindowSetAlwaysOnTop(ctx, false)
+		runtime.WindowSetSize(ctx, 1080, 680)
+		runtime.WindowSetPosition(ctx, fx, fy)
+		runtime.WindowShow(ctx)
+		a.refreshTray()
+		return
+	}
+	a.posMu.Unlock()
 }

@@ -106,7 +106,28 @@ export default function App() {
     document.addEventListener('visibilitychange', onVis)
 
     const unsubProfile = api.subscribeEvent('profile:changed', (data: unknown) => {
-      if (data) setProfile(data as Profile)
+      if (data) {
+        const next = data as Profile
+        setProfile(next)
+        if (next.name) {
+          setProfiles((prev) => ({
+            names: prev.names.includes(next.name) ? prev.names : [...prev.names, next.name],
+            active: next.name,
+          }))
+        }
+      }
+    })
+    const unsubCompact = api.subscribeEvent('ui:compact', (data: unknown) => {
+      setCompact(Boolean(data))
+    })
+    const unsubMenu = api.subscribeEvent('menu', (data: unknown) => {
+      const target = typeof data === 'string' ? data : ''
+      if (target === 'settings' || target === 'check-update') {
+        void handleExpandFromCompact('settings')
+      }
+      if (target === 'check-update') {
+        void handleCheckUpdates()
+      }
     })
     const unsubEngine = api.subscribeEvent('engine:status', (data: unknown) => {
       if (data) {
@@ -123,6 +144,8 @@ export default function App() {
       clearInterval(timer)
       document.removeEventListener('visibilitychange', onVis)
       unsubProfile()
+      unsubCompact()
+      unsubMenu()
       unsubEngine()
     }
   }, [])
@@ -144,6 +167,23 @@ export default function App() {
     try {
       await app.SetCompactMode(false, false)
     } catch {}
+  }
+
+  const handleCheckUpdates = async () => {
+    toast(t.messages.checkingUpdates, 'info')
+    try {
+      const res = await app.CheckForUpdates()
+      toast(
+        res.error
+          ? res.error
+          : res.isUpdateAvailable
+            ? `${t.messages.updateAvailable}: v${res.latestVersion}`
+            : t.messages.upToDate,
+        res.error ? 'error' : 'info'
+      )
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : String(e), 'error')
+    }
   }
 
   const handleToggleAlwaysOnTop = async () => {
@@ -468,16 +508,7 @@ export default function App() {
               setProfile(updated)
               toast(t.messages.settingsUpdated, 'success')
             }}
-            onCheckUpdates={async () => {
-              toast(t.messages.checkingUpdates, 'info')
-              const res = await app.CheckForUpdates()
-              toast(
-                res.isUpdateAvailable
-                  ? `${t.messages.updateAvailable}: v${res.latestVersion}`
-                  : t.messages.upToDate,
-                'info'
-              )
-            }}
+            onCheckUpdates={handleCheckUpdates}
             onSwitchProfile={async (name) => {
               const p = await app.SwitchProfile(name)
               setProfile(p)

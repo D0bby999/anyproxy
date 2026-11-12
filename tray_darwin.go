@@ -9,24 +9,26 @@ package main
 #cgo darwin LDFLAGS: -framework Cocoa
 #include <stdlib.h>
 
-void anyproxyTrayInit(int active, const char *statusLabel, const char *toggleLabel, const char *tooltip);
-void anyproxyTrayUpdate(int active, const char *statusLabel, const char *toggleLabel, const char *tooltip);
+void anyproxyTrayInitJSON(const char *json);
+void anyproxyTrayUpdateJSON(const char *json);
+void anyproxyTrayActivateApp(void);
+void anyproxyShowAboutPanel(void);
 void anyproxyTrayDestroy(void);
 void anyproxyTrayWakeRunLoop(void);
 */
 import "C"
 
 import (
+	"encoding/json"
 	"sync"
 	"unsafe"
-
-	"github.com/D0bby999/anyproxy/internal/driver"
 )
 
 const (
-	trayActionToggle = 1
-	trayActionOpen   = 2
-	trayActionQuit   = 3
+	trayActionToggle  = 1
+	trayActionOpen    = 2
+	trayActionCompact = 3
+	trayActionQuit    = 4
 )
 
 var (
@@ -34,30 +36,21 @@ var (
 	trayApp *App
 )
 
-func boolToCInt(v bool) C.int {
-	if v {
-		return 1
-	}
-	return 0
-}
-
 func initTray(app *App) {
 	trayMu.Lock()
 	trayApp = app
 	trayMu.Unlock()
 
-	ts := formatTrayState(driver.EngineStatus{State: driver.StateStopped})
-	cStatus := C.CString(ts.StatusLabel)
-	cToggle := C.CString(ts.ToggleLabel)
-	cTip := C.CString(ts.Tooltip)
-	defer C.free(unsafe.Pointer(cStatus))
-	defer C.free(unsafe.Pointer(cToggle))
-	defer C.free(unsafe.Pointer(cTip))
-
-	C.anyproxyTrayInit(boolToCInt(ts.Active), cStatus, cToggle, cTip)
+	raw, err := json.Marshal(app.currentTraySnapshot())
+	if err != nil {
+		return
+	}
+	cJSON := C.CString(string(raw))
+	defer C.free(unsafe.Pointer(cJSON))
+	C.anyproxyTrayInitJSON(cJSON)
 }
 
-func updateTrayStatus(st driver.EngineStatus) {
+func updateTraySnapshot(snap traySnapshot) {
 	trayMu.RLock()
 	activeApp := trayApp
 	trayMu.RUnlock()
@@ -65,15 +58,21 @@ func updateTrayStatus(st driver.EngineStatus) {
 		return
 	}
 
-	ts := formatTrayState(st)
-	cStatus := C.CString(ts.StatusLabel)
-	cToggle := C.CString(ts.ToggleLabel)
-	cTip := C.CString(ts.Tooltip)
-	defer C.free(unsafe.Pointer(cStatus))
-	defer C.free(unsafe.Pointer(cToggle))
-	defer C.free(unsafe.Pointer(cTip))
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		return
+	}
+	cJSON := C.CString(string(raw))
+	defer C.free(unsafe.Pointer(cJSON))
+	C.anyproxyTrayUpdateJSON(cJSON)
+}
 
-	C.anyproxyTrayUpdate(boolToCInt(ts.Active), cStatus, cToggle, cTip)
+func activateMainApp() {
+	C.anyproxyTrayActivateApp()
+}
+
+func showAboutPanel() {
+	C.anyproxyShowAboutPanel()
 }
 
 func stopTray() {
@@ -104,7 +103,39 @@ func anyproxyTrayMenuAction(action C.int) {
 		go app.toggleEngineFromTray()
 	case trayActionOpen:
 		go app.showMainWindow()
+	case trayActionCompact:
+		go app.toggleCompactFromTray()
 	case trayActionQuit:
 		go app.requestQuit()
 	}
+}
+
+//export anyproxyTraySelectProxy
+func anyproxyTraySelectProxy(cID *C.char) {
+	trayMu.RLock()
+	app := trayApp
+	trayMu.RUnlock()
+	if app == nil {
+		return
+	}
+	var id string
+	if cID != nil {
+		id = C.GoString(cID)
+	}
+	go app.selectProxyFromTray(id)
+}
+
+//export anyproxyTraySelectProfile
+func anyproxyTraySelectProfile(cName *C.char) {
+	trayMu.RLock()
+	app := trayApp
+	trayMu.RUnlock()
+	if app == nil {
+		return
+	}
+	var name string
+	if cName != nil {
+		name = C.GoString(cName)
+	}
+	go app.selectProfileFromTray(name)
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/D0bby999/anyproxy/internal/driver"
 	"github.com/D0bby999/anyproxy/internal/paths"
+	"github.com/D0bby999/anyproxy/internal/pbprofile"
 	"github.com/D0bby999/anyproxy/internal/secrets"
 	"github.com/D0bby999/anyproxy/internal/service"
 	"github.com/D0bby999/anyproxy/internal/store"
@@ -94,17 +95,15 @@ func (a *App) startup(ctx context.Context) {
 	a.svc = service.New(st, vault, nil)
 	a.svc.RecoverSystemProxy()
 	a.svc.SetEventEmitter(func(topic string, payload any) {
-		if topic == "engine:status" {
-			if st, ok := payload.(driver.EngineStatus); ok {
-				updateTrayStatus(st)
-			}
+		if topic == "engine:status" || topic == "profile:changed" {
+			a.refreshTray()
 		}
 		if a.ctx != nil {
 			runtime.EventsEmit(a.ctx, topic, payload)
 		}
 	})
 	initTray(a)
-	updateTrayStatus(a.svc.Status())
+	a.refreshTray()
 }
 
 func (a *App) saveCurrentWindowPosition() {
@@ -162,6 +161,7 @@ func (a *App) showMainWindow() {
 	if a.ctx == nil {
 		return
 	}
+	activateMainApp()
 	runtime.Show(a.ctx)
 	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowShow(a.ctx)
@@ -173,6 +173,26 @@ func (a *App) hideMainWindow() {
 	}
 	a.saveCurrentWindowPosition()
 	runtime.Hide(a.ctx)
+}
+
+func (a *App) currentTraySnapshot() traySnapshot {
+	a.posMu.Lock()
+	compact := a.isCompact
+	a.posMu.Unlock()
+
+	if a.svc == nil {
+		return buildTraySnapshot(driver.EngineStatus{State: driver.StateStopped}, "", nil, nil, compact)
+	}
+	var profPtr *pbprofile.Profile
+	if p, err := a.svc.ActiveProfile(); err == nil {
+		profPtr = &p
+	}
+	list, _ := a.svc.ListProfiles()
+	return buildTraySnapshot(a.svc.Status(), a.svc.InboundAddr(), profPtr, list.Names, compact)
+}
+
+func (a *App) refreshTray() {
+	updateTraySnapshot(a.currentTraySnapshot())
 }
 
 func (a *App) toggleEngineFromTray() {
@@ -190,7 +210,7 @@ func (a *App) toggleEngineFromTray() {
 	} else {
 		_, err = a.svc.StartEngine(ctx)
 	}
-	updateTrayStatus(a.svc.Status())
+	a.refreshTray()
 	if err != nil {
 		a.showMainWindow()
 		_, _ = runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
@@ -199,6 +219,57 @@ func (a *App) toggleEngineFromTray() {
 			Message: err.Error(),
 		})
 	}
+}
+
+func (a *App) selectProxyFromTray(proxyID string) {
+	if a.ready() != nil {
+		return
+	}
+	_, err := a.svc.SetDefaultProxy(proxyID)
+	a.refreshTray()
+	if err != nil && a.ctx != nil {
+		a.showMainWindow()
+		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "AnyProxy",
+			Message: err.Error(),
+		})
+	}
+}
+
+func (a *App) selectProfileFromTray(name string) {
+	if a.ready() != nil || name == "" {
+		return
+	}
+	_, err := a.svc.SwitchProfile(name)
+	a.refreshTray()
+	if err != nil && a.ctx != nil {
+		a.showMainWindow()
+		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "AnyProxy",
+			Message: err.Error(),
+		})
+	}
+}
+
+func (a *App) toggleCompactFromTray() {
+	a.posMu.Lock()
+	nextCompact := !a.isCompact
+	a.posMu.Unlock()
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "ui:compact", nextCompact)
+	}
+	a.applyCompactMode(nextCompact, false)
+	a.showMainWindow()
+}
+
+func (a *App) openMenuDestination(what string) {
+	if a.ctx == nil {
+		return
+	}
+	a.showMainWindow()
+	runtime.EventsEmit(a.ctx, "menu", what)
 }
 
 func (a *App) requestQuit() {
