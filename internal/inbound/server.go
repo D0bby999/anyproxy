@@ -58,6 +58,9 @@ type Server struct {
 	running    atomic.Bool
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
+
+	connsMu sync.Mutex
+	conns   map[net.Conn]struct{}
 }
 
 // NewServer creates a new Inbound Server instance.
@@ -79,6 +82,7 @@ func NewServer(cfg Config) *Server {
 		resolver:   res,
 		engine:     rules.NewEngine(nil),
 		proxies:    make(map[string]pbprofile.ProxyConfig),
+		conns:      make(map[net.Conn]struct{}),
 		stopCh:     make(chan struct{}),
 	}
 }
@@ -93,17 +97,48 @@ func (s *Server) ListenAddr() string {
 	return s.listenAddr
 }
 
+func (s *Server) registerConn(c net.Conn) {
+	s.connsMu.Lock()
+	if s.conns != nil {
+		s.conns[c] = struct{}{}
+	}
+	s.connsMu.Unlock()
+}
+
+func (s *Server) unregisterConn(c net.Conn) {
+	s.connsMu.Lock()
+	if s.conns != nil {
+		delete(s.conns, c)
+	}
+	s.connsMu.Unlock()
+}
+
+// CloseActiveConnections closes all in-flight client connections so clients re-handshake under new profile rules.
+func (s *Server) CloseActiveConnections() {
+	s.connsMu.Lock()
+	var toClose []net.Conn
+	for c := range s.conns {
+		toClose = append(toClose, c)
+	}
+	s.connsMu.Unlock()
+
+	for _, c := range toClose {
+		_ = c.Close()
+	}
+}
+
 // SyncProfile updates the active rules engine and proxy configurations.
 func (s *Server) SyncProfile(proxies []pbprofile.ProxyConfig, ruleList []pbprofile.ProxyRule, defaultProxyID string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.engine = rules.NewEngine(ruleList)
 	s.defProxyID = defaultProxyID
 	s.proxies = make(map[string]pbprofile.ProxyConfig, len(proxies))
 	for _, px := range proxies {
 		s.proxies[px.ID] = px
 	}
+	s.mu.Unlock()
+
+	s.CloseActiveConnections()
 }
 
 // Start opens the local TCP listener and accepts client connections.
@@ -145,11 +180,12 @@ func (s *Server) Stop() error {
 	close(s.stopCh)
 	s.mu.Unlock()
 
+	s.CloseActiveConnections()
+
 	done := make(chan struct{})
 	go func() { s.wg.Wait(); close(done) }()
 	select {
 	case <-done:
-	// shortcut: open relays are abandoned, not closed; fine because Stop only runs at app quit.
 	case <-time.After(2 * time.Second):
 	}
 	return nil
@@ -181,7 +217,11 @@ func (s *Server) serve(ln net.Listener) {
 }
 
 func (s *Server) handleConnection(client net.Conn) {
-	defer client.Close()
+	s.registerConn(client)
+	defer func() {
+		s.unregisterConn(client)
+		_ = client.Close()
+	}()
 
 	reader := bufio.NewReader(client)
 	firstByte, err := reader.Peek(1)

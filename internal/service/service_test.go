@@ -5,7 +5,11 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -288,5 +292,94 @@ func TestSetDefaultProxyDirectPersistsAcrossEdits(t *testing.T) {
 	}
 	if _, err := svc.SetDefaultProxy("missing"); err == nil {
 		t.Fatal("expected error for unknown proxy ID")
+	}
+}
+
+func TestProfileSwitchReroutesTraffic(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vault := secrets.NewVault(filepath.Join(t.TempDir(), "secrets.enc"), secrets.NewMemory())
+	drv := driver.NewMockDriver("test", nil, nil, nil)
+	svc := NewWithAddr(st, vault, drv, "127.0.0.1:0")
+	t.Cleanup(func() { _ = svc.Close() })
+
+	if _, err := svc.StartEngine(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	proxyHits := 0
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			proxyHits++
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			_, _ = io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
+			return
+		}
+		w.WriteHeader(400)
+	}))
+	defer proxySrv.Close()
+
+	proxyHost, proxyPortStr, _ := net.SplitHostPort(proxySrv.Listener.Addr().String())
+	var proxyPort int
+	fmt.Sscanf(proxyPortStr, "%d", &proxyPort)
+
+	// Profile 1: "ProxyProfile"
+	_, err = svc.CreateProfile("ProxyProfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedPx, err := svc.SaveProxy(pbprofile.ProxyConfig{
+		Name: "Upstream1",
+		Type: pbprofile.ProxyHTTP,
+		Host: proxyHost,
+		Port: proxyPort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.SetDefaultProxy(savedPx.Proxies[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Profile 2: "EmptyProfile"
+	_, err = svc.CreateProfile("EmptyProfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testReq := func() {
+		conn, err := net.Dial("tcp", svc.InboundAddr())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		fmt.Fprintf(conn, "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+		buf := make([]byte, 1024)
+		_, _ = conn.Read(buf)
+	}
+
+	// Switch to ProxyProfile
+	if _, err := svc.SwitchProfile("ProxyProfile"); err != nil {
+		t.Fatal(err)
+	}
+	testReq()
+	if proxyHits != 1 {
+		t.Fatalf("expected proxyHits=1 on ProxyProfile, got %d", proxyHits)
+	}
+
+	// Switch to EmptyProfile
+	if _, err := svc.SwitchProfile("EmptyProfile"); err != nil {
+		t.Fatal(err)
+	}
+	testReq()
+	if proxyHits != 1 {
+		t.Fatalf("expected proxyHits to stay 1 on EmptyProfile (direct), got %d", proxyHits)
 	}
 }
