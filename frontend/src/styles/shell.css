@@ -1288,8 +1288,44 @@ button.enginechip:hover {
 .compact-proxy-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-shrink: 0;
+}
+.compact-proxy-right .btn.compact-connect {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), .04);
+  transition: all .12s var(--ease);
+}
+.compact-proxy-right .btn.compact-connect:hover {
+  color: var(--on-fill);
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
+  box-shadow: 0 2px 5px rgba(var(--shadow-rgb), .12);
+}
+.compact-proxy-right .btn.compact-connect:active {
+  color: var(--on-fill);
+  background: var(--accent-fill-press);
+  border-color: var(--accent-fill-press);
+  box-shadow: none;
+}
+.compact-status-chip {
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+.compact-status-chip.running .dot {
+  box-shadow: 0 0 0 2px rgba(18, 161, 80, .28);
+  animation: pulse-dot 2s infinite ease-in-out;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .75; transform: scale(1.25); }
 }
 .compact-flows {
   flex-shrink: 0;

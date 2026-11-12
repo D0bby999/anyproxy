@@ -51,18 +51,6 @@ export function CompactView({
     }
   }
 
-  const handlePingOne = async (e: React.MouseEvent, px: ProxyConfig) => {
-    e.stopPropagation()
-    if (checkingId || pingingAll) return
-    setCheckingId(px.id)
-    try {
-      const rep = await onTestProxy(px)
-      if (rep) setResults((prev) => ({ ...prev, [px.id]: rep }))
-    } finally {
-      setCheckingId('')
-    }
-  }
-
   const handlePingAll = async () => {
     if (pingingAll || proxies.length === 0) return
     setPingingAll(true)
@@ -203,9 +191,25 @@ export function CompactView({
                   <span className="muted">{t.engine.directSub}</span>
                 </div>
               </div>
-              <span className="chip">
-                <span className="chiptext">DIRECT</span>
-              </span>
+              <div className="compact-proxy-right">
+                {!defaultProxyId ? (
+                  <span className={`chip ok compact-status-chip ${isRunning ? 'running' : ''}`}>
+                    <span className="dot" />
+                    <span className="chiptext">{isRunning ? t.actions.connected : t.actions.active}</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn sm compact-connect"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void onSetDefaultProxy('')
+                    }}
+                  >
+                    {t.actions.connect}
+                  </button>
+                )}
+              </div>
             </div>
 
             {proxies.map((px) => {
@@ -244,17 +248,23 @@ export function CompactView({
                         <span className="chiptext">{ok ? `${ms} ms` : 'ERR'}</span>
                       </span>
                     )}
-                    <button
-                      type="button"
-                      className="iconbtn sm"
-                      disabled={!!checkingId || pingingAll}
-                      aria-busy={checkingId === px.id}
-                      onClick={(e) => void handlePingOne(e, px)}
-                      title={t.actions.test}
-                      aria-label={t.actions.test}
-                    >
-                      <Icon name="refresh" />
-                    </button>
+                    {selected ? (
+                      <span className={`chip ok compact-status-chip ${isRunning ? 'running' : ''}`}>
+                        <span className="dot" />
+                        <span className="chiptext">{isRunning ? t.actions.connected : t.actions.active}</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn sm compact-connect"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void onSetDefaultProxy(px.id)
+                        }}
+                      >
+                        {t.actions.connect}
+                      </button>
+                    )}
                   </div>
                 </div>
               )

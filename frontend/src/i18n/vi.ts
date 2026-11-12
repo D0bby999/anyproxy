@@ -63,6 +63,9 @@ export const vi: Translations = {
     rename: 'Đổi tên',
     duplicate: 'Nhân bản',
     close: 'Đóng',
+    connect: 'Kết nối',
+    connected: 'Đã kết nối',
+    active: 'Hoạt động',
   },
   proxies: {
     title: 'Danh sách Proxy',

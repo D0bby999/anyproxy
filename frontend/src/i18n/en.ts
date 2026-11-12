@@ -62,6 +62,9 @@ export const en = {
     rename: 'Rename',
     duplicate: 'Duplicate',
     close: 'Close',
+    connect: 'Connect',
+    connected: 'Connected',
+    active: 'Active',
   },
   proxies: {
     title: 'Proxy Servers',

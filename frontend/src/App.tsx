@@ -243,6 +243,17 @@ export default function App() {
     setProfileDialog({ mode: 'create', targetName: '', value: '' })
   }
 
+  const handleSwitchProfile = async (name: string) => {
+    try {
+      const p = await app.SwitchProfile(name)
+      setProfile(p)
+      setProfiles((prev) => ({ ...prev, active: name }))
+      void reloadData()
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : String(err), 'error')
+    }
+  }
+
   const handleDeleteProfile = async (name: string) => {
     try {
       const p = await app.DeleteProfile(name)
@@ -309,11 +320,7 @@ export default function App() {
           onToggleEngine={handleToggleEngine}
           onSetDefaultProxy={handleSetDefaultProxy}
           onTestProxy={handleTestProxy}
-          onSwitchProfile={async (name) => {
-            const p = await app.SwitchProfile(name)
-            setProfile(p)
-            setProfiles((prev) => ({ ...prev, active: name }))
-          }}
+          onSwitchProfile={handleSwitchProfile}
           onToggleAlwaysOnTop={() => void handleToggleAlwaysOnTop()}
           onExpand={(targetPage) => void handleExpandFromCompact(targetPage)}
         />
@@ -386,11 +393,7 @@ export default function App() {
         engine={engine}
         onToggleEngine={handleToggleEngine}
         profiles={profiles}
-        onSwitchProfile={async (name) => {
-          const p = await app.SwitchProfile(name)
-          setProfile(p)
-          setProfiles((prev) => ({ ...prev, active: name }))
-        }}
+        onSwitchProfile={handleSwitchProfile}
         onCreateProfile={handleCreateProfile}
         onRenameProfile={handleRenameProfile}
         onDeleteProfile={handleDeleteProfile}
@@ -513,11 +516,7 @@ export default function App() {
               toast(t.messages.settingsUpdated, 'success')
             }}
             onCheckUpdates={handleCheckUpdates}
-            onSwitchProfile={async (name) => {
-              const p = await app.SwitchProfile(name)
-              setProfile(p)
-              setProfiles((prev) => ({ ...prev, active: name }))
-            }}
+            onSwitchProfile={handleSwitchProfile}
             onCreateProfile={handleCreateProfile}
             onDuplicateProfile={(srcName) => {
               setProfileDialog({
