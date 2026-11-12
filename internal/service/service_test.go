@@ -259,3 +259,34 @@ func TestSaveHTTPSProxy(t *testing.T) {
 		t.Fatalf("unexpected saved HTTPS proxy: %+v", prof.Proxies)
 	}
 }
+
+func TestSetDefaultProxyDirectPersistsAcrossEdits(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(st, nil, driver.NewMockDriver("test", nil, nil, nil))
+	t.Cleanup(func() { _ = svc.Close() })
+
+	prof, err := svc.SaveProxy(pbprofile.ProxyConfig{Name: "P1", Type: pbprofile.ProxySOCKS5, Host: "127.0.0.1", Port: 1080})
+	if err != nil || prof.DefaultProxyID != prof.Proxies[0].ID {
+		t.Fatalf("first proxy should auto-select default: %+v err=%v", prof, err)
+	}
+	prof, err = svc.SaveProxy(pbprofile.ProxyConfig{Name: "P2", Type: pbprofile.ProxyHTTPS, Host: "127.0.0.1", Port: 8443})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prof, err = svc.SetDefaultProxy(prof.Proxies[1].ID); err != nil || prof.DefaultProxyID != prof.Proxies[1].ID {
+		t.Fatalf("SetDefaultProxy(px2) = %q err=%v", prof.DefaultProxyID, err)
+	}
+	if prof, err = svc.SetDefaultProxy(""); err != nil || prof.DefaultProxyID != "" {
+		t.Fatalf("SetDefaultProxy(direct) = %q err=%v, want empty", prof.DefaultProxyID, err)
+	}
+	prof, err = svc.SaveProxy(pbprofile.ProxyConfig{Name: "P3", Type: pbprofile.ProxyHTTP, Host: "127.0.0.1", Port: 8080})
+	if err != nil || prof.DefaultProxyID != "" {
+		t.Fatalf("adding 3rd proxy overwrote Direct default to %q (err=%v)", prof.DefaultProxyID, err)
+	}
+	if _, err := svc.SetDefaultProxy("missing"); err == nil {
+		t.Fatal("expected error for unknown proxy ID")
+	}
+}

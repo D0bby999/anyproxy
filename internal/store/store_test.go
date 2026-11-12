@@ -125,3 +125,33 @@ func TestStorePersistsAcrossReopenAndStripsPasswords(t *testing.T) {
 		t.Fatalf("reopened GetSetting = %q, err = %v", v, err)
 	}
 }
+
+func TestStorePreservesDirectDefaultProxy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "direct.json")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	p := pbprofile.DefaultProfile("Default")
+	p.Proxies = []pbprofile.ProxyConfig{
+		{ID: "px-1", Name: "P1", Type: pbprofile.ProxySOCKS5, Host: "127.0.0.1", Port: 1080},
+		{ID: "px-2", Name: "P2", Type: pbprofile.ProxyHTTP, Host: "127.0.0.1", Port: 8080},
+	}
+	p.DefaultProxyID = ""
+	saved, err := st.SaveProfile(p, true)
+	if err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+	if saved.DefaultProxyID != "" {
+		t.Fatalf("DefaultProxyID = %q, want empty (Direct)", saved.DefaultProxyID)
+	}
+	reloaded, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reloaded.Close()
+	act, err := reloaded.ActiveProfile()
+	if err != nil || act.DefaultProxyID != "" {
+		t.Fatalf("reloaded DefaultProxyID = %q (err=%v), want empty", act.DefaultProxyID, err)
+	}
+}

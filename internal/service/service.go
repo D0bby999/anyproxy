@@ -377,7 +377,7 @@ func (s *Service) SaveProxy(px pbprofile.ProxyConfig) (pbprofile.Profile, error)
 		return pbprofile.Profile{}, err
 	}
 
-	if p.DefaultProxyID == "" && len(p.Proxies) > 0 {
+	if isNew && len(p.Proxies) == 1 && p.DefaultProxyID == "" {
 		p.DefaultProxyID = p.Proxies[0].ID
 	}
 
@@ -449,11 +449,23 @@ func (s *Service) DeleteProxy(proxyID string) (pbprofile.Profile, error) {
 	return saved, nil
 }
 
-// SetDefaultProxy marks proxyID as the default proxy on the active profile.
+// SetDefaultProxy marks proxyID as the default proxy on the active profile (empty clears to Direct).
 func (s *Service) SetDefaultProxy(proxyID string) (pbprofile.Profile, error) {
 	p, err := s.store.ActiveProfile()
 	if err != nil {
 		return pbprofile.Profile{}, err
+	}
+	if proxyID != "" {
+		found := false
+		for _, px := range p.Proxies {
+			if px.ID == proxyID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return pbprofile.Profile{}, fmt.Errorf("proxy %q not found", proxyID)
+		}
 	}
 	p.DefaultProxyID = proxyID
 	saved, err := s.store.SaveProfile(p, true)

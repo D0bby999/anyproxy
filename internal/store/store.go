@@ -202,8 +202,6 @@ func (s *Store) SaveProfile(p pbprofile.Profile, makeActive bool) (pbprofile.Pro
 	}
 	if mapped, ok := proxyIDMap[p.DefaultProxyID]; ok {
 		p.DefaultProxyID = mapped
-	} else if p.DefaultProxyID == "" && len(p.Proxies) > 0 {
-		p.DefaultProxyID = p.Proxies[0].ID
 	}
 
 	for i := range p.Rules {
