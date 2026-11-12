@@ -228,6 +228,9 @@ export function RulesPage({
     setError('')
     try {
       await onSaveRule(payload)
+      if (effectiveMode === 'exclude' && payload.action === 'proxy' && defaultProxyId && onSetDefaultProxy) {
+        await onSetDefaultProxy('')
+      }
       setShowModal(false)
     } catch (err) {
       setError(String(err))
@@ -894,20 +897,6 @@ function RuleEditorDialog({
                 <span className="hint">{t.rules.noProxiesHint}</span>
               )}
 
-              {showFallbackWarn && (
-                <div className="rule-fallback-note">
-                  <Icon name="warn" />
-                  <span className="grow">{t.rules.fallbackProxyWarn}</span>
-                  <button
-                    type="button"
-                    className="btn sm"
-                    onClick={() => void handleSwitchFallbackDirect()}
-                  >
-                    {t.rules.switchFallbackDirect}
-                  </button>
-                </div>
-              )}
-
               <div className="rule-grid">
                 <div className="field">
                   <label htmlFor="rule-targets">{t.rules.targets}</label>
@@ -952,6 +941,20 @@ function RuleEditorDialog({
             </div>
           )}
         </div>
+
+        {showFallbackWarn && (
+          <div className="rule-fallback-note">
+            <Icon name="warn" />
+            <span className="grow">{t.rules.fallbackProxyWarn}</span>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => void handleSwitchFallbackDirect()}
+            >
+              {t.rules.switchFallbackDirect}
+            </button>
+          </div>
+        )}
 
         <div className="rule-preview" aria-live="polite">
           <span className="rule-preview-match mono">
