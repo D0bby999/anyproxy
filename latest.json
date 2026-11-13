@@ -1,19 +1,19 @@
 {
-  "version": "1.0.0",
-  "date": "2026-11-12",
+  "version": "1.0.1",
+  "date": "2026-11-13",
   "notes": "Fix: apps listed in an Except (exclude-process) rule now stay DIRECT instead of falling back to the default proxy.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-darwin-arm64.dmg",
-      "sha256": "6cc114dba8687c543fcaf2181366e68ad9bdf570484837a10da90f4c58c36eab"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-darwin-arm64.dmg",
+      "sha256": "0cac9a3ad6809efa2318ea7cdaae14806f1c7774ae95d37dcce5a1f52e80a469"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-darwin-amd64.dmg",
-      "sha256": "f0bab835448962a8d51c3c3e1c6be535da2eb7f516eca3c8da791a1ff997c6a3"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-darwin-amd64.dmg",
+      "sha256": "092842953bc06f703b9c1bf26317ba8e2046f0cc7df7f5d6eeb6d744627c5959"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-windows-amd64.exe",
-      "sha256": "0ea4cef97320de2636739c90c281ce02fc0aa9492d5cce9faef650f4f95bd90b"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-windows-amd64.exe",
+      "sha256": "7283ba92df277e3859d23a6efb05acf7a496e6974ad2b7a2b9bc128fe772cc48"
     }
   }
 }
