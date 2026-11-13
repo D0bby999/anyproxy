@@ -12,7 +12,7 @@
   "info": {
     "companyName": "Cassau, LLC",
     "productName": "AnyProxy",
-    "productVersion": "1.0.0",
+    "productVersion": "1.0.1",
     "copyright": "Copyright © 2026 AnyProxy contributors. AGPL-3.0-or-later.",
     "comments": "Universal per-application proxy router for macOS and Windows"
   }

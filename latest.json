@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "date": "2026-11-12",
-  "notes": "Initial release of AnyProxy - proxy client in Go + Wails v2 for AnyTools.",
+  "notes": "Fix: apps listed in an Except (exclude-process) rule now stay DIRECT instead of falling back to the default proxy.",
   "assets": {
     "darwin-arm64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.0/AnyProxy-darwin-arm64.dmg",
