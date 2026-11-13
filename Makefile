@@ -2,7 +2,7 @@
 SHELL   := /bin/bash
 WAILS   ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
 APP     := build/bin/AnyProxy.app
-ARCH    ?= $(shell uname -m | sed 's/x86_64/amd64/')
+ARCH    ?= $(shell if [ "$$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then echo arm64; else uname -m | sed 's/x86_64/amd64/'; fi)
 DMG     := dist/AnyProxy-darwin-$(ARCH).dmg
 ZIP     := dist/AnyProxy-darwin-$(ARCH).zip
 VERSION ?= $(shell sed -n 's/.*"productVersion": *"\([^"]*\)".*/\1/p' wails.json)
