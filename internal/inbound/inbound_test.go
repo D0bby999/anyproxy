@@ -366,6 +366,31 @@ func TestPerProcessRoutingAndDefaultProxyFallback(t *testing.T) {
 	if dec.Action != pbprofile.ActionDirect || px != nil {
 		t.Fatalf("expected excluded Telegram to go DIRECT when fallback is Direct, got dec=%+v px=%+v", dec, px)
 	}
+
+	// 6. Same exclude rule with a Default Proxy set: excluded app must still go DIRECT (NoChrome profile bug)
+	srv.SyncProfile(proxies, []pbprofile.ProxyRule{{
+		ID:             "r-all-except-chrome",
+		Enabled:        true,
+		ProcessNames:   "AnyProfile; Google Drive; League of Legends; Google Chrome",
+		ExcludeProcess: true,
+		TargetHosts:    "*",
+		TargetPorts:    "*",
+		Protocol:       pbprofile.ProtoBoth,
+		Action:         pbprofile.ActionProxy,
+		ProxyConfigID:  "p-chrome",
+	}}, "p-default")
+	dec, px = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{
+		PID:  752,
+		Name: "Google Chrome",
+		Path: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+	})
+	if dec.Action != pbprofile.ActionDirect || px != nil {
+		t.Fatalf("expected excluded Chrome to go DIRECT despite default proxy, got dec=%+v px=%+v", dec, px)
+	}
+	dec, px = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 900, Name: "Telegram"})
+	if dec.Action != pbprofile.ActionProxy || px == nil || px.ID != "p-chrome" {
+		t.Fatalf("expected non-excluded Telegram to use the rule proxy, got dec=%+v px=%+v", dec, px)
+	}
 }
 
 func TestNetstatParsersAndFriendlyProcessName(t *testing.T) {

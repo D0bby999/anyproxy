@@ -468,12 +468,10 @@ func (e *Engine) HasDomainRules() bool { return e.hasDomainRule }
 
 func (e *Engine) Evaluate(in FlowInput) Decision {
 	isUDP := in.Protocol == pbprofile.ProtoUDP
+	var excludedBy *Matcher
 	for _, m := range e.matchers {
 		rp := m.Rule.Protocol
 		if rp != "" && rp != pbprofile.ProtoBoth && rp != in.Protocol {
-			continue
-		}
-		if !m.MatchesProcess(in.Process) {
 			continue
 		}
 		if in.CheckHost {
@@ -483,6 +481,13 @@ func (e *Engine) Evaluate(in FlowInput) Decision {
 			if !m.MatchesHost(in.DestIP, in.Domains) {
 				continue
 			}
+		}
+		if !m.MatchesProcess(in.Process) {
+			// An app excluded from a PROXY rule must stay DIRECT, not fall through to the default proxy.
+			if m.excludeProcess && m.Rule.Action == pbprofile.ActionProxy && excludedBy == nil {
+				excludedBy = m
+			}
+			continue
 		}
 		act := m.Rule.Action
 		if act == pbprofile.ActionProxy && in.CheckHost {
@@ -497,6 +502,9 @@ func (e *Engine) Evaluate(in FlowInput) Decision {
 			Action:        act,
 			ProxyConfigID: m.Rule.ProxyConfigID,
 		}
+	}
+	if excludedBy != nil {
+		return Decision{Matched: true, RuleID: excludedBy.Rule.ID, RuleName: excludedBy.Rule.Name, Action: pbprofile.ActionDirect}
 	}
 	return Decision{Matched: false, Action: pbprofile.ActionDirect}
 }
