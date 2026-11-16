@@ -15,7 +15,7 @@ if (-not (Test-Path "$WinDivertDir\include\windivert.h")) {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $sources = Get-ChildItem -Path "windows/core/*.c" | ForEach-Object { $_.FullName }
 
-& gcc -shared -O2 -s -D_WIN32_WINNT=0x0601 -DPROXYBRIDGE_EXPORTS `
+& gcc -shared -O2 -s -D_WIN32_WINNT=0x0601 -DPROXYBRIDGE_EXPORTS -D__forceinline=inline `
     -I"$WinDivertDir\include" `
     @sources `
     -L"$WinDivertDir\x64" -lWinDivert -lws2_32 -liphlpapi `
