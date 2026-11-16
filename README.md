@@ -22,13 +22,10 @@ Dự án được xây dựng bằng **Go + Wails v2 + React/TypeScript**, phát
 
 ## Tổng quan nhanh
 
-### Cơ chế hoạt động 2 tầng
-1. **Local Inbound Proxy (`127.0.0.1:10800`)**: Luôn lắng nghe SOCKS5 (`CONNECT`) và HTTP/HTTPS (`CONNECT`), tự động nhận diện tiến trình nguồn (`PID` / tên ứng dụng) để áp dụng **Routing Rules** hoặc chuyển tiếp qua **Active Proxy**.
-2. **OS System Proxy**: Khi bật **Enable AnyProxy** (hoặc chạy CLI), ứng dụng tự động cấu hình System Proxy của macOS (`networksetup`) hoặc Windows (`Registry`) trỏ về `127.0.0.1:10800`, và tự động tắt khi dừng hoặc thoát app.
-
-> **Lưu ý phạm vi System Proxy & chữ ký số:**
-> - Nhánh `main` chạy hoàn toàn ở **user-space bằng OS System Proxy**, **không cài kernel driver / System Extension**. Các trình duyệt và app đọc System Proxy sẽ đi qua AnyProxy tự động; riêng các công cụ CLI/app bỏ qua System Proxy (`curl`, `git`, CLI dev, hoặc game/UDP thuần không qua proxy) cần cấu hình trực tiếp `--proxy socks5h://127.0.0.1:10800` hoặc biến `ALL_PROXY=socks5h://127.0.0.1:10800`.
-> - Các bản phát hành macOS (`v1.0.1+`) đã được **ký Apple Developer ID và công chứng bởi Apple (Apple-notarized)** nên mở trực tiếp không cần bỏ qua Gatekeeper; trên **Windows**, chọn **More info → Run anyway** ở cảnh báo SmartScreen nếu gặp.
+### Cơ chế hoạt động
+1. **macOS Network Extension (`NETransparentProxyProvider` + `NEDNSProxyProvider`)**: Ở bản phát hành chính thức đã ký & công chứng, AnyProxy chặn toàn bộ lưu lượng TCP/UDP/DNS ở tầng hệ điều hành để ép mọi ứng dụng (kể cả app bỏ qua System Proxy) đi qua rule engine. Lần đầu bấm **Connect**, vào **System Settings → General → Login Items & Extensions**, cuộn xuống mục **Network Extensions** → bấm biểu tượng **`ⓘ`** bên phải → gạt **Bật** cho **AnyProxy Network Extension**.
+2. **Windows WinDivert (`ProxyBridgeCore.dll` + `WinDivert`)**: Trên Windows (khi chạy cùng `ProxyBridgeCore.dll` / `WinDivert.dll` với quyền Administrator), AnyProxy bắt gói tin TCP/UDP ở tầng kernel cho mọi tiến trình.
+3. **Local Inbound Proxy (`127.0.0.1:10800`) & OS System Proxy Fallback**: Luôn lắng nghe SOCKS5 (`CONNECT` + `UDP ASSOCIATE`) và HTTP/HTTPS (`CONNECT`), đồng thời tự động fallback về OS System Proxy (`networksetup` / Registry) khi chạy dev (`wails dev`) chưa nhúng extension/driver.
 
 ### Tính năng chính
 - **Dual-mode Binary**: Mở không cờ để chạy Desktop GUI (Full & Compact Mini Mode); truyền cờ (`--profile`, `--list-profiles`, `--test-proxy`, `--verbose`, `--update`) để chạy Headless CLI.

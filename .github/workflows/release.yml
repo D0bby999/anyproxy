@@ -192,6 +192,7 @@ jobs:
           $env:Path += ";$env:USERPROFILE\go\bin;C:\Program Files (x86)\NSIS"
           $version = "${{ needs.version.outputs.version }}"
           wails build -clean -platform windows/amd64 -nsis -ldflags "-s -w -X github.com/D0bby999/anyproxy/internal/update.Current=$version"
+          ./windows/build-core.ps1 -OutDir "build/bin"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $installer = Get-ChildItem build/bin/*-installer.exe | Select-Object -First 1
           if (-not $installer) { $installer = Get-ChildItem build/bin/*.exe | Select-Object -First 1 }
