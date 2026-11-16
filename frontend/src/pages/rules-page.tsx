@@ -90,13 +90,20 @@ export function RulesPage({
   const quickAppCandidates = Array.from(
     new Set([
       ...knownApps.filter((a) => a && a !== 'local-client' && a !== 'AnyProxy'),
-      'Google Chrome',
-      'Safari',
+      'Google Chrome*; *com.google.Chrome*',
+      'Google Drive*; *drivefs*',
+      'AnyProfile*; org.chromium.Chromium*',
+      'Safari*; com.apple.Safari*',
+      'Antigravity*; *antigravity*',
+      'Muse*; com.meta.endo*',
+      'League of Legends*',
       'Telegram',
       'Cursor',
       'curl',
+      'git',
+      'node',
     ])
-  ).slice(0, 12)
+  ).slice(0, 20)
 
   const handleOpenAdd = () => {
     setError('')
@@ -317,7 +324,11 @@ export function RulesPage({
                     const matchedProxy = proxies.find((p) => p.id === r.proxyConfigId)
                     const action = r.action.toLowerCase()
                     return (
-                      <tr key={r.id}>
+                      <tr
+                        key={r.id}
+                        className="clickable-row"
+                        onClick={() => handleEdit(r)}
+                      >
                         <td className="col-no">{idx + 1}</td>
                         <td className="cellname col-name">
                           <b className="selectable" title={r.name}>
@@ -375,7 +386,7 @@ export function RulesPage({
                             </span>
                           </span>
                         </td>
-                        <td className="col-actions">
+                        <td className="col-actions" onClick={(e) => e.stopPropagation()}>
                           <span className="row">
                             <button
                               type="button"
@@ -584,7 +595,10 @@ function RuleEditorDialog({
     ...selectedTokens,
     ...draftTokens.filter((tok) => !selectedTokens.includes(tok)),
   ]
-  const availableQuickApps = quickAppCandidates.filter((a) => !selectedTokens.includes(a))
+  const availableQuickApps = quickAppCandidates.filter((preset) => {
+    const tokens = parseAppTokens(preset)
+    return tokens.length > 0 && tokens.some((tok) => !selectedTokens.includes(tok))
+  })
   const targetsValue = editing.targetHosts
   const portsValue = editing.targetPorts
   const matchedProxy = proxies.find((p) => p.id === editing.proxyConfigId)
@@ -787,7 +801,7 @@ function RuleEditorDialog({
                     value=""
                     onChange={(e) => {
                       const picked = e.target.value
-                      if (picked) onAddApps([picked])
+                      if (picked) onAddApps(parseAppTokens(picked))
                     }}
                   >
                     <option value="">{t.rules.pickAppPlaceholder}</option>

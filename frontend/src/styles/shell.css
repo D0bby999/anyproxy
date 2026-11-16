@@ -547,7 +547,9 @@ button.enginechip:hover {
 .table.rules th.col-ports, .table.rules td.col-ports { width: 10%; }
 .table.rules th.col-proto, .table.rules td.col-proto { width: 75px; }
 .table.rules th.col-action, .table.rules td.col-action { width: 15%; }
-.table.rules th.col-actions, .table.rules td.col-actions { width: 180px; }
+.table.rules th.col-actions, .table.rules td.col-actions { width: 216px; text-align: right; }
+.table.rules td.col-actions .row { justify-content: flex-end; flex-wrap: nowrap; }
+.table.rules td.col-actions .iconbtn { flex: none; border-radius: 5px; }
 
 /* 2. Proxies Table */
 .table.proxies th.col-name, .table.proxies td.col-name { width: 22%; }

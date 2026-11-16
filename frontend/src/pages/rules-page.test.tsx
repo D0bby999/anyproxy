@@ -47,19 +47,20 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
 
   // Selecting multiple apps adds removable chips; no apps show before selection.
   const picker = within(dialog).getByLabelText(t.rules.quickApps) as HTMLSelectElement
-  await user.selectOptions(picker, 'Google Chrome')
-  await user.selectOptions(picker, 'Safari')
+  await user.selectOptions(picker, 'Google Chrome*; *com.google.Chrome*')
+  await user.selectOptions(picker, 'Cursor')
   await user.type(within(dialog).getByLabelText(t.rules.applications), 'curl{enter}')
 
   const chipsList = within(dialog).getByRole('list', { name: t.rules.selectedApps })
-  expect(within(chipsList).getByText('Google Chrome')).toBeTruthy()
-  expect(within(chipsList).getByText('Safari')).toBeTruthy()
+  expect(within(chipsList).getByText('Google Chrome*')).toBeTruthy()
+  expect(within(chipsList).getByText('*com.google.Chrome*')).toBeTruthy()
+  expect(within(chipsList).getByText('Cursor')).toBeTruthy()
   expect(within(chipsList).getByText('curl')).toBeTruthy()
 
   // Removing one chip via its close button leaves the remaining chips intact.
-  await user.click(within(chipsList).getByRole('button', { name: `${t.rules.removeApp} Safari` }))
-  expect(within(chipsList).queryByText('Safari')).toBeNull()
-  expect(within(chipsList).getByText('Google Chrome')).toBeTruthy()
+  await user.click(within(chipsList).getByRole('button', { name: `${t.rules.removeApp} Cursor` }))
+  expect(within(chipsList).queryByText('Cursor')).toBeNull()
+  expect(within(chipsList).getByText('Google Chrome*')).toBeTruthy()
   expect(within(chipsList).getByText('curl')).toBeTruthy()
 
   // Expanding Advanced reveals protocol/targets/ports.
@@ -72,7 +73,7 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   const proxySelect = within(dialog).getByLabelText(t.rules.selectProxy) as HTMLSelectElement
   await user.selectOptions(proxySelect, 'p1')
 
-  expect(dialog.textContent).toContain('Google Chrome, curl · *:* · TCP')
+  expect(dialog.textContent).toContain('Google Chrome*, *com.google.Chrome*, curl · *:* · TCP')
   expect(dialog.textContent).toContain(`${t.rules.actionProxy}: US Static`)
 
   await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
@@ -82,8 +83,8 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
   expect(onSaveRule).toHaveBeenLastCalledWith(
     expect.objectContaining({
-      name: `${t.rules.actionProxy} Google Chrome`,
-      processNames: 'Google Chrome; curl',
+      name: `${t.rules.actionProxy} Google Chrome*`,
+      processNames: 'Google Chrome*; *com.google.Chrome*; curl',
       excludeProcess: false,
       protocol: 'tcp',
       action: 'proxy',
@@ -133,6 +134,13 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and c
 
   expect(screen.getByText(`${t.rules.exceptPrefix}: Telegram; Safari`)).toBeTruthy()
 
+  // Clicking on a rule row opens the Edit Rule modal directly
+  await user.click(screen.getByText('System Except Chat'))
+  const editDialog = screen.getByRole('dialog', { name: t.rules.editTitle })
+  expect(editDialog).toBeTruthy()
+  await user.click(within(editDialog).getByRole('button', { name: t.actions.close }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.editTitle })).toBeNull())
+
   await user.click(screen.getByRole('button', { name: t.rules.newBtn }))
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
 
@@ -146,8 +154,8 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and c
 
   const picker = within(dialog).getByLabelText(t.rules.quickApps) as HTMLSelectElement
   await user.selectOptions(picker, 'Telegram')
-  await user.selectOptions(picker, 'Safari')
-  expect(dialog.textContent).toContain(`${t.rules.exceptPrefix}: Telegram, Safari`)
+  await user.selectOptions(picker, 'Cursor')
+  expect(dialog.textContent).toContain(`${t.rules.exceptPrefix}: Telegram, Cursor`)
 
   // Switch active proxy fallback to Direct in one click (inside Advanced)
   await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
@@ -159,7 +167,7 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and c
   expect(onSaveRule).toHaveBeenCalledWith(
     expect.objectContaining({
       name: 'All except Telegram',
-      processNames: 'Telegram; Safari',
+      processNames: 'Telegram; Cursor',
       excludeProcess: true,
       action: 'proxy',
       proxyConfigId: 'p1',
