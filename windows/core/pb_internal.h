@@ -234,25 +234,25 @@ extern char  *g_pidtbl_buf;
 extern DWORD  g_pidtbl_cap;
 
 // ---- per-source-port decision bitmaps: hot-path inline helpers ----
-static __forceinline BOOL port_is_decided(UINT16 p)
+static inline BOOL port_is_decided(UINT16 p)
 {
     return (port_decided_bitmap[p >> 5] >> (p & 31)) & 1;
 }
-static __forceinline BOOL port_is_direct(UINT16 p)
+static inline BOOL port_is_direct(UINT16 p)
 {
     return (port_direct_bitmap[p >> 5] >> (p & 31)) & 1;
 }
-static __forceinline void port_set_direct(UINT16 p)
+static inline void port_set_direct(UINT16 p)
 {
     InterlockedOr(&port_decided_bitmap[p >> 5], (LONG)(1u << (p & 31)));
     InterlockedOr(&port_direct_bitmap[p >> 5],  (LONG)(1u << (p & 31)));
 }
-static __forceinline void port_set_decided(UINT16 p)  // decided, but NOT direct (proxy/block)
+static inline void port_set_decided(UINT16 p)  // decided, but NOT direct (proxy/block)
 {
     InterlockedOr(&port_decided_bitmap[p >> 5], (LONG)(1u << (p & 31)));
     // leave port_direct_bitmap bit at 0
 }
-static __forceinline void port_clear(UINT16 p)
+static inline void port_clear(UINT16 p)
 {
     InterlockedAnd(&port_decided_bitmap[p >> 5], (LONG)~(1u << (p & 31)));
     InterlockedAnd(&port_direct_bitmap[p >> 5],  (LONG)~(1u << (p & 31)));
