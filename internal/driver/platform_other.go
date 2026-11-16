@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build !darwin
+
 package driver
 
 import (
@@ -12,12 +14,8 @@ import (
 // NewPlatformDriver returns the platform driver (using the OS System Proxy when no kernel driver is attached).
 func NewPlatformDriver(dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.LogManager) Driver {
 	sysProxy := NewSysProxyManager(DefaultSysProxyHost, DefaultSysProxyPort)
-	switch runtime.GOOS {
-	case "darwin":
-		return NewSysProxyDriver("macos-sysproxy", sysProxy, dns, tracker, logs)
-	case "windows":
+	if runtime.GOOS == "windows" {
 		return NewSysProxyDriver("windows-sysproxy", sysProxy, dns, tracker, logs)
-	default:
-		return newUnavailableDriver("unsupported", "System traffic interception is not supported on this platform", tracker, logs)
 	}
+	return newUnavailableDriver("unsupported", "System traffic interception is not supported on this platform", tracker, logs)
 }

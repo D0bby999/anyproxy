@@ -53,6 +53,8 @@ jobs:
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_APP_PROVISION_PROFILE: ${{ secrets.MACOS_APP_PROVISION_PROFILE }}
+          MACOS_EXT_PROVISION_PROFILE: ${{ secrets.MACOS_EXT_PROVISION_PROFILE }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -92,7 +94,13 @@ jobs:
             DEV_ID="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
             test -n "$DEV_ID" || { echo "::error::No Developer ID Application identity found in MACOS_CERT_P12" >&2; exit 1; }
 
-            codesign --force --deep --options runtime --timestamp --sign "$DEV_ID" "$APP"
+            if [ -n "${MACOS_APP_PROVISION_PROFILE:-}" ] && [ -n "${MACOS_EXT_PROVISION_PROFILE:-}" ]; then
+              printf '%s' "$MACOS_APP_PROVISION_PROFILE" | base64 --decode > "${RUNNER_TEMP}/app.provisionprofile"
+              printf '%s' "$MACOS_EXT_PROVISION_PROFILE" | base64 --decode > "${RUNNER_TEMP}/ext.provisionprofile"
+              export APP_PROVISION_PROFILE="${RUNNER_TEMP}/app.provisionprofile"
+              export EXT_PROVISION_PROFILE="${RUNNER_TEMP}/ext.provisionprofile"
+            fi
+            SIGN_ID="$DEV_ID" ./macos/build-extension.sh "$APP" "${{ matrix.arch }}"
             codesign --verify --deep --strict "$APP"
 
             # Verify every Mach-O inside bundle carries Developer ID + secure timestamp before notarizing

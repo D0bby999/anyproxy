@@ -25,6 +25,10 @@
         <string>true</string>
         <key>NSHumanReadableCopyright</key>
         <string>{{.Info.Copyright}}</string>
+        <key>NSSystemExtensionUsageDescription</key>
+        <string>AnyProxy needs to install a system extension to intercept and route network traffic for all applications.</string>
+        <key>NSLocalNetworkUsageDescription</key>
+        <string>AnyProxy routes traffic through proxy servers on your local network.</string>
         {{if .Info.FileAssociations}}
         <key>CFBundleDocumentTypes</key>
         <array>

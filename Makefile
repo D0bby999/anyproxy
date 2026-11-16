@@ -20,13 +20,13 @@ dev:
 
 build:
 	$(WAILS) build -clean -platform darwin/$(ARCH) -ldflags "$(LDFLAGS)"
-	codesign --force --deep $(SIGN_FLAGS) --sign "$(SIGN_ID)" $(APP)
+	SIGN_ID="$(SIGN_ID)" ./macos/build-extension.sh $(APP) $(ARCH)
 	codesign --verify --deep --strict $(APP)
 
 sign-macos:
 	@test -n "$(DEV_ID)" || (echo "error: no Developer ID Application certificate found in Keychain" >&2; exit 1)
 	$(WAILS) build -clean -platform darwin/$(ARCH) -ldflags "$(LDFLAGS)"
-	codesign --force --deep --options runtime --timestamp --sign "$(DEV_ID)" $(APP)
+	SIGN_ID="$(DEV_ID)" ./macos/build-extension.sh $(APP) $(ARCH)
 	codesign --verify --deep --strict $(APP)
 
 verify-macos-sig:
