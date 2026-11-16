@@ -556,6 +556,14 @@ class AppProxyProvider: NETransparentProxyProvider {
         )
         
         settings.includedNetworkRules = [allTrafficRule]
+        settings.excludedNetworkRules = [
+            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "127.0.0.0", port: "0"), remotePrefix: 8, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "::1", port: "0"), remotePrefix: 128, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "169.254.0.0", port: "0"), remotePrefix: 16, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "fe80::", port: "0"), remotePrefix: 10, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "224.0.0.0", port: "0"), remotePrefix: 4, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "ff00::", port: "0"), remotePrefix: 8, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+        ]
 
         startUDPSweepTimer()
         diag("Tunnel starting")
@@ -925,6 +933,10 @@ class AppProxyProvider: NETransparentProxyProvider {
         } else {
             destination = String(describing: remoteEndpoint)
             portStr = "unknown"
+        }
+
+        if Self.isLocalOrMulticastAddress(destination) {
+            return false
         }
         
         let identity = getProcessIdentity(from: metaData)
@@ -1941,6 +1953,20 @@ class AppProxyProvider: NETransparentProxyProvider {
         return wildcardRule
     }
     
+    private static func isLocalOrMulticastAddress(_ ip: String) -> Bool {
+        let lower = ip.lowercased()
+        if lower == "localhost" || lower == "::1" || lower == "::" || lower == "0.0.0.0" {
+            return true
+        }
+        if lower.hasPrefix("127.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("ff") {
+            return true
+        }
+        if let firstDot = lower.firstIndex(of: "."), let firstOctet = Int(lower[..<firstDot]), firstOctet >= 224 && firstOctet <= 239 {
+            return true
+        }
+        return false
+    }
+
     private func sendLogToApp(protocol: String, process: String, destination: String, port: String, proxy: String) {
         guard trafficLoggingEnabled else { return }
         appendLog(.connection(proto: `protocol`, process: process, destination: destination, port: port, proxy: proxy))
