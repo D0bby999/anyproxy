@@ -9,7 +9,7 @@ Tài liệu này hướng dẫn cách cài đặt, cấu hình và sử dụng *
 AnyProxy vận hành theo mô hình **2 tầng**:
 
 1. **Local Inbound Proxy (`127.0.0.1:10800`)** — Tự động lắng nghe ngay khi ứng dụng khởi động, hỗ trợ cả **SOCKS5** (`CONNECT`) và **HTTP / HTTPS (`CONNECT`)**. Mọi kết nối đi qua cổng này đều được dò tiến trình nguồn (`PID` và tên ứng dụng qua `netstat` + `ps`/`tasklist`) để áp dụng đúng **Routing Rules**.
-2. **OS System Proxy (`Enable AnyProxy`)** — Khi bạn bấm **Enable AnyProxy** (hoặc chạy CLI), AnyProxy cấu hình System Proxy của hệ điều hành (qua `networksetup` trên macOS hoặc Registry `Internet Settings` trên Windows) trỏ HTTP, HTTPS và SOCKS5 về `127.0.0.1:10800`. Khi bấm **Disable AnyProxy** hoặc thoát app, cài đặt System Proxy được tự động tắt.
+2. **OS System Proxy / Network Extension (`Enable AnyProxy`)** — Trên macOS bản chính thức (đã nhúng Network Extension), lần đầu bấm **Connect / Enable** bạn cần bật quyền 1 lần: vào **System Settings → General → Login Items & Extensions**, cuộn xuống mục **Network Extensions** → bấm biểu tượng **`ⓘ`** bên phải → gạt **Bật** cho **AnyProxy Network Extension** (và bấm **Allow** nếu macOS hỏi thêm cấu hình Proxy/DNS). Khi dùng chế độ fallback `macos-sysproxy` hoặc Windows, AnyProxy cấu hình OS System Proxy trỏ về `127.0.0.1:10800`.
 
 > **Mẹo:** Nếu bạn chỉ muốn định tuyến một trình duyệt hoặc công cụ cụ thể (như `curl`, AnyProfile) mà không đổi System Proxy toàn máy, bạn không cần bấm **Enable AnyProxy** — chỉ cần trỏ ứng dụng đó vào `127.0.0.1:10800`.
 

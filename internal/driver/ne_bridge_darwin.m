@@ -64,7 +64,7 @@ int anyproxy_ne_available(const char *extBundleID) {
 }
 - (void)requestNeedsUserApproval:(OSSystemExtensionRequest *)request {
     self.needsApproval = YES;
-    self.errorMessage = @"System Extension requires approval in System Settings -> Privacy & Security";
+    self.errorMessage = @"System Extension cần được bật 1 lần: mở System Settings -> General -> Login Items & Extensions -> cuộn xuống mục Network Extensions -> bấm biểu tượng ⓘ bên phải -> gạt Bật cho AnyProxy Network Extension.";
     dispatch_semaphore_signal(self.sema);
 }
 - (OSSystemExtensionReplacementAction)request:(OSSystemExtensionRequest *)request
