@@ -47,6 +47,23 @@ function defaultRuleName(r: ProxyRule): string {
   return `${verb} ${subject}`.trim()
 }
 
+type QuickAppOption = { label: string; value: string }
+
+const QUICK_APP_PRESETS: QuickAppOption[] = [
+  { label: 'Google Chrome (+ Helper)', value: 'Google Chrome*; *com.google.Chrome*' },
+  { label: 'Google Drive (+ Helper)', value: 'Google Drive*; *drivefs*' },
+  { label: 'AnyProfile (+ Browser)', value: 'AnyProfile*; org.chromium.Chromium*' },
+  { label: 'Safari (+ Helper)', value: 'Safari*; com.apple.Safari*' },
+  { label: 'Antigravity (+ agy)', value: 'Antigravity*; *antigravity*' },
+  { label: 'Muse (Meta)', value: 'Muse*; com.meta.endo*' },
+  { label: 'League of Legends', value: 'League of Legends*' },
+  { label: 'Telegram', value: 'Telegram' },
+  { label: 'Cursor', value: 'Cursor' },
+  { label: 'curl', value: 'curl' },
+  { label: 'git', value: 'git' },
+  { label: 'node', value: 'node' },
+]
+
 export function RulesPage({
   rules,
   proxies,
@@ -87,23 +104,13 @@ export function RulesPage({
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
 
-  const quickAppCandidates = Array.from(
-    new Set([
-      ...knownApps.filter((a) => a && a !== 'local-client' && a !== 'AnyProxy'),
-      'Google Chrome*; *com.google.Chrome*',
-      'Google Drive*; *drivefs*',
-      'AnyProfile*; org.chromium.Chromium*',
-      'Safari*; com.apple.Safari*',
-      'Antigravity*; *antigravity*',
-      'Muse*; com.meta.endo*',
-      'League of Legends*',
-      'Telegram',
-      'Cursor',
-      'curl',
-      'git',
-      'node',
-    ])
-  ).slice(0, 20)
+  const presetValues = new Set(QUICK_APP_PRESETS.map((p) => p.value))
+  const quickAppCandidates: QuickAppOption[] = [
+    ...knownApps
+      .filter((a) => a && a !== 'local-client' && a !== 'AnyProxy' && !presetValues.has(a))
+      .map((a) => ({ label: a, value: a })),
+    ...QUICK_APP_PRESETS,
+  ].slice(0, 20)
 
   const handleOpenAdd = () => {
     setError('')
@@ -555,7 +562,7 @@ function RuleEditorDialog({
   rules: ProxyRule[]
   proxies: ProxyConfig[]
   defaultProxyId: string
-  quickAppCandidates: string[]
+  quickAppCandidates: QuickAppOption[]
   error: string
   saving: boolean
   onChange: (next: ProxyRule) => void
@@ -596,7 +603,7 @@ function RuleEditorDialog({
     ...draftTokens.filter((tok) => !selectedTokens.includes(tok)),
   ]
   const availableQuickApps = quickAppCandidates.filter((preset) => {
-    const tokens = parseAppTokens(preset)
+    const tokens = parseAppTokens(preset.value)
     return tokens.length > 0 && tokens.some((tok) => !selectedTokens.includes(tok))
   })
   const targetsValue = editing.targetHosts
@@ -652,8 +659,6 @@ function RuleEditorDialog({
         : t.rules.actionDirect
 
   const advancedParts: string[] = []
-  if (editing.action !== 'proxy') advancedParts.push(actionVerb(editing.action))
-  else if (editing.proxyConfigId && matchedProxy) advancedParts.push(matchedProxy.name)
   if (hostsSummary !== '*') advancedParts.push(hostsSummary)
   if (portsSummary !== '*') advancedParts.push(`:${portsSummary}`)
   if (editing.protocol !== 'both') advancedParts.push(protoLabel)
@@ -760,92 +765,149 @@ function RuleEditorDialog({
                 </button>
               </div>
 
-              <div className="rule-apps-row">
-                <div className="rule-app-input-wrap">
-                  <input
-                    ref={appsRef}
-                    id="rule-apps"
-                    className="input"
-                    value={appDraft}
-                    onChange={(e) => onAppDraftChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ',' || e.key === ';') {
-                        if (appDraft.trim()) {
-                          e.preventDefault()
-                          onCommitAppDraft()
-                        }
-                      }
-                    }}
-                    onBlur={() => {
-                      if (appDraft.trim()) onCommitAppDraft()
-                    }}
-                    placeholder={appMode === 'exclude' ? t.rules.excludeHint : t.rules.processHint}
-                    spellCheck={false}
-                  />
-                  <button
-                    type="button"
-                    className="iconbtn sm"
-                    disabled={!appDraft.trim()}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={onCommitAppDraft}
-                    aria-label={t.rules.addAppBtn}
-                    title={t.rules.addAppBtn}
-                  >
-                    <Icon name="plus" className="icon sm" />
-                  </button>
+              {appMode === 'all' ? (
+                <span className="hint">{t.rules.noAppsSelected}</span>
+              ) : (
+                <>
+                  <div className="rule-apps-row">
+                    <div className="rule-app-input-wrap">
+                      <input
+                        ref={appsRef}
+                        id="rule-apps"
+                        className="input"
+                        value={appDraft}
+                        onChange={(e) => onAppDraftChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',' || e.key === ';') {
+                            if (appDraft.trim()) {
+                              e.preventDefault()
+                              onCommitAppDraft()
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (appDraft.trim()) onCommitAppDraft()
+                        }}
+                        placeholder={appMode === 'exclude' ? t.rules.excludeHint : t.rules.processHint}
+                        spellCheck={false}
+                      />
+                      <button
+                        type="button"
+                        className="iconbtn sm"
+                        disabled={!appDraft.trim()}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={onCommitAppDraft}
+                        aria-label={t.rules.addAppBtn}
+                        title={t.rules.addAppBtn}
+                      >
+                        <Icon name="plus" className="icon sm" />
+                      </button>
+                    </div>
+                    {availableQuickApps.length > 0 && (
+                      <select
+                        className="select rule-app-picker"
+                        aria-label={t.rules.quickApps}
+                        value=""
+                        onChange={(e) => {
+                          const picked = e.target.value
+                          if (picked) onAddApps(parseAppTokens(picked))
+                        }}
+                      >
+                        <option value="">{t.rules.pickAppPlaceholder}</option>
+                        {availableQuickApps.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {onBrowseExecutable && (
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => void onBrowseExecutable()}
+                      >
+                        <Icon name="folder" />
+                        {t.rules.browseApp}
+                      </button>
+                    )}
+                  </div>
+                  <div className="selected-chip-bar" role="list" aria-label={t.rules.selectedApps}>
+                    {selectedTokens.length === 0 ? (
+                      <span className="hint">
+                        {appMode === 'exclude' ? t.rules.excludeRequired : t.rules.noAppsSelected}
+                      </span>
+                    ) : (
+                      selectedTokens.map((appName) => (
+                        <span key={appName} className="app-chip" role="listitem">
+                          <span className="app-chip-name" title={appName}>{appName}</span>
+                          <button
+                            type="button"
+                            className="app-chip-remove"
+                            onClick={() => onRemoveApp(appName)}
+                            aria-label={`${t.rules.removeApp} ${appName}`}
+                            title={`${t.rules.removeApp} ${appName}`}
+                          >
+                            <Icon name="close" className="icon xs" />
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="rule-group">
+            <div className="rule-route-grid">
+              <div className="field">
+                <span id="rule-action-label" className="field-label">{t.rules.action}</span>
+                <div className="seg rule-seg-full" role="group" aria-labelledby="rule-action-label">
+                  {actions.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      aria-pressed={editing.action === a.id}
+                      onClick={() => onChange({ ...editing, action: a.id })}
+                    >
+                      <span className={`rule-action-dot ${a.id}`} aria-hidden="true" />
+                      {a.label}
+                    </button>
+                  ))}
                 </div>
-                {availableQuickApps.length > 0 && (
+              </div>
+
+              {editing.action === 'proxy' ? (
+                <div className="field">
+                  <label htmlFor="rule-proxy">{t.rules.selectProxy}</label>
                   <select
-                    className="select rule-app-picker"
-                    aria-label={t.rules.quickApps}
-                    value=""
-                    onChange={(e) => {
-                      const picked = e.target.value
-                      if (picked) onAddApps(parseAppTokens(picked))
-                    }}
+                    id="rule-proxy"
+                    className="select"
+                    value={editing.proxyConfigId || ''}
+                    onChange={(e) => onChange({ ...editing, proxyConfigId: e.target.value })}
                   >
-                    <option value="">{t.rules.pickAppPlaceholder}</option>
-                    {availableQuickApps.map((appName) => (
-                      <option key={appName} value={appName}>
-                        {appName}
+                    <option value="">{t.rules.defaultProxy}</option>
+                    {proxies.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
                       </option>
                     ))}
                   </select>
-                )}
-                {onBrowseExecutable && (
-                  <button
-                    type="button"
-                    className="btn sm"
-                    onClick={() => void onBrowseExecutable()}
-                  >
-                    <Icon name="folder" />
-                    {t.rules.browseApp}
-                  </button>
-                )}
-              </div>
-              <div className="selected-chip-bar" role="list" aria-label={t.rules.selectedApps}>
-                {selectedTokens.length === 0 ? (
-                  <span className="hint">
-                    {appMode === 'exclude' ? t.rules.excludeRequired : t.rules.noAppsSelected}
-                  </span>
-                ) : (
-                  selectedTokens.map((appName) => (
-                    <span key={appName} className="app-chip" role="listitem">
-                      <span className="app-chip-name" title={appName}>{appName}</span>
-                      <button
-                        type="button"
-                        className="app-chip-remove"
-                        onClick={() => onRemoveApp(appName)}
-                        aria-label={`${t.rules.removeApp} ${appName}`}
-                        title={`${t.rules.removeApp} ${appName}`}
-                      >
-                        <Icon name="close" className="icon xs" />
-                      </button>
-                    </span>
-                  ))
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="field">
+                  <span className="field-label">{t.rules.routeOutcome}</span>
+                  <div className="rule-outcome">
+                    {editing.action === 'block' ? t.rules.blockOutcome : t.rules.directOutcome}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {editing.action === 'proxy' && proxies.length === 0 && (
+              <span className="hint">{t.rules.noProxiesHint}</span>
+            )}
           </div>
 
           <button
@@ -862,55 +924,6 @@ function RuleEditorDialog({
 
           {showAdvanced && (
             <div id="rule-advanced-panel" className="rule-group">
-              <div className="rule-route-grid">
-                <div className="field">
-                  <span id="rule-action-label" className="field-label">{t.rules.action}</span>
-                  <div className="seg rule-seg-full" role="group" aria-labelledby="rule-action-label">
-                    {actions.map((a) => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        aria-pressed={editing.action === a.id}
-                        onClick={() => onChange({ ...editing, action: a.id })}
-                      >
-                        <span className={`rule-action-dot ${a.id}`} aria-hidden="true" />
-                        {a.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {editing.action === 'proxy' ? (
-                  <div className="field">
-                    <label htmlFor="rule-proxy">{t.rules.selectProxy}</label>
-                    <select
-                      id="rule-proxy"
-                      className="select"
-                      value={editing.proxyConfigId || ''}
-                      onChange={(e) => onChange({ ...editing, proxyConfigId: e.target.value })}
-                    >
-                      <option value="">{t.rules.defaultProxy}</option>
-                      {proxies.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div className="field">
-                    <span className="field-label">{t.rules.routeOutcome}</span>
-                    <div className="rule-outcome">
-                      {editing.action === 'block' ? t.rules.blockOutcome : t.rules.directOutcome}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {editing.action === 'proxy' && proxies.length === 0 && (
-                <span className="hint">{t.rules.noProxiesHint}</span>
-              )}
-
               <div className="rule-grid">
                 <div className="field">
                   <label htmlFor="rule-targets">{t.rules.targets}</label>

@@ -45,7 +45,15 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   expect(within(dialog).queryByLabelText(t.rules.targets)).toBeNull()
   expect(within(dialog).queryByLabelText(t.rules.ports)).toBeNull()
 
-  // Selecting multiple apps adds removable chips; no apps show before selection.
+  // Action & Proxy selector are immediately visible outside Advanced.
+  await user.click(within(dialog).getByRole('button', { name: t.rules.actionBlock }))
+  expect(within(dialog).queryByLabelText(t.rules.selectProxy)).toBeNull()
+  await user.click(within(dialog).getByRole('button', { name: t.rules.actionProxy }))
+  const proxySelect = within(dialog).getByLabelText(t.rules.selectProxy) as HTMLSelectElement
+  await user.selectOptions(proxySelect, 'p1')
+
+  // Switching to "Only these" reveals app input, Quick pick, and chip bar.
+  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
   const picker = within(dialog).getByLabelText(t.rules.quickApps) as HTMLSelectElement
   await user.selectOptions(picker, 'Google Chrome*; *com.google.Chrome*')
   await user.selectOptions(picker, 'Cursor')
@@ -66,12 +74,6 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   // Expanding Advanced reveals protocol/targets/ports.
   await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
   await user.click(within(dialog).getByRole('button', { name: t.rules.tcp }))
-  await user.click(within(dialog).getByRole('button', { name: t.rules.actionBlock }))
-  expect(within(dialog).queryByLabelText(t.rules.selectProxy)).toBeNull()
-
-  await user.click(within(dialog).getByRole('button', { name: t.rules.actionProxy }))
-  const proxySelect = within(dialog).getByLabelText(t.rules.selectProxy) as HTMLSelectElement
-  await user.selectOptions(proxySelect, 'p1')
 
   expect(dialog.textContent).toContain('Google Chrome*, *com.google.Chrome*, curl · *:* · TCP')
   expect(dialog.textContent).toContain(`${t.rules.actionProxy}: US Static`)
@@ -193,12 +195,12 @@ it('keeps focus in other rule inputs while typing instead of jumping back to Rul
   await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
   const nameInput = within(dialog).getByLabelText(t.rules.name) as HTMLInputElement
-  const appsInput = within(dialog).getByLabelText(t.rules.applications) as HTMLInputElement
 
   // Initial mount still focuses Rule name.
   expect(document.activeElement).toBe(nameInput)
 
-  await user.click(appsInput)
+  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
+  const appsInput = within(dialog).getByLabelText(t.rules.applications) as HTMLInputElement
   await user.type(appsInput, 'curl')
   expect(appsInput.value).toBe('curl')
   expect(document.activeElement).toBe(appsInput)
@@ -258,11 +260,11 @@ it('lets users save app directly without clearing "*", opens Advanced when editi
 
   await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
+  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
   const appsInput = within(dialog).getByLabelText(t.rules.applications) as HTMLInputElement
 
   await user.click(appsInput)
   await user.type(appsInput, 'curl')
-  await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
   await user.click(within(dialog).getByRole('button', { name: t.rules.actionDirect }))
   expect(within(dialog).queryByLabelText(t.rules.selectProxy)).toBeNull()
   expect(dialog.textContent).toContain(t.rules.directOutcome)
