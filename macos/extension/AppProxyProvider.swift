@@ -695,7 +695,38 @@ class AppProxyProvider: NETransparentProxyProvider {
         }
     }
 
+    private struct LiveFlowInfo {
+        let id: String
+        let processName: String
+        let destIp: String
+        let host: String
+        let port: UInt16
+        let isUdp: Bool
+        let proxyLabel: String
+        let startedAt: Date
+    }
+    private var activeFlows: [ObjectIdentifier: LiveFlowInfo] = [:]
+    private let activeFlowsLock = NSLock()
+    private var nextFlowSeq: UInt64 = 1
+
+    private func registerLiveFlow(_ flow: NEAppProxyFlow, process: String, destIp: String, host: String, port: UInt16, isUdp: Bool, proxyLabel: String) {
+        let key = ObjectIdentifier(flow)
+        activeFlowsLock.lock()
+        let seq = nextFlowSeq
+        nextFlowSeq += 1
+        activeFlows[key] = LiveFlowInfo(id: "ne-\(seq)", processName: process, destIp: destIp, host: host, port: port, isUdp: isUdp, proxyLabel: proxyLabel, startedAt: Date())
+        activeFlowsLock.unlock()
+    }
+
+    private func unregisterLiveFlow(_ flow: NEAppProxyFlow) {
+        let key = ObjectIdentifier(flow)
+        activeFlowsLock.lock()
+        activeFlows.removeValue(forKey: key)
+        activeFlowsLock.unlock()
+    }
+
     private func closeRelay(_ flow: NEAppProxyTCPFlow, _ connection: NWTCPConnection, error: Error? = nil) {
+        unregisterLiveFlow(flow)
         connection.cancel()
         flow.closeReadWithError(error)
         flow.closeWriteWithError(error)
@@ -709,6 +740,23 @@ class AppProxyProvider: NETransparentProxyProvider {
         }
         
         switch action {
+        case "getFlows":
+            let now = Date()
+            activeFlowsLock.lock()
+            let list: [[String: Any]] = activeFlows.values.map { f in
+                [
+                    "id": f.id,
+                    "processName": f.processName,
+                    "destIp": f.destIp,
+                    "host": f.host,
+                    "port": Int(f.port),
+                    "isUdp": f.isUdp,
+                    "proxyLabel": f.proxyLabel,
+                    "ageMs": Int(now.timeIntervalSince(f.startedAt) * 1000),
+                ]
+            }
+            activeFlowsLock.unlock()
+            completionHandler?(try? JSONSerialization.data(withJSONObject: list))
         case "getLogs":
             logQueueLock.lock()
             if logCount > 0 {
@@ -915,6 +963,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                     return false
                 }
                 sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
+                registerLiveFlow(flow, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
                 return true
             }
@@ -924,6 +973,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             proxyLock.unlock()
             if let config = defConfig {
                 sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
+                registerLiveFlow(flow, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
                 return true
             }
@@ -1015,6 +1065,7 @@ class AppProxyProvider: NETransparentProxyProvider {
     // handshake failed before an association existed, so drop the control
     // connection and close the flow instead of leaking them
     private func failUDPHandshake(_ clientFlow: NEAppProxyUDPFlow, _ tcpConnection: NWTCPConnection, _ reason: String) {
+        unregisterLiveFlow(clientFlow)
         log(reason, level: "ERROR")
         tcpConnection.cancel()
         clientFlow.closeReadWithError(nil)

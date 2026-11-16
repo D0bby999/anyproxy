@@ -312,6 +312,7 @@ func (d *NEDriver) startPoller() {
 				return
 			case <-ticker.C:
 				d.drainLogs()
+				d.syncFlows()
 			}
 		}
 	}()
@@ -356,4 +357,19 @@ func (d *NEDriver) drainLogs() {
 			})
 		}
 	}
+}
+
+func (d *NEDriver) syncFlows() {
+	if d.tracker == nil {
+		return
+	}
+	resp, err := d.sendActionWithResponse(map[string]any{"action": "getFlows"})
+	if err != nil || len(resp) == 0 {
+		return
+	}
+	var extFlows []flows.Flow
+	if err := json.Unmarshal(resp, &extFlows); err != nil {
+		return
+	}
+	d.tracker.ReplaceFromExternal(extFlows)
 }
