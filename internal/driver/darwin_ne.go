@@ -109,6 +109,19 @@ func (d *NEDriver) Start(ctx context.Context) error {
 
 func (d *NEDriver) Stop() error {
 	d.stopPoller()
+
+	d.mu.Lock()
+	wasActive := d.state == StateRunning || d.state == StatePaused
+	d.mu.Unlock()
+	if !wasActive {
+		d.mu.Lock()
+		d.state = StateStopped
+		d.enabled = false
+		d.message = "Network Extension stopped"
+		d.mu.Unlock()
+		return nil
+	}
+
 	_ = d.sendAction(map[string]any{"action": "clearConfig"})
 
 	var errBuf [1024]C.char

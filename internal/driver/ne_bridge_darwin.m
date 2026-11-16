@@ -74,7 +74,30 @@ int anyproxy_ne_available(const char *extBundleID) {
 }
 @end
 
+static NETransparentProxyManager *s_cachedManager = nil;
+
+// Waits for sema without deadlocking main-queue completion handlers when called on the main thread.
+static BOOL wait_sema(dispatch_semaphore_t sema, double timeoutSec) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutSec];
+    if ([NSThread isMainThread]) {
+        while (dispatch_semaphore_wait(sema, DISPATCH_TIME_NOW) != 0) {
+            if ([deadline timeIntervalSinceNow] <= 0) {
+                return NO;
+            }
+            @autoreleasepool {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+            }
+        }
+        return YES;
+    }
+    return dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutSec * NSEC_PER_SEC))) == 0;
+}
+
 static NETransparentProxyManager *load_proxy_manager(NSError **outErr) {
+    if (s_cachedManager) {
+        if (outErr) *outErr = nil;
+        return s_cachedManager;
+    }
     __block NETransparentProxyManager *found = nil;
     __block NSError *loadErr = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -83,7 +106,10 @@ static NETransparentProxyManager *load_proxy_manager(NSError **outErr) {
         found = managers.firstObject;
         dispatch_semaphore_signal(sema);
     }];
-    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    wait_sema(sema, 5.0);
+    if (found) {
+        s_cachedManager = found;
+    }
     if (outErr) *outErr = loadErr;
     return found;
 }
@@ -100,7 +126,7 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
         req.delegate = del;
         [[OSSystemExtensionManager sharedManager] submitRequest:req];
 
-        if (dispatch_semaphore_wait(del.sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC)) != 0) {
+        if (!wait_sema(del.sema, 30.0)) {
             write_cstr(errBuf, errLen, @"Timed out waiting for System Extension activation");
             return -1;
         }
@@ -135,7 +161,7 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
             saveErr = error;
             dispatch_semaphore_signal(saveSema);
         }];
-        dispatch_semaphore_wait(saveSema, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+        wait_sema(saveSema, 10.0);
         if (saveErr) {
             write_cstr(errBuf, errLen, saveErr.localizedDescription);
             return -1;
@@ -147,11 +173,12 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
             reloadErr = error;
             dispatch_semaphore_signal(reloadSema);
         }];
-        dispatch_semaphore_wait(reloadSema, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+        wait_sema(reloadSema, 10.0);
         if (reloadErr) {
             write_cstr(errBuf, errLen, reloadErr.localizedDescription);
             return -1;
         }
+        s_cachedManager = manager;
 
         // Configure NEDNSProxyManager so DNS queries map IP <-> domain cleanly.
         NEDNSProxyManager *dns = [NEDNSProxyManager sharedManager];
@@ -170,7 +197,7 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
                 dispatch_semaphore_signal(dnsSema);
             }
         }];
-        dispatch_semaphore_wait(dnsSema, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+        wait_sema(dnsSema, 5.0);
 
         NSError *startErr = nil;
         if (![manager.connection startVPNTunnelAndReturnError:&startErr]) {
@@ -204,7 +231,7 @@ int anyproxy_ne_stop(char *errBuf, int errLen) {
                 dispatch_semaphore_signal(dnsSema);
             }
         }];
-        dispatch_semaphore_wait(dnsSema, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+        wait_sema(dnsSema, 2.0);
         return 0;
     }
 }
@@ -259,7 +286,7 @@ int anyproxy_ne_send_message(const char *jsonStr, char *outBuf, int outLen, char
             write_cstr(errBuf, errLen, sendErr.localizedDescription ?: @"sendProviderMessage failed");
             return -1;
         }
-        if (dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0 || !completed) {
+        if (!wait_sema(sema, 3.0) || !completed) {
             write_cstr(errBuf, errLen, @"Timed out waiting for extension response");
             return -1;
         }
