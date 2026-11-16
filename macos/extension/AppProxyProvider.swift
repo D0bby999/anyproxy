@@ -1903,9 +1903,30 @@ class AppProxyProvider: NETransparentProxyProvider {
                 continue
             }
 
-            let procMatched = m.matchesProcess(flowProcess)
-            let matchesProc = rule.excludeProcess ? !procMatched : procMatched
-            if matchesProc {
+            if rule.excludeProcess {
+                if m.matchesProcess(flowProcess) {
+                    // Excluded from this rule -> keep DIRECT instead of falling back to defaultProxyId.
+                    return ProxyRule(
+                        ruleId: rule.ruleId,
+                        processNames: rule.processNames,
+                        targetHosts: rule.targetHosts,
+                        targetPorts: rule.targetPorts,
+                        ruleProtocol: rule.ruleProtocol,
+                        action: "DIRECT",
+                        enabled: true,
+                        excludeProcess: false
+                    )
+                }
+                if checkIpPort {
+                    if m.matchesHost(ip: destination, domains: domainChars) && m.matchesPort(port) {
+                        return rule
+                    }
+                } else {
+                    return rule
+                }
+                continue
+            }
+            if m.matchesProcess(flowProcess) {
                 if checkIpPort {
                     if m.matchesHost(ip: destination, domains: domainChars) && m.matchesPort(port) {
                         return rule
