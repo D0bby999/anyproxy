@@ -12,6 +12,8 @@ EXT_MACOS="$EXT_DIR/Contents/MacOS"
 
 mkdir -p "$EXT_MACOS"
 cp macos/extension/Info.plist "$EXT_DIR/Contents/Info.plist"
+EXT_BUILD_NUM="${GITHUB_RUN_NUMBER:-$(date +%s)}"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $EXT_BUILD_NUM" "$EXT_DIR/Contents/Info.plist"
 
 if [ "$ARCH" = "universal" ]; then
     xcrun swiftc -target arm64-apple-macos11.0 -module-name AnyProxyExtension -O \
