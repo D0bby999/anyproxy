@@ -54,7 +54,6 @@ const QUICK_APP_PRESETS: QuickAppOption[] = [
   { label: 'Google Drive (+ Helper)', value: 'Google Drive*; *drivefs*' },
   { label: 'AnyProfile (+ Browser)', value: 'AnyProfile*; org.chromium.Chromium*' },
   { label: 'Safari (+ Helper)', value: 'Safari*; com.apple.Safari*' },
-  { label: 'Antigravity (+ agy)', value: 'Antigravity*; *antigravity*' },
   { label: 'Muse (Meta)', value: 'Muse*; com.meta.endo*' },
   { label: 'League of Legends (+ Game/Riot)', value: 'League of Legends*; *LeagueofLegends*; *com.riotgames*' },
   { label: 'Telegram', value: 'Telegram' },
