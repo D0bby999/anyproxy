@@ -25,6 +25,8 @@ const mockProxies: ProxyConfig[] = [
     description: 'Local mixed rule provider proxy',
     latencyMs: 2,
     lastChecked: Date.now() - 120000,
+    country: 'SG',
+    exitIp: '103.21.244.10',
   },
   {
     id: 'px-burp',
@@ -36,6 +38,8 @@ const mockProxies: ProxyConfig[] = [
     description: 'Burp Suite web inspection proxy',
     latencyMs: 4,
     lastChecked: Date.now() - 300000,
+    country: 'US',
+    exitIp: '198.51.100.42',
   },
   {
     id: 'px-wireguard',
@@ -49,6 +53,8 @@ const mockProxies: ProxyConfig[] = [
     description: 'Dedicated cloud egress gateway',
     latencyMs: 38,
     lastChecked: Date.now() - 450000,
+    country: 'DE',
+    exitIp: '185.10.20.30',
   },
 ]
 

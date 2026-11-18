@@ -43,6 +43,8 @@ export function ImportProfileJSON(arg1:string,arg2:boolean):Promise<pbprofile.Pr
 
 export function ImportRulesJSON(arg1:string):Promise<pbprofile.Profile>;
 
+export function InstallUpdate():Promise<void>;
+
 export function ListProfiles():Promise<service.ProfileListSummary>;
 
 export function MoveRule(arg1:string,arg2:number):Promise<pbprofile.Profile>;

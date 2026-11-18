@@ -539,3 +539,42 @@ func TestHTTPSConnectTLSAndChecker(t *testing.T) {
 		t.Fatalf("expected HTTPS in UDP skip message, got %q", report.Steps[4].Message)
 	}
 }
+
+func TestLookupExitLocation(t *testing.T) {
+	geoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ip":"185.10.20.30","country":"de"}`)
+	}))
+	defer geoSrv.Close()
+
+	geoHost, geoPortStr, err := net.SplitHostPort(strings.TrimPrefix(geoSrv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("split geo addr: %v", err)
+	}
+	geoPort, err := strconv.Atoi(geoPortStr)
+	if err != nil {
+		t.Fatalf("atoi geo port: %v", err)
+	}
+
+	origHost, origPort, origTLS := geoLookupHost, geoLookupPort, geoLookupUseTLS
+	geoLookupHost = geoHost
+	geoLookupPort = uint16(geoPort)
+	geoLookupUseTLS = false
+	t.Cleanup(func() {
+		geoLookupHost = origHost
+		geoLookupPort = origPort
+		geoLookupUseTLS = origTLS
+	})
+
+	srv := startFakeSOCKS5(t, "", "", false)
+	host, port := srv.hostPort()
+
+	up := Upstream{ID: "loc-1", Name: "DE Node", Type: "SOCKS5", Host: host, Port: port}
+	report := CheckProxyEx(context.Background(), up, geoHost, uint16(geoPort), nil)
+	if !report.Success {
+		t.Fatalf("expected CheckProxyEx success, got %+v", report)
+	}
+	if report.ExitIP != "185.10.20.30" || report.Country != "DE" {
+		t.Fatalf("unexpected location: ip=%q country=%q", report.ExitIP, report.Country)
+	}
+}

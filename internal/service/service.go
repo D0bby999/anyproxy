@@ -523,6 +523,25 @@ func (s *Service) TestProxy(ctx context.Context, proxyID, targetHost string, tar
 		s.emit("proxy:check-step", step)
 	})
 	s.logs.LogActivity("INFO", fmt.Sprintf("Proxy check %s (%s): %s", target.Label(), report.Target, report.Summary))
+	if report.Success && (report.Country != "" || report.ExitIP != "") &&
+		(target.Country != report.Country || target.ExitIP != report.ExitIP) {
+		if fresh, ferr := s.store.ActiveProfile(); ferr == nil {
+			updated := false
+			for i := range fresh.Proxies {
+				if fresh.Proxies[i].ID == proxyID {
+					fresh.Proxies[i].Country = report.Country
+					fresh.Proxies[i].ExitIP = report.ExitIP
+					updated = true
+					break
+				}
+			}
+			if updated {
+				if saved, serr := s.store.SaveProfile(fresh, true); serr == nil {
+					s.emit("profile:changed", saved.Name)
+				}
+			}
+		}
+	}
 	return report, nil
 }
 

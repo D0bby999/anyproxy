@@ -17,6 +17,8 @@ export interface ProxyConfig {
   description?: string
   latencyMs?: number
   lastChecked?: number
+  country?: string
+  exitIp?: string
 }
 
 export interface ProxyRule {
@@ -147,7 +149,22 @@ export interface CheckReport {
   steps: CheckStep[]
   summary: string
   resolvedIP?: string
+  exitIp?: string
+  country?: string
   responseStatus?: string
   totalDurationMs: number
+}
+
+export function countryFlag(code?: string): string {
+  const c = (code || '').trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(c)) return ''
+  return String.fromCodePoint(...[...c].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65))
+}
+
+export function formatProxyLocation(country?: string): string {
+  const c = (country || '').trim().toUpperCase()
+  if (!c) return ''
+  const flag = countryFlag(c)
+  return flag ? `${flag} ${c}` : c
 }
 

@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { t } from '../i18n'
 import { Icon, LogoMark } from './icons'
 import { BuyProxies } from './buy-proxies'
-import type { CheckReport, EngineStatus, ProfileListSummary, ProxyConfig } from '../types'
+import { formatProxyLocation, type CheckReport, type EngineStatus, type ProfileListSummary, type ProxyConfig } from '../types'
 
 export type Page = 'connections' | 'activity' | 'proxies' | 'rules' | 'settings'
 
@@ -174,11 +174,15 @@ export function Sidebar({
             }}
           >
             <option value="">{t.engine.direct}</option>
-            {proxies.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
-              </option>
-            ))}
+            {proxies.map((p) => {
+              const loc = formatProxyLocation(p.country)
+              return (
+                <option key={p.id} value={p.id}>
+                  {loc ? `${loc} · ` : ''}
+                  {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
+                </option>
+              )
+            })}
           </select>
           {activePing && activePx && (
             <div className="quick-proxy-ping">

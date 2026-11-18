@@ -199,3 +199,29 @@ it('requires confirmation when deleting from the edit modal', async () => {
   fireEvent.click(within(confirmDialog).getByRole('button', { name: t.actions.delete }))
   expect(onDeleteProxy).toHaveBeenCalledWith('1')
 })
+
+it('shows persisted and live-checked proxy country badges', async () => {
+  const proxies = [
+    { id: '1', name: 'US Node', type: 'socks5', host: '1.1.1.1', port: 1080, country: 'US', exitIp: '198.51.100.1' },
+    { id: '2', name: 'EU Node', type: 'socks5', host: '2.2.2.2', port: 1080 },
+  ] as ProxyConfig[]
+  const onTestProxy = vi.fn().mockResolvedValue({
+    ok: true,
+    success: true,
+    avgMs: 42,
+    country: 'DE',
+    exitIp: '185.10.20.30',
+    summary: 'SOCKS5 proxy OK',
+    target: '1.1.1.1:443',
+    proxyType: 'SOCKS5',
+    steps: [],
+    totalDurationMs: 42,
+  })
+  render(<ProxiesPage proxies={proxies} defaultProxyId="1" onSaveProxy={vi.fn()} onDeleteProxy={vi.fn()} onSetDefault={vi.fn()} onTestProxy={onTestProxy} />)
+
+  expect(screen.getByTitle('US · 198.51.100.1').textContent).toContain('US')
+
+  const testButtons = screen.getAllByRole('button', { name: t.actions.test })
+  fireEvent.click(testButtons[1])
+  await waitFor(() => expect(screen.getByTitle('DE · 185.10.20.30').textContent).toContain('DE'))
+})

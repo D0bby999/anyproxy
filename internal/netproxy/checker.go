@@ -5,8 +5,10 @@ package netproxy
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +47,8 @@ type CheckReport struct {
 	AvgMs      int64       `json:"avgMs"`
 	MaxMs      int64       `json:"maxMs"`
 	Summary    string      `json:"summary"`
+	ExitIP     string      `json:"exitIp,omitempty"`
+	Country    string      `json:"country,omitempty"`
 	Steps      []CheckStep `json:"steps"`
 	FinishedAt string      `json:"finishedAt"`
 }
@@ -245,6 +249,7 @@ func CheckProxyEx(ctx context.Context, u Upstream, targetHost string, targetPort
 		})
 	}
 
+	report.ExitIP, report.Country = LookupExitLocation(ctx, u)
 	report.Success = true
 	if report.AvgMs > 0 {
 		report.Summary = fmt.Sprintf("%s proxy OK (avg %d ms)", u.NormalizedType(), report.AvgMs)
@@ -253,6 +258,53 @@ func CheckProxyEx(ctx context.Context, u Upstream, targetHost string, targetPort
 	}
 	report.FinishedAt = time.Now().UTC().Format(time.RFC3339)
 	return report
+}
+
+var (
+	geoLookupHost   = "api.country.is"
+	geoLookupPort   = uint16(443)
+	geoLookupUseTLS = true
+)
+
+// LookupExitLocation probes the proxy's external IP and 2-letter country code over the tunnel.
+func LookupExitLocation(ctx context.Context, u Upstream) (string, string) {
+	lCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
+	scheme := "https"
+	if !geoLookupUseTLS {
+		scheme = "http"
+	}
+	client := &http.Client{
+		Timeout: 4 * time.Second,
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+			DialContext: func(dCtx context.Context, _, _ string) (net.Conn, error) {
+				return u.DialTCP(dCtx, geoLookupHost, geoLookupHost, geoLookupPort)
+			},
+		},
+	}
+	req, err := http.NewRequestWithContext(lCtx, http.MethodGet, fmt.Sprintf("%s://%s/", scheme, geoLookupHost), nil)
+	if err != nil {
+		return "", ""
+	}
+	req.Header.Set("User-Agent", "AnyProxy/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", ""
+	}
+	var payload struct {
+		IP      string `json:"ip"`
+		Country string `json:"country"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(payload.IP), strings.ToUpper(strings.TrimSpace(payload.Country))
 }
 
 type checkProbeResult struct {

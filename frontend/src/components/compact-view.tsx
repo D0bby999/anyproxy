@@ -2,7 +2,7 @@
 import React, { useState } from 'react'
 import { Icon, LogoMark } from './icons'
 import { t } from '../i18n'
-import type { CheckReport, EngineStatus, Flow, Profile, ProxyConfig } from '../types'
+import { formatProxyLocation, type CheckReport, type EngineStatus, type Flow, type Profile, type ProxyConfig } from '../types'
 import type { Page } from './sidebar'
 
 export function CompactView({
@@ -217,6 +217,9 @@ export function CompactView({
               const rep = results[px.id]
               const ok = rep ? (rep.success ?? rep.ok) : undefined
               const ms = rep ? (rep.avgMs ?? rep.totalDurationMs ?? 0) : undefined
+              const country = rep?.country || px.country
+              const exitIp = rep?.exitIp || px.exitIp
+              const loc = formatProxyLocation(country)
               return (
                 <div
                   key={px.id}
@@ -236,8 +239,8 @@ export function CompactView({
                     <span className="compact-radio" />
                     <div className="compact-proxy-text">
                       <b title={px.name}>{px.name}</b>
-                      <span className="mono">
-                        {px.type.toUpperCase()} · {px.host}:{px.port}
+                      <span className="mono" title={exitIp ? `${country} · ${exitIp}` : undefined}>
+                        {loc ? `${loc} · ` : ''}{px.type.toUpperCase()} · {px.host}:{px.port}
                       </span>
                     </div>
                   </div>

@@ -56,6 +56,8 @@ type ProxyConfig struct {
 	Username          string    `json:"username,omitempty"`
 	Password          string    `json:"password,omitempty"` // only populated in memory during import/export
 	SendDomainToProxy bool      `json:"sendDomainToProxy"`
+	Country           string    `json:"country,omitempty"`
+	ExitIP            string    `json:"exitIp,omitempty"`
 }
 
 func (p ProxyConfig) Label() string {

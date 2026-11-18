@@ -6,7 +6,7 @@ import { Icon } from '../components/icons'
 import { BuyProxies } from '../components/buy-proxies'
 import { parseProxy } from '../lib/parse-proxy'
 import { t } from '../i18n'
-import type { CheckReport, ProxyConfig } from '../types'
+import { formatProxyLocation, type CheckReport, type ProxyConfig } from '../types'
 
 export function ProxiesPage({
   proxies,
@@ -267,6 +267,10 @@ export function ProxiesPage({
                 <tbody>
                   {proxies.map((p) => {
                     const isDefault = p.id === defaultProxyId
+                    const rep = results[p.id]
+                    const country = rep?.country || p.country
+                    const exitIp = rep?.exitIp || p.exitIp
+                    const loc = formatProxyLocation(country)
                     return (
                       <tr
                         key={p.id}
@@ -274,9 +278,20 @@ export function ProxiesPage({
                         onClick={() => void onSetDefault(isDefault ? '' : p.id)}
                       >
                         <td className="cellname col-name">
-                          <b className="selectable" title={p.name}>
-                            {p.name}
-                          </b>
+                          <span className="row" style={{ gap: 6, alignItems: 'center' }}>
+                            <b className="selectable" title={p.name}>
+                              {p.name}
+                            </b>
+                            {loc && (
+                              <span
+                                className="chip"
+                                title={exitIp ? `${country} · ${exitIp}` : country}
+                                style={{ flexShrink: 0 }}
+                              >
+                                <span className="chiptext">{loc}</span>
+                              </span>
+                            )}
+                          </span>
                         </td>
                         <td className="col-type">
                           <span className="chip">

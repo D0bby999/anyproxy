@@ -166,6 +166,8 @@ export namespace netproxy {
 	    avgMs: number;
 	    maxMs: number;
 	    summary: string;
+	    exitIp?: string;
+	    country?: string;
 	    steps: CheckStep[];
 	    finishedAt: string;
 	
@@ -186,6 +188,8 @@ export namespace netproxy {
 	        this.avgMs = source["avgMs"];
 	        this.maxMs = source["maxMs"];
 	        this.summary = source["summary"];
+	        this.exitIp = source["exitIp"];
+	        this.country = source["country"];
 	        this.steps = this.convertValues(source["steps"], CheckStep);
 	        this.finishedAt = source["finishedAt"];
 	    }
@@ -281,6 +285,8 @@ export namespace pbprofile {
 	    username?: string;
 	    password?: string;
 	    sendDomainToProxy: boolean;
+	    country?: string;
+	    exitIp?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProxyConfig(source);
@@ -297,6 +303,8 @@ export namespace pbprofile {
 	        this.username = source["username"];
 	        this.password = source["password"];
 	        this.sendDomainToProxy = source["sendDomainToProxy"];
+	        this.country = source["country"];
+	        this.exitIp = source["exitIp"];
 	    }
 	}
 	export class Profile {
@@ -385,6 +393,7 @@ export namespace update {
 	    releaseDate?: string;
 	    releaseNotes?: string;
 	    downloadUrl?: string;
+	    sha256?: string;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -399,6 +408,7 @@ export namespace update {
 	        this.releaseDate = source["releaseDate"];
 	        this.releaseNotes = source["releaseNotes"];
 	        this.downloadUrl = source["downloadUrl"];
+	        this.sha256 = source["sha256"];
 	        this.error = source["error"];
 	    }
 	}

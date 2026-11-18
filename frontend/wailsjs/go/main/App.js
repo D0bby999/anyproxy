@@ -74,6 +74,10 @@ export function ImportRulesJSON(arg1) {
   return window['go']['main']['App']['ImportRulesJSON'](arg1);
 }
 
+export function InstallUpdate() {
+  return window['go']['main']['App']['InstallUpdate']();
+}
+
 export function ListProfiles() {
   return window['go']['main']['App']['ListProfiles']();
 }
