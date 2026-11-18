@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1",
-  "date": "2026-11-13",
-  "notes": "Fix: apps listed in an Except (exclude-process) rule now stay DIRECT instead of falling back to the default proxy.",
+  "version": "1.0.6",
+  "date": "2026-11-18",
+  "notes": "Core & UI optimization: unified rule priority/CIDR/exclude matching across macOS NE & Windows WinDivert, live byte counters on macOS NE, local SOCKS5 UDP ASSOCIATE support, and concurrent batch proxy checking.",
   "assets": {
     "darwin-arm64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-darwin-arm64.dmg",
