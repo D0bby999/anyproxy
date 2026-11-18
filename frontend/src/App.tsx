@@ -269,21 +269,25 @@ export default function App() {
     }
   }
 
-  const handleTestProxy = async (px: ProxyConfig) => {
-    toast(`${t.messages.testing} ${px.name}...`, 'info')
+  const handleTestProxy = async (px: ProxyConfig, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) toast(`${t.messages.testing} ${px.name}...`, 'info')
     try {
       const rep = await app.TestProxy(px.id, 'httpbin.org', 80)
       const success = rep.success ?? rep.ok
-      toast(
-        success
-          ? `${t.messages.testSuccess}: ${rep.avgMs ?? rep.totalDurationMs} ms`
-          : `${t.messages.testFailed}: ${rep.summary}`,
-        success ? 'success' : 'error'
-      )
+      if (!opts?.silent) {
+        toast(
+          success
+            ? `${t.messages.testSuccess}: ${rep.avgMs ?? rep.totalDurationMs} ms`
+            : `${t.messages.testFailed}: ${rep.summary}`,
+          success ? 'success' : 'error'
+        )
+      }
       void reloadData()
       return rep
     } catch (e: unknown) {
-      toast(`${t.messages.testError}: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      if (!opts?.silent) {
+        toast(`${t.messages.testError}: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      }
     }
   }
 
@@ -494,10 +498,10 @@ export default function App() {
           <ProxiesPage
             proxies={profile?.proxies || []}
             defaultProxyId={profile?.defaultProxyId || ''}
-            onSaveProxy={async (px) => {
+            onSaveProxy={async (px, opts) => {
               const updated = await app.SaveProxy(px)
               setProfile(updated)
-              toast(t.messages.proxySaved, 'success')
+              if (!opts?.silent) toast(t.messages.proxySaved, 'success')
               const found = px.id
                 ? updated.proxies?.find((p) => p.id === px.id)
                 : updated.proxies?.[updated.proxies.length - 1]

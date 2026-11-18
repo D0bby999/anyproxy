@@ -161,10 +161,13 @@ export function countryFlag(code?: string): string {
   return String.fromCodePoint(...[...c].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65))
 }
 
-export function formatProxyLocation(country?: string): string {
+export function formatProxyLocation(country?: string, exitIp?: string): string {
   const c = (country || '').trim().toUpperCase()
-  if (!c) return ''
+  const ip = (exitIp || '').trim()
+  if (!c && !ip) return ''
   const flag = countryFlag(c)
-  return flag ? `${flag} ${c}` : c
+  const label = [flag, c].filter(Boolean).join(' ')
+  if (label && ip) return `${label} · ${ip}`
+  return label || ip
 }
 

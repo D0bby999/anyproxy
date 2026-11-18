@@ -219,7 +219,7 @@ export function CompactView({
               const ms = rep ? (rep.avgMs ?? rep.totalDurationMs ?? 0) : undefined
               const country = rep?.country || px.country
               const exitIp = rep?.exitIp || px.exitIp
-              const loc = formatProxyLocation(country)
+              const loc = formatProxyLocation(country, exitIp)
               return (
                 <div
                   key={px.id}

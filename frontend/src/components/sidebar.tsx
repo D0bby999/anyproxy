@@ -175,7 +175,7 @@ export function Sidebar({
           >
             <option value="">{t.engine.direct}</option>
             {proxies.map((p) => {
-              const loc = formatProxyLocation(p.country)
+              const loc = formatProxyLocation(p.country, p.exitIp)
               return (
                 <option key={p.id} value={p.id}>
                   {loc ? `${loc} · ` : ''}

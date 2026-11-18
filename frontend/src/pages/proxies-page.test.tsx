@@ -27,7 +27,7 @@ it('imports valid lines, reports invalid line numbers and clears pasted credenti
   fireEvent.click(screen.getByRole('button', { name: t.proxies.bulkAdd }))
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('2'))
   expect(input.value).toBe('')
-  expect(save).toHaveBeenCalledWith(expect.objectContaining({ host: 'example.com', password: 'secret' }))
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ host: 'example.com', password: 'secret' }), { silent: true })
   expect(screen.getByRole('status').textContent).not.toContain('secret')
 })
 
@@ -85,7 +85,7 @@ it('adds an https proxy via modal and bulk paste', async () => {
     port: 8443,
     username: 'u',
     password: 'p',
-  })))
+  }), { silent: true }))
 })
 
 it('opens Buy proxies dialog with partner cards, filters by type, opens external link, and closes on Escape', () => {
@@ -135,7 +135,7 @@ it('saves and immediately checks proxy from textarea, displaying latency in summ
   fireEvent.click(screen.getByRole('button', { name: t.proxies.bulkAdd }))
 
   await waitFor(() => expect(onSaveProxy).toHaveBeenCalledTimes(1))
-  await waitFor(() => expect(onTestProxy).toHaveBeenCalledWith(expect.objectContaining({ id: 'px-auto-checked' })))
+  await waitFor(() => expect(onTestProxy).toHaveBeenCalledWith(expect.objectContaining({ id: 'px-auto-checked' }), { silent: true }))
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('35 ms'))
 })
 
@@ -180,7 +180,7 @@ it('defaults blank name to host:port, checks before closing Add & Check modal, a
     type: 'socks5',
     host: '5.6.7.8',
     port: 1080,
-  })))
+  }), { silent: true }))
   resolveTest({ success: true, avgMs: 12, summary: 'OK' })
 })
 
@@ -220,8 +220,9 @@ it('shows persisted and live-checked proxy country badges', async () => {
   render(<ProxiesPage proxies={proxies} defaultProxyId="1" onSaveProxy={vi.fn()} onDeleteProxy={vi.fn()} onSetDefault={vi.fn()} onTestProxy={onTestProxy} />)
 
   expect(screen.getByTitle('US · 198.51.100.1').textContent).toContain('US')
+  expect(screen.getByTitle('US · 198.51.100.1').textContent).toContain('198.51.100.1')
 
   const testButtons = screen.getAllByRole('button', { name: t.actions.test })
   fireEvent.click(testButtons[1])
-  await waitFor(() => expect(screen.getByTitle('DE · 185.10.20.30').textContent).toContain('DE'))
+  await waitFor(() => expect(screen.getByTitle('DE · 185.10.20.30').textContent).toContain('185.10.20.30'))
 })

@@ -18,10 +18,10 @@ export function ProxiesPage({
 }: {
   proxies: ProxyConfig[]
   defaultProxyId: string
-  onSaveProxy: (px: ProxyConfig) => Promise<ProxyConfig | void>
+  onSaveProxy: (px: ProxyConfig, opts?: { silent?: boolean }) => Promise<ProxyConfig | void>
   onDeleteProxy: (id: string) => Promise<void>
   onSetDefault: (id: string) => Promise<void>
-  onTestProxy: (px: ProxyConfig) => Promise<CheckReport | undefined>
+  onTestProxy: (px: ProxyConfig, opts?: { silent?: boolean }) => Promise<CheckReport | undefined>
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyConfig | null>(null)
@@ -115,7 +115,7 @@ export function ProxiesPage({
         const p = targets[cursor++]
         setChecking(p.id)
         try {
-          const report = await onTestProxy(p)
+          const report = await onTestProxy(p, { silent: true })
           if (report) {
             setResults((prev) => ({ ...prev, [p.id]: report }))
             reports.push(report)
@@ -154,7 +154,7 @@ export function ProxiesPage({
         const proxy = parseProxy(line, defaultScheme)
         if (!proxy) { failed.push(index + 1); continue }
         try {
-          const saved = await onSaveProxy(proxy)
+          const saved = await onSaveProxy(proxy, { silent: true })
           added++
           savedList.push(saved || proxy)
         } catch {
@@ -270,7 +270,7 @@ export function ProxiesPage({
                     const rep = results[p.id]
                     const country = rep?.country || p.country
                     const exitIp = rep?.exitIp || p.exitIp
-                    const loc = formatProxyLocation(country)
+                    const loc = formatProxyLocation(country, exitIp)
                     return (
                       <tr
                         key={p.id}
@@ -278,20 +278,9 @@ export function ProxiesPage({
                         onClick={() => void onSetDefault(isDefault ? '' : p.id)}
                       >
                         <td className="cellname col-name">
-                          <span className="row" style={{ gap: 6, alignItems: 'center' }}>
-                            <b className="selectable" title={p.name}>
-                              {p.name}
-                            </b>
-                            {loc && (
-                              <span
-                                className="chip"
-                                title={exitIp ? `${country} · ${exitIp}` : country}
-                                style={{ flexShrink: 0 }}
-                              >
-                                <span className="chiptext">{loc}</span>
-                              </span>
-                            )}
-                          </span>
+                          <b className="selectable" title={p.name}>
+                            {p.name}
+                          </b>
                         </td>
                         <td className="col-type">
                           <span className="chip">
@@ -299,9 +288,20 @@ export function ProxiesPage({
                           </span>
                         </td>
                         <td className="col-server">
-                          <span className="mono selectable ellipsis-text" title={`${p.host}:${p.port}`}>
-                            {p.host}:{p.port}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                            <span className="mono selectable ellipsis-text" title={`${p.host}:${p.port}`}>
+                              {p.host}:{p.port}
+                            </span>
+                            {loc && (
+                              <span
+                                className="muted mono selectable ellipsis-text"
+                                title={exitIp ? `${country} · ${exitIp}` : country}
+                                style={{ fontSize: 11 }}
+                              >
+                                {loc}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="col-auth">
                           {p.username ? (
