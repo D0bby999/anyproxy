@@ -5,15 +5,15 @@
   "assets": {
     "darwin-arm64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.10/AnyProxy-darwin-arm64.dmg",
-      "sha256": "a9d282fb086a2a11ccb1745fd0c5018cb06f0cb2802e5a54131d67e179e22059"
+      "sha256": "8c1fa104d0c659ab857f0a5c37f4e05b3af72d6a342b8775646606108d555fce"
     },
     "darwin-amd64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.10/AnyProxy-darwin-amd64.dmg",
-      "sha256": "2b66b369edab878d549a9f8392af193d7fd4cf1b2d583d55048716ab523e9b83"
+      "sha256": "1a404115c1d2f32aa8a10eac44ad8434abb8524b86375c40b494e32ff7e3dcdd"
     },
     "windows-amd64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.10/AnyProxy-windows-amd64.exe",
-      "sha256": "d26e8a24ac9f8255dd2ca6fcffa36f7e82cdb178fcfe9d9e4e3382badf0e9390"
+      "sha256": "1d57084a2d3d319f059e9f7080b900ef8e15da956c82051171071eba8082323e"
     }
   }
 }
