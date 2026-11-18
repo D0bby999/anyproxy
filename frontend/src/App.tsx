@@ -65,11 +65,18 @@ export default function App() {
     const wantConn = !isCompact && (curPage === 'connections' || curPage === 'rules')
     const wantAct = !isCompact && curPage === 'activity'
     try {
-      const [fl, cl, al] = await Promise.all([
+      const [st, fl, cl, al] = await Promise.all([
+        // the driver can lose the tunnel on its own, so keep reading the real
+        // status instead of trusting the last command the ui sent
+        app.Status(),
         active ? app.GetFlows(100) : null,
         active && wantConn ? app.GetConnectionLogs(100) : null,
         wantAct ? app.GetActivityLogs(100) : null,
       ])
+      if (st && (st.state !== curEngine?.state || st.message !== curEngine?.message || st.enabled !== curEngine?.enabled)) {
+        setEngine(st)
+        live.current.engine = st
+      }
       if (fl) setFlows(fl.map(normalizeFlow))
       if (cl) setConnLogs(cl.map(normalizeConnectionLog))
       if (al) setActivityLogs(al)
