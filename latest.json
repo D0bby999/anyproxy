@@ -4,16 +4,16 @@
   "notes": "Core & UI optimization: unified rule priority/CIDR/exclude matching across macOS NE & Windows WinDivert, live byte counters on macOS NE, local SOCKS5 UDP ASSOCIATE support, and concurrent batch proxy checking.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-darwin-arm64.dmg",
-      "sha256": "0cac9a3ad6809efa2318ea7cdaae14806f1c7774ae95d37dcce5a1f52e80a469"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-darwin-arm64.dmg",
+      "sha256": "4be53e57ab14edb802611b346cfd3463f1a9511cf27598f18ca42c3362cc3ee4"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-darwin-amd64.dmg",
-      "sha256": "092842953bc06f703b9c1bf26317ba8e2046f0cc7df7f5d6eeb6d744627c5959"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-darwin-amd64.dmg",
+      "sha256": "5a2b7490c0744ec8e32eee737f7e4d3001ba58e352d22e387c22b8905fe0a2bf"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.1/AnyProxy-windows-amd64.exe",
-      "sha256": "7283ba92df277e3859d23a6efb05acf7a496e6974ad2b7a2b9bc128fe772cc48"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-windows-amd64.exe",
+      "sha256": "4a51032d9001a6d1c25a33365b49192428a4d54771da2979f6cbaec8983c637b"
     }
   }
 }
