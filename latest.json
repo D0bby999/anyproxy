@@ -4,16 +4,16 @@
   "notes": "Direct in-app updates with SHA-256 verification, live download progress, and automatic daily update checks.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-darwin-arm64.dmg",
-      "sha256": "4be53e57ab14edb802611b346cfd3463f1a9511cf27598f18ca42c3362cc3ee4"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.7/AnyProxy-darwin-arm64.dmg",
+      "sha256": "bf105360ea1e0e078b0a89fed92c0bf89fb68cf02d55e6f27df78fdacc99d0ed"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-darwin-amd64.dmg",
-      "sha256": "5a2b7490c0744ec8e32eee737f7e4d3001ba58e352d22e387c22b8905fe0a2bf"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.7/AnyProxy-darwin-amd64.dmg",
+      "sha256": "c395a4ec34a546c632a9e6832358f62dc5bbc99c8c2d262a6c77a54473dbb0d9"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-windows-amd64.exe",
-      "sha256": "4a51032d9001a6d1c25a33365b49192428a4d54771da2979f6cbaec8983c637b"
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.7/AnyProxy-windows-amd64.exe",
+      "sha256": "1681fb5a3bd05a623e5e93f06c47e9903f6ec3b81235e1ac61a6436fcb0b3d84"
     }
   }
 }
