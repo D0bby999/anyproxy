@@ -503,12 +503,13 @@ export const stubApp = {
   },
   PickProcessExecutable: async (): Promise<string> => '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   CheckForUpdates: async () => ({
-    currentVersion: '1.0.0',
-    latestVersion: '1.0.0',
-    isUpdateAvailable: false,
-    releaseDate: '2026-11-08',
-    releaseNotes: 'You are on the latest version of AnyProxy.',
+    currentVersion: '1.0.5',
+    latestVersion: '1.0.6',
+    isUpdateAvailable: true,
+    releaseDate: '2026-11-18',
+    releaseNotes: 'Unified rule matching across macOS & Windows, local SOCKS5 UDP ASSOCIATE, and direct in-app updates.',
   }),
+  InstallUpdate: async (): Promise<void> => {},
   SetCompactMode: async (): Promise<void> => {},
 }
 

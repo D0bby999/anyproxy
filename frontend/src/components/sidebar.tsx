@@ -24,6 +24,7 @@ interface SidebarProps {
   liveFlowCount: number
   rulesCount: number
   collapsed?: boolean
+  updateAvailable?: boolean
   onToggleCollapsed?: () => void
   onEnterCompact?: () => void
 }
@@ -45,6 +46,7 @@ export function Sidebar({
   liveFlowCount,
   rulesCount,
   collapsed = false,
+  updateAvailable = false,
   onToggleCollapsed,
   onEnterCompact,
 }: SidebarProps) {
@@ -297,6 +299,7 @@ export function Sidebar({
         >
           <Icon name="settings" />
           {!collapsed && <span>{t.nav.settings}</span>}
+          {!collapsed && updateAvailable && <span className="navbadge">1</span>}
         </button>
 
         {!collapsed && (

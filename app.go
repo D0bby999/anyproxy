@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"github.com/D0bby999/anyproxy/internal/secrets"
 	"github.com/D0bby999/anyproxy/internal/service"
 	"github.com/D0bby999/anyproxy/internal/store"
+	"github.com/D0bby999/anyproxy/internal/update"
 )
 
 // App is the Wails application host bound to the frontend.
@@ -72,6 +75,8 @@ func (a *App) startup(ctx context.Context) {
 		a.startErr = err
 		return
 	}
+	update.CleanStale()
+	_ = os.RemoveAll(filepath.Join(dirs.Root, "updates"))
 	st, err := store.Open(dirs.DB())
 	if err != nil {
 		a.startErr = err

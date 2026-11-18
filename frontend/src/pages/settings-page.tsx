@@ -5,7 +5,7 @@ import { Icon } from '../components/icons'
 import { t, setLanguage, getLanguage } from '../i18n'
 import { applyTheme, readTheme, type ThemeChoice } from '../lib/theme'
 import pkg from '../../package.json'
-import type { Profile } from '../types'
+import type { Profile, ReleaseInfo } from '../types'
 
 function SwitchRow({
   id,
@@ -49,6 +49,12 @@ export function SettingsPage({
   profiles = [],
   onUpdateOptions,
   onCheckUpdates,
+  onInstallUpdate,
+  releaseInfo = null,
+  checkingUpdates: externalChecking = false,
+  installingUpdate = false,
+  updateProgress = null,
+  updateError = '',
   onSwitchProfile,
   onCreateProfile,
   onDuplicateProfile,
@@ -67,6 +73,12 @@ export function SettingsPage({
     autoClearLogs: boolean
   ) => Promise<void>
   onCheckUpdates: () => Promise<void>
+  onInstallUpdate?: () => Promise<void>
+  releaseInfo?: ReleaseInfo | null
+  checkingUpdates?: boolean
+  installingUpdate?: boolean
+  updateProgress?: { done: number; total: number } | null
+  updateError?: string
   onSwitchProfile?: (name: string) => void
   onCreateProfile?: () => void
   onDuplicateProfile?: (srcName: string) => void
@@ -78,7 +90,12 @@ export function SettingsPage({
 }) {
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => readTheme())
   const [includePasswords, setIncludePasswords] = useState(false)
-  const [checkingUpdates, setCheckingUpdates] = useState(false)
+  const [localChecking, setLocalChecking] = useState(false)
+  const checkingUpdates = externalChecking || localChecking
+  const updatePct =
+    updateProgress && updateProgress.total > 0
+      ? Math.min(100, Math.round((updateProgress.done / updateProgress.total) * 100))
+      : null
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
@@ -106,12 +123,12 @@ export function SettingsPage({
   }
 
   const handleCheckUpdates = async () => {
-    if (checkingUpdates) return
-    setCheckingUpdates(true)
+    if (checkingUpdates || installingUpdate) return
+    setLocalChecking(true)
     try {
       await onCheckUpdates()
     } finally {
-      setCheckingUpdates(false)
+      setLocalChecking(false)
     }
   }
 
@@ -363,16 +380,58 @@ export function SettingsPage({
                 <span className="hint">{t.settings.aboutDesc}</span>
               </div>
 
+              {releaseInfo?.isUpdateAvailable && (
+                <div className="banner" role="status">
+                  <Icon name="download" />
+                  <div className="grow">
+                    <b>{t.settings.updateReadyTitle(releaseInfo.latestVersion)}</b>
+                    {releaseInfo.releaseNotes && (
+                      <div className="hint" style={{ marginTop: 2 }}>
+                        {releaseInfo.releaseNotes}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {releaseInfo && !releaseInfo.isUpdateAvailable && !releaseInfo.error && !updateError && (
+                <span className="chip ok" style={{ alignSelf: 'flex-start' }}>
+                  <span className="dot" />
+                  {t.messages.upToDate}
+                </span>
+              )}
+
+              {updateError && (
+                <div className="banner danger" role="alert">
+                  <Icon name="warn" />
+                  <span className="grow">{updateError}</span>
+                </div>
+              )}
+
               <div className="settings-btn-row">
+                {releaseInfo?.isUpdateAvailable && onInstallUpdate && (
+                  <button
+                    type="button"
+                    className={`btn sm primary${installingUpdate ? ' busy' : ''}`}
+                    disabled={installingUpdate || checkingUpdates}
+                    aria-busy={installingUpdate}
+                    onClick={() => void onInstallUpdate()}
+                  >
+                    <Icon name={installingUpdate ? 'refresh' : 'download'} />
+                    {installingUpdate
+                      ? (updatePct !== null ? t.settings.downloadingUpdate(updatePct) : t.settings.installingUpdate)
+                      : t.settings.installUpdate}
+                  </button>
+                )}
                 <button
                   type="button"
-                  className="btn sm"
-                  disabled={checkingUpdates}
+                  className={`btn sm${checkingUpdates ? ' busy' : ''}`}
+                  disabled={checkingUpdates || installingUpdate}
                   aria-busy={checkingUpdates}
                   onClick={() => void handleCheckUpdates()}
                 >
                   <Icon name="refresh" />
-                  {t.settings.checkUpdates}
+                  {checkingUpdates ? t.settings.checkingUpdates : t.settings.checkUpdates}
                 </button>
                 {onOpenActivityLogs && (
                   <button type="button" className="btn sm" onClick={onOpenActivityLogs}>

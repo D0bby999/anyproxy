@@ -55,6 +55,7 @@ interface WailsApp {
   ClearActivityLogs(): Promise<void>
   PickProcessExecutable(): Promise<string>
   CheckForUpdates(): Promise<ReleaseInfo>
+  InstallUpdate(): Promise<void>
   SetCompactMode(compact: boolean, alwaysOnTop: boolean): Promise<void>
 }
 

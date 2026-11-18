@@ -20,6 +20,7 @@ import type {
   ActivityLogEntry,
   ProxyConfig,
   ProxyRule,
+  ReleaseInfo,
 } from './types'
 
 export default function App() {
@@ -34,6 +35,11 @@ export default function App() {
   const [connLogs, setConnLogs] = useState<ConnectionLogEntry[]>([])
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([])
   const [toasts, setToasts] = useState<{ id: string; type: string; msg: string }[]>([])
+  const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo | null>(null)
+  const [checkingUpdates, setCheckingUpdates] = useState(false)
+  const [installingUpdate, setInstallingUpdate] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null)
+  const [updateError, setUpdateError] = useState('')
   const [profileDialog, setProfileDialog] = useState<{
     mode: 'create' | 'duplicate' | 'rename'
     targetName: string
@@ -96,6 +102,16 @@ export default function App() {
         startupTimer = setTimeout(waitForStartup, 150)
       } else if (!cancelled) {
         void pollLive()
+        const last = Number(localStorage.getItem('anyproxy.updateCheckedAt') || 0)
+        if (!last || Date.now() - last >= 24 * 60 * 60 * 1000) {
+          localStorage.setItem('anyproxy.updateCheckedAt', String(Date.now()))
+          app.CheckForUpdates().then((res) => {
+            if (!cancelled && res.isUpdateAvailable) {
+              setReleaseInfo(res)
+              toast(`${t.messages.updateAvailable}: v${res.latestVersion}`, 'info')
+            }
+          }).catch(() => {})
+        }
       }
     }
     void waitForStartup()
@@ -137,6 +153,12 @@ export default function App() {
         void pollLive()
       }
     })
+    const unsubUpdateProgress = api.subscribeEvent('update:progress', (data: unknown) => {
+      if (data && typeof data === 'object') {
+        const p = data as { done?: number; total?: number }
+        setUpdateProgress({ done: Number(p.done || 0), total: Number(p.total ?? -1) })
+      }
+    })
 
     return () => {
       cancelled = true
@@ -147,6 +169,7 @@ export default function App() {
       unsubCompact()
       unsubMenu()
       unsubEngine()
+      unsubUpdateProgress()
     }
   }, [])
 
@@ -170,9 +193,14 @@ export default function App() {
   }
 
   const handleCheckUpdates = async () => {
+    if (checkingUpdates || installingUpdate) return
+    setCheckingUpdates(true)
+    setUpdateError('')
     toast(t.messages.checkingUpdates, 'info')
     try {
       const res = await app.CheckForUpdates()
+      setReleaseInfo(res)
+      if (res.error) setUpdateError(res.error)
       toast(
         res.error
           ? res.error
@@ -182,7 +210,26 @@ export default function App() {
         res.error ? 'error' : 'info'
       )
     } catch (e: unknown) {
-      toast(e instanceof Error ? e.message : String(e), 'error')
+      const msg = e instanceof Error ? e.message : String(e)
+      setUpdateError(msg)
+      toast(msg, 'error')
+    } finally {
+      setCheckingUpdates(false)
+    }
+  }
+
+  const handleInstallUpdate = async () => {
+    if (installingUpdate) return
+    setInstallingUpdate(true)
+    setUpdateError('')
+    setUpdateProgress(null)
+    try {
+      await app.InstallUpdate()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setUpdateError(msg)
+      setInstallingUpdate(false)
+      toast(msg, 'error')
     }
   }
 
@@ -404,6 +451,7 @@ export default function App() {
         liveFlowCount={flows.filter((f) => f.state === 'open').length}
         rulesCount={profile?.rules?.length || 0}
         collapsed={sidebarCollapsed}
+        updateAvailable={Boolean(releaseInfo?.isUpdateAvailable)}
         onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
         onEnterCompact={() => void handleEnterCompact()}
       />
@@ -516,6 +564,12 @@ export default function App() {
               toast(t.messages.settingsUpdated, 'success')
             }}
             onCheckUpdates={handleCheckUpdates}
+            onInstallUpdate={handleInstallUpdate}
+            releaseInfo={releaseInfo}
+            checkingUpdates={checkingUpdates}
+            installingUpdate={installingUpdate}
+            updateProgress={updateProgress}
+            updateError={updateError}
             onSwitchProfile={handleSwitchProfile}
             onCreateProfile={handleCreateProfile}
             onDuplicateProfile={(srcName) => {

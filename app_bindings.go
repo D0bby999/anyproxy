@@ -5,12 +5,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/D0bby999/anyproxy/internal/driver"
 	"github.com/D0bby999/anyproxy/internal/flows"
 	"github.com/D0bby999/anyproxy/internal/netproxy"
+	"github.com/D0bby999/anyproxy/internal/paths"
 	"github.com/D0bby999/anyproxy/internal/pbprofile"
 	"github.com/D0bby999/anyproxy/internal/service"
 	"github.com/D0bby999/anyproxy/internal/update"
@@ -314,6 +317,45 @@ func (a *App) CheckForUpdates() (update.ReleaseInfo, error) {
 		ctx = a.ctx
 	}
 	return update.CheckForUpdates(ctx, "")
+}
+
+// InstallUpdate downloads, verifies, and installs the newest release, then quits
+// so the OS installer/relauncher can start the updated version.
+func (a *App) InstallUpdate() error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	dirs, err := paths.Default()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	if a.ctx != nil {
+		ctx = a.ctx
+	}
+	var last int64
+	_, err = update.Install(ctx, "", filepath.Join(dirs.Root, "updates"), func(done, total int64) {
+		if a.ctx != nil && (done-last >= 512<<10 || (total > 0 && done == total)) {
+			last = done
+			runtime.EventsEmit(a.ctx, "update:progress", map[string]int64{
+				"done":  done,
+				"total": total,
+			})
+		}
+	})
+	if err != nil {
+		return err
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		if a.svc != nil {
+			_ = a.svc.Close()
+		}
+		if a.ctx != nil {
+			runtime.Quit(a.ctx)
+		}
+	}()
+	return nil
 }
 
 // SetCompactMode resizes the native window between compact phone-sized mode (336x620) and full desktop mode (1080x680),

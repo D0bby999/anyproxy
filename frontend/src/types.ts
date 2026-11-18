@@ -51,6 +51,7 @@ export interface ReleaseInfo {
   releaseDate?: string
   releaseNotes?: string
   downloadUrl?: string
+  sha256?: string
   error?: string
 }
 

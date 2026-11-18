@@ -105,3 +105,45 @@ it('handles import profile modal errors, Escape dismissal, and valid submission'
   expect(onImportProfile).toHaveBeenLastCalledWith('{"name":"Imported"}')
 })
 
+it('shows available update banner, triggers direct install, and renders download progress', () => {
+  const onInstallUpdate = vi.fn().mockResolvedValue(undefined)
+  const release = {
+    currentVersion: '1.0.5',
+    latestVersion: '1.0.6',
+    isUpdateAvailable: true,
+    releaseNotes: 'Direct updater support.',
+  }
+
+  const { rerender } = render(
+    <SettingsPage
+      profile={baseProfile}
+      profiles={['Default']}
+      onUpdateOptions={vi.fn().mockResolvedValue(undefined)}
+      onCheckUpdates={vi.fn().mockResolvedValue(undefined)}
+      onInstallUpdate={onInstallUpdate}
+      releaseInfo={release}
+    />
+  )
+
+  expect(screen.getByText(t.settings.updateReadyTitle('1.0.6'))).toBeTruthy()
+  expect(screen.getByText('Direct updater support.')).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: t.settings.installUpdate }))
+  expect(onInstallUpdate).toHaveBeenCalledOnce()
+
+  rerender(
+    <SettingsPage
+      profile={baseProfile}
+      profiles={['Default']}
+      onUpdateOptions={vi.fn().mockResolvedValue(undefined)}
+      onCheckUpdates={vi.fn().mockResolvedValue(undefined)}
+      onInstallUpdate={onInstallUpdate}
+      releaseInfo={release}
+      installingUpdate={true}
+      updateProgress={{ done: 50, total: 100 }}
+    />
+  )
+
+  expect(screen.getByRole('button', { name: t.settings.downloadingUpdate(50) })).toBeTruthy()
+})
+
