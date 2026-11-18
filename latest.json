@@ -1,18 +1,18 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
   "date": "2026-11-18",
-  "notes": "Direct in-app updates with SHA-256 verification, live download progress, and automatic daily update checks.",
+  "notes": "Proxy exit IP and country code detection during checks, persisted across restarts and shown in Proxies, Sidebar, and Compact View.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.7/AnyProxy-darwin-arm64.dmg",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.8/AnyProxy-darwin-arm64.dmg",
       "sha256": "bf105360ea1e0e078b0a89fed92c0bf89fb68cf02d55e6f27df78fdacc99d0ed"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.7/AnyProxy-darwin-amd64.dmg",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.8/AnyProxy-darwin-amd64.dmg",
       "sha256": "c395a4ec34a546c632a9e6832358f62dc5bbc99c8c2d262a6c77a54473dbb0d9"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.7/AnyProxy-windows-amd64.exe",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.8/AnyProxy-windows-amd64.exe",
       "sha256": "1681fb5a3bd05a623e5e93f06c47e9903f6ec3b81235e1ac61a6436fcb0b3d84"
     }
   }
