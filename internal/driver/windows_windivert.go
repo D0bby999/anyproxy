@@ -443,7 +443,12 @@ func (d *WinDivertDriver) syncLocked() {
 		case pbprofile.ActionBlock:
 			action = uintptr(winActionBlock)
 		}
-		proxyID := uintptr(d.proxyIDMap[r.ProxyConfigID])
+		// an empty ProxyConfigID means "the default proxy"
+		ruleProxyID := r.ProxyConfigID
+		if r.Action == pbprofile.ActionProxy && ruleProxyID == "" {
+			ruleProxyID = d.opts.DefaultProxyID
+		}
+		proxyID := uintptr(d.proxyIDMap[ruleProxyID])
 		var localhost uintptr
 		if r.LocalhostViaProxy {
 			localhost = 1

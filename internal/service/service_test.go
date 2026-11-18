@@ -383,3 +383,50 @@ func TestProfileSwitchReroutesTraffic(t *testing.T) {
 		t.Fatalf("expected proxyHits to stay 1 on EmptyProfile (direct), got %d", proxyHits)
 	}
 }
+
+func TestEffectiveDefaultProxyID(t *testing.T) {
+	prof := pbprofile.Profile{Proxies: []pbprofile.ProxyConfig{{ID: "a"}, {ID: "b"}}}
+	if got := effectiveDefaultProxyID(prof); got != "a" {
+		t.Fatalf("effectiveDefaultProxyID without default = %q, want first proxy %q", got, "a")
+	}
+	prof.DefaultProxyID = "b"
+	if got := effectiveDefaultProxyID(prof); got != "b" {
+		t.Fatalf("effectiveDefaultProxyID = %q, want the configured default %q", got, "b")
+	}
+	if got := effectiveDefaultProxyID(pbprofile.Profile{}); got != "" {
+		t.Fatalf("effectiveDefaultProxyID with no proxies = %q, want empty", got)
+	}
+}
+
+// "Default proxy" in the rule editor must not be frozen into a concrete id at
+// save time, otherwise changing the default proxy leaves the rule behind
+func TestSaveRuleKeepsDefaultProxyLateBound(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(st, nil, driver.NewMockDriver("test", nil, nil, nil))
+	t.Cleanup(func() { _ = svc.Close() })
+
+	if _, err := svc.SaveProxy(pbprofile.ProxyConfig{
+		Name: "first", Type: pbprofile.ProxySOCKS5, Host: "127.0.0.1", Port: 1080,
+	}); err != nil {
+		t.Fatalf("SaveProxy: %v", err)
+	}
+	prof, err := svc.SaveRule(pbprofile.ProxyRule{
+		Name: "default rule", ProcessNames: "*", TargetHosts: "*", TargetPorts: "*",
+		Action: pbprofile.ActionProxy,
+	})
+	if err != nil {
+		t.Fatalf("SaveRule: %v", err)
+	}
+	if len(prof.Rules) != 1 {
+		t.Fatalf("rules = %d, want 1", len(prof.Rules))
+	}
+	if got := prof.Rules[0].ProxyConfigID; got != "" {
+		t.Fatalf("rule ProxyConfigID = %q, want empty so it follows the default proxy", got)
+	}
+	if got := effectiveDefaultProxyID(prof); got != prof.Proxies[0].ID {
+		t.Fatalf("effective default = %q, want %q", got, prof.Proxies[0].ID)
+	}
+}

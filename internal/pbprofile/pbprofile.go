@@ -382,7 +382,9 @@ func parseMacProfile(raw map[string]json.RawMessage) (Profile, error) {
 			act = ActionBlock
 		case "PROXY":
 			act = ActionProxy
-			proxyID = p.DefaultProxyID
+			// late-bound on purpose: an empty id means "the profile's default
+			// proxy", so changing the default also moves rules written as PROXY
+			proxyID = ""
 		default:
 			act = ActionProxy
 			proxyID = actRaw
@@ -550,7 +552,9 @@ func parseWinLinuxProfile(data []byte) (Profile, error) {
 		var proxyID string
 		if act == ActionProxy {
 			if rl.ProxyConfigId == 0 {
-				proxyID = p.DefaultProxyID
+				// 0 means "the default proxy" in .pbprofile. keep it late-bound
+				// so the rule follows DefaultProxyId instead of freezing it here
+				proxyID = ""
 			} else if mapped, ok := intToID[rl.ProxyConfigId]; ok {
 				proxyID = mapped
 			} else {
@@ -689,12 +693,14 @@ func MarshalProfile(p Profile) ([]byte, error) {
 		}
 		macProxies = append(macProxies, macPx)
 	}
-	defIntID := 0
-	if p.DefaultProxyID != "" {
-		defIntID = idToInt[p.DefaultProxyID]
-	} else if len(p.Proxies) > 0 {
-		defIntID = idToInt[p.Proxies[0].ID]
+	// a rule with no ProxyConfigID means "the default proxy", so export the
+	// proxy the app would actually use as both the profile default and the
+	// action of those rules
+	effectiveDefaultID := p.DefaultProxyID
+	if effectiveDefaultID == "" && len(p.Proxies) > 0 {
+		effectiveDefaultID = p.Proxies[0].ID
 	}
+	defIntID := idToInt[effectiveDefaultID]
 
 	winRules := make([]map[string]any, 0, len(p.Rules))
 	macRules := make([]map[string]any, 0, len(p.Rules))
@@ -703,15 +709,15 @@ func MarshalProfile(p Profile) ([]byte, error) {
 		cfgInt := 0
 		macAct := string(rl.Action)
 		if rl.Action == ActionProxy {
-			if id, ok := idToInt[rl.ProxyConfigID]; ok {
-				cfgInt = id
-			} else {
-				cfgInt = defIntID
-			}
 			if rl.ProxyConfigID != "" {
 				macAct = rl.ProxyConfigID
-			} else if len(p.Proxies) > 0 {
-				macAct = p.Proxies[0].ID
+				cfgInt = idToInt[rl.ProxyConfigID]
+			} else {
+				// "use the default proxy" is spelled PROXY / 0 in .pbprofile.
+				// exporting a concrete id here would freeze the choice again on
+				// the way back in
+				macAct = string(ActionProxy)
+				cfgInt = 0
 			}
 		}
 		winRules = append(winRules, map[string]any{
@@ -836,7 +842,8 @@ func ParseRulesJSON(r io.Reader, defaultProxyID string) ([]ProxyRule, error) {
 			act = ActionBlock
 		case "PROXY":
 			act = ActionProxy
-			proxyID = defaultProxyID
+			// same late binding as the .pbprofile parser
+			proxyID = ""
 		default:
 			act = ActionProxy
 			proxyID = actRaw

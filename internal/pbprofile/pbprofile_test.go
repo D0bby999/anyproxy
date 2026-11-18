@@ -159,3 +159,37 @@ func TestHTTPSProxyRoundTripAndValidation(t *testing.T) {
 		t.Fatal("expected validation error for unsupported proxy type SOCKS4")
 	}
 }
+
+// a rule that says "use the default proxy" must survive a round-trip without
+// being frozen to whichever proxy was default at export time
+func TestDefaultProxyRuleStaysLateBoundAfterRoundTrip(t *testing.T) {
+	prof := Profile{
+		Name:           "late-bind",
+		DefaultProxyID: "proxy-a",
+		Proxies: []ProxyConfig{
+			{ID: "proxy-a", Name: "a", Type: ProxySOCKS5, Host: "a.example", Port: 1080},
+			{ID: "proxy-b", Name: "b", Type: ProxySOCKS5, Host: "b.example", Port: 1080},
+		},
+		Rules: []ProxyRule{{
+			ID: "r1", Name: "default rule", ProcessNames: "*", TargetHosts: "*",
+			TargetPorts: "*", Protocol: ProtoBoth, Action: ActionProxy, Enabled: true,
+		}},
+	}
+	b, err := MarshalProfile(prof)
+	if err != nil {
+		t.Fatalf("MarshalProfile: %v", err)
+	}
+	prof2, err := ParseProfile(bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("ParseProfile: %v", err)
+	}
+	if len(prof2.Rules) != 1 {
+		t.Fatalf("rules = %d, want 1", len(prof2.Rules))
+	}
+	if prof2.Rules[0].ProxyConfigID != "" {
+		t.Fatalf("rule ProxyConfigID = %q, want empty so it follows the default proxy", prof2.Rules[0].ProxyConfigID)
+	}
+	if prof2.Rules[0].Action != ActionProxy {
+		t.Fatalf("rule action = %q, want PROXY", prof2.Rules[0].Action)
+	}
+}

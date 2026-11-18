@@ -441,7 +441,8 @@ func (s *Service) DeleteProxy(proxyID string) (pbprofile.Profile, error) {
 	}
 	for i := range p.Rules {
 		if p.Rules[i].ProxyConfigID == proxyID {
-			p.Rules[i].ProxyConfigID = p.DefaultProxyID
+			// fall back to the default proxy instead of freezing the new one
+			p.Rules[i].ProxyConfigID = ""
 		}
 	}
 	saved, err := s.store.SaveProfile(p, true)
@@ -583,12 +584,9 @@ func (s *Service) SaveRule(r pbprofile.ProxyRule) (pbprofile.Profile, error) {
 	if err != nil {
 		return pbprofile.Profile{}, err
 	}
-	if r.Action == pbprofile.ActionProxy && r.ProxyConfigID == "" {
-		r.ProxyConfigID = p.DefaultProxyID
-		if r.ProxyConfigID == "" && len(p.Proxies) > 0 {
-			r.ProxyConfigID = p.Proxies[0].ID
-		}
-	}
+	// an empty ProxyConfigID means "whatever the default proxy is" and is
+	// resolved by the drivers at push time. pinning it here froze the choice,
+	// so switching the default proxy left the rule on the old one.
 
 	if r.ID == "" {
 		r.ID = uuid.NewString()
@@ -897,17 +895,33 @@ func (s *Service) syncActiveProfileToDriver() error {
 		return err
 	}
 	s.hydratePasswords(&p)
+	// rules with no proxy id mean "the default proxy". resolve it once here so
+	// the inbound server, the NE push and the Windows driver all agree.
+	defProxyID := effectiveDefaultProxyID(p)
 	if s.inbound != nil {
-		s.inbound.SyncProfile(p.Proxies, p.Rules, p.DefaultProxyID)
+		s.inbound.SyncProfile(p.Proxies, p.Rules, defProxyID)
 	}
 	return s.drv.SyncProfile(p.Proxies, p.Rules, driver.RuntimeOptions{
 		TrafficLoggingEnabled:   p.TrafficLoggingEnabled,
 		DnsViaProxy:             p.DnsViaProxy,
 		LogEveryConnection:      p.LogEveryConnection,
 		AutoClearConnectionLogs: p.AutoClearConnectionLogs,
-		DefaultProxyID:          p.DefaultProxyID,
+		DefaultProxyID:          defProxyID,
 		LogFilters:              p.LogFilters,
 	})
+}
+
+// effectiveDefaultProxyID is the proxy a rule with no proxy id routes through.
+// The profile default wins; without one the first proxy is the fallback, which
+// is what "Default proxy" meant before the rules were late-bound.
+func effectiveDefaultProxyID(p pbprofile.Profile) string {
+	if p.DefaultProxyID != "" {
+		return p.DefaultProxyID
+	}
+	if len(p.Proxies) > 0 {
+		return p.Proxies[0].ID
+	}
+	return ""
 }
 
 func (s *Service) hydratePasswords(p *pbprofile.Profile) {
