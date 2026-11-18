@@ -3,7 +3,9 @@ import { parseProxy } from './parse-proxy'
 
 it('parses paste formats without putting credentials in the label', () => {
   expect(parseProxy('host.example:8001:user:pa:ss')).toMatchObject({ name: 'host.example:8001', type: 'http', username: 'user', password: 'pa:ss' })
+  expect(parseProxy('host.example:8001@user:pa:ss')).toMatchObject({ name: 'host.example:8001', type: 'http', username: 'user', password: 'pa:ss' })
   expect(parseProxy('socks5://user:p%40ss@[::1]:1080')).toMatchObject({ host: '::1', type: 'socks5', password: 'p@ss', port: 1080 })
+  expect(parseProxy('socks5h://user:pass@1.2.3.4:1080#Tokyo-Node')).toMatchObject({ name: 'Tokyo-Node', host: '1.2.3.4', type: 'socks5', username: 'user', password: 'pass', port: 1080 })
   expect(parseProxy('http://host.example:80')).toMatchObject({ host: 'host.example', port: 80, type: 'http' })
   expect(parseProxy('https://user:p%40ss@host.example:443')).toMatchObject({ name: 'host.example:443', type: 'https', host: 'host.example', port: 443, username: 'user', password: 'p@ss' })
 })

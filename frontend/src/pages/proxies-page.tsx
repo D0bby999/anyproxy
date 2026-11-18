@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
@@ -25,6 +25,7 @@ export function ProxiesPage({
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyConfig | null>(null)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [checking, setChecking] = useState('')
   const [pingingAll, setPingingAll] = useState(false)
@@ -32,6 +33,18 @@ export function ProxiesPage({
   const [bulkText, setBulkText] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkMessage, setBulkMessage] = useState('')
+  const [defaultScheme, setDefaultScheme] = useState<'auto' | 'http' | 'https' | 'socks5'>('auto')
+  const [confirmDelete, setConfirmDelete] = useState<ProxyConfig | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (confirmDelete) { setConfirmDelete(null); return }
+      if (showModal && !saving) setShowModal(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [confirmDelete, showModal, saving])
 
   const handleOpenAdd = () => {
     setError('')
@@ -56,39 +69,71 @@ export function ProxiesPage({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editing) return
+    if (!editing || saving) return
+    const host = editing.host.trim()
+    const payload: ProxyConfig = {
+      ...editing,
+      host,
+      name: editing.name.trim() || `${host}:${editing.port}`,
+    }
+    setSaving(true)
+    setError('')
     try {
-      const saved = await onSaveProxy(editing)
+      const saved = await onSaveProxy(payload)
       setResults((prev) => {
         const next = { ...prev }
         delete next[editing.id]
         return next
       })
-      setShowModal(false)
-      const target = saved || editing
+      const target = saved || payload
       if (target.id) {
         setChecking(target.id)
         try {
           const report = await onTestProxy(target)
           if (report) setResults((prev) => ({ ...prev, [target.id]: report }))
+        } catch {
+          // Proxy is saved; check error is already surfaced by onTestProxy toast.
         } finally {
           setChecking('')
         }
       }
+      setShowModal(false)
     } catch (err) {
       setError(String(err))
+    } finally {
+      setSaving(false)
     }
+  }
+
+  const checkProxiesConcurrently = async (list: ProxyConfig[]): Promise<CheckReport[]> => {
+    const targets = list.filter((p) => Boolean(p.id))
+    const reports: CheckReport[] = []
+    let cursor = 0
+    const concurrency = Math.min(4, targets.length)
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (cursor < targets.length) {
+        const p = targets[cursor++]
+        setChecking(p.id)
+        try {
+          const report = await onTestProxy(p)
+          if (report) {
+            setResults((prev) => ({ ...prev, [p.id]: report }))
+            reports.push(report)
+          }
+        } catch {
+          // Individual check error already handled by caller/toast
+        }
+      }
+    })
+    await Promise.all(workers)
+    return reports
   }
 
   const handlePingAll = async () => {
     if (pingingAll || proxies.length === 0) return
     setPingingAll(true)
     try {
-      for (const p of proxies) {
-        setChecking(p.id)
-        const report = await onTestProxy(p)
-        if (report) setResults((prev) => ({ ...prev, [p.id]: report }))
-      }
+      await checkProxiesConcurrently(proxies)
     } finally {
       setChecking('')
       setPingingAll(false)
@@ -106,7 +151,7 @@ export function ProxiesPage({
     try {
       for (const [index, line] of lines.entries()) {
         if (!line) continue
-        const proxy = parseProxy(line)
+        const proxy = parseProxy(line, defaultScheme)
         if (!proxy) { failed.push(index + 1); continue }
         try {
           const saved = await onSaveProxy(proxy)
@@ -117,20 +162,7 @@ export function ProxiesPage({
         }
       }
 
-      const checkedReports: CheckReport[] = []
-      for (const p of savedList) {
-        if (!p.id) continue
-        setChecking(p.id)
-        try {
-          const report = await onTestProxy(p)
-          if (report) {
-            setResults((prev) => ({ ...prev, [p.id]: report }))
-            checkedReports.push(report)
-          }
-        } finally {
-          setChecking('')
-        }
-      }
+      const checkedReports = await checkProxiesConcurrently(savedList)
 
       let summaryText = added ? `${t.proxies.bulkAdded}: ${added}` : ''
       if (added === 1 && checkedReports.length === 1) {
@@ -156,7 +188,8 @@ export function ProxiesPage({
         {proxies.length > 0 && (
           <button
             type="button"
-            className="btn nodrag"
+            className={`btn nodrag${pingingAll ? ' busy' : ''}`}
+            aria-busy={pingingAll}
             disabled={pingingAll || !!checking}
             onClick={() => void handlePingAll()}
           >
@@ -189,7 +222,16 @@ export function ProxiesPage({
           </div>
           <textarea className="input mono proxy-paste" rows={3} value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={t.proxies.bulkPlaceholder} aria-label={t.proxies.bulkTitle} spellCheck={false} autoComplete="off" />
           <div className="proxy-import-foot">
-            <button type="button" className="btn primary" disabled={bulkBusy || !bulkText.trim()} onClick={handleBulkAdd} aria-busy={bulkBusy}><Icon name="zap" />{bulkBusy ? t.proxies.bulkAdding : t.proxies.bulkAdd}</button>
+            <button type="button" className={`btn primary${bulkBusy ? ' busy' : ''}`} disabled={bulkBusy || !bulkText.trim()} onClick={handleBulkAdd} aria-busy={bulkBusy}><Icon name={bulkBusy ? 'refresh' : 'plus'} />{bulkBusy ? t.proxies.bulkAdding : t.proxies.bulkAdd}</button>
+            <label className="row" style={{ fontSize: 'var(--t-xs)', gap: 6 }}>
+              {t.proxies.type}
+              <select className="select" style={{ width: 130, height: 30 }} value={defaultScheme} disabled={bulkBusy} onChange={(e) => setDefaultScheme(e.target.value as 'auto' | 'http' | 'https' | 'socks5')}>
+                <option value="auto">{t.proxies.schemeAuto}</option>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </label>
             <span className="muted">{t.proxies.bulkSecret}</span>
           </div>
           {bulkMessage && <p className="proxy-import-result" role="status">{bulkMessage}</p>}
@@ -265,7 +307,7 @@ export function ProxiesPage({
                               </span>
                             ) : <span className="faint" title={t.proxies.unchecked}>{t.proxies.unchecked}</span>}
                             <button
-                              className="iconbtn sm"
+                              className={`iconbtn sm${checking === p.id ? ' busy' : ''}`}
                               disabled={!!checking || pingingAll}
                               aria-busy={checking === p.id}
                               onClick={async () => {
@@ -311,14 +353,7 @@ export function ProxiesPage({
                             <button
                               type="button"
                               className="iconbtn sm danger"
-                              onClick={() => {
-                                setResults((prev) => {
-                                  const next = { ...prev }
-                                  delete next[p.id]
-                                  return next
-                                })
-                                void onDeleteProxy(p.id)
-                              }}
+                              onClick={() => setConfirmDelete(p)}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >
@@ -338,13 +373,14 @@ export function ProxiesPage({
 
       {showModal && editing && (
         <div className="dialog-backdrop">
-          <div className="dialog-box">
+          <div className="dialog-box" role="dialog" aria-modal="true" aria-label={editing.id ? t.actions.edit : t.proxies.newBtn}>
             <form onSubmit={handleSave}>
               <div className="dialog-head">
                 <h2>{editing.id ? t.actions.edit : t.proxies.newBtn}</h2>
                 <button
                   type="button"
                   className="iconbtn sm"
+                  disabled={saving}
                   onClick={() => setShowModal(false)}
                   aria-label={t.actions.cancel}
                 >
@@ -353,15 +389,15 @@ export function ProxiesPage({
               </div>
 
               <div className="dialog-body">
-                {error && <p role="alert">{error}</p>}
+                {error && <div className="banner danger" role="alert"><Icon name="warn" /><span>{error}</span></div>}
                 <div className="field">
                   <label>{t.proxies.name}</label>
                   <input
                     className="input"
+                    disabled={saving}
                     value={editing.name}
                     onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                     placeholder={t.proxies.namePlaceholder}
-                    required
                   />
                 </div>
 
@@ -369,6 +405,7 @@ export function ProxiesPage({
                   <label>{t.proxies.type}</label>
                   <select
                     className="select"
+                    disabled={saving}
                     value={editing.type}
                     onChange={(e) =>
                       setEditing({ ...editing, type: e.target.value as ProxyConfig['type'] })
@@ -385,6 +422,7 @@ export function ProxiesPage({
                     <label>{t.proxies.host}</label>
                     <input
                       className="input mono"
+                      disabled={saving}
                       value={editing.host}
                       onChange={(e) => setEditing({ ...editing, host: e.target.value })}
                       placeholder="127.0.0.1"
@@ -396,6 +434,9 @@ export function ProxiesPage({
                     <input
                       className="input mono"
                       type="number"
+                      min={1}
+                      max={65535}
+                      disabled={saving}
                       value={editing.port}
                       onChange={(e) =>
                         setEditing({ ...editing, port: parseInt(e.target.value, 10) || 0 })
@@ -410,6 +451,7 @@ export function ProxiesPage({
                     <label>{t.proxies.username}</label>
                     <input
                       className="input"
+                      disabled={saving}
                       value={editing.username || ''}
                       onChange={(e) =>
                         setEditing({ ...editing, username: e.target.value })
@@ -421,6 +463,7 @@ export function ProxiesPage({
                     <input
                       className="input"
                       type="password"
+                      disabled={saving}
                       value={editing.password || ''}
                       onChange={(e) =>
                         setEditing({ ...editing, password: e.target.value })
@@ -435,11 +478,12 @@ export function ProxiesPage({
                   <button
                     type="button"
                     className="btn danger"
+                    disabled={saving}
                     style={{ marginRight: 'auto' }}
                     onClick={() => {
-                      const targetId = editing.id
+                      const target = editing
                       setShowModal(false)
-                      void onDeleteProxy(targetId)
+                      setConfirmDelete(target)
                     }}
                   >
                     <Icon name="trash" />
@@ -449,15 +493,57 @@ export function ProxiesPage({
                 <button
                   type="button"
                   className="btn"
+                  disabled={saving}
                   onClick={() => setShowModal(false)}
                 >
                   {t.actions.cancel}
                 </button>
-                <button type="submit" className="btn primary">
-                  {t.actions.save}
+                <button type="submit" className={`btn primary${saving ? ' busy' : ''}`} aria-busy={saving} disabled={saving}>
+                  <Icon name={saving ? 'refresh' : 'plus'} />
+                  {!editing.id
+                    ? (saving ? t.proxies.addSubmitting : t.proxies.addSubmit)
+                    : (saving ? t.proxies.saving : t.proxies.saveAndCheck)}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="dialog-backdrop" onClick={() => setConfirmDelete(null)}>
+          <div className="dialog-box" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-proxy-title" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-head">
+              <h2 id="confirm-delete-proxy-title">{t.proxies.confirmDelete}</h2>
+              <button type="button" className="iconbtn sm" onClick={() => setConfirmDelete(null)} aria-label={t.actions.cancel}>
+                <Icon name="close" />
+              </button>
+            </div>
+            <div className="dialog-body">
+              <p>{t.proxies.confirmDeleteBody(confirmDelete.name || `${confirmDelete.host}:${confirmDelete.port}`)}</p>
+            </div>
+            <div className="dialog-foot">
+              <button type="button" className="btn" autoFocus onClick={() => setConfirmDelete(null)}>
+                {t.actions.cancel}
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => {
+                  const id = confirmDelete.id
+                  setConfirmDelete(null)
+                  setResults((prev) => {
+                    const next = { ...prev }
+                    delete next[id]
+                    return next
+                  })
+                  void onDeleteProxy(id)
+                }}
+              >
+                <Icon name="trash" />
+                {t.actions.delete}
+              </button>
+            </div>
           </div>
         </div>
       )}

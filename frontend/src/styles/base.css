@@ -279,3 +279,9 @@ textarea, textarea.input {
 .banner .icon { margin-top: 2px; flex: none; }
 .banner.danger { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger-ink); }
 .banner .grow { flex: 1; min-width: 0; }
+
+.busy .icon, [aria-busy="true"] .icon { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .busy .icon, [aria-busy="true"] .icon { animation: none; }
+}
