@@ -13,7 +13,7 @@ SIGN_FLAGS ?= $(if $(findstring Developer ID,$(SIGN_ID)),--options runtime --tim
 NOTARY_PROFILE ?=
 NOTARY_ENV     ?=
 
-.PHONY: dev build sign-macos package-macos verify-macos-sig notarize-macos build-windows test lint
+.PHONY: dev build sign-macos package-macos verify-macos-sig notarize-macos build-windows test lint build-ne smoke-ne
 
 dev:
 	$(WAILS) dev
@@ -22,6 +22,25 @@ build:
 	$(WAILS) build -clean -platform darwin/$(ARCH) -ldflags "$(LDFLAGS)"
 	SIGN_ID="$(SIGN_ID)" ./macos/build-extension.sh $(APP) $(ARCH)
 	codesign --verify --deep --strict $(APP)
+
+# Local build that actually runs the macOS Network Extension, so the release-only
+# code path can be tested on this machine. Needs the same two provisioning
+# profiles the release workflow uses, because they carry the
+# networkextension + system-extension entitlements:
+#   make build-ne APP_PROVISION_PROFILE=~/secrets/app.provisionprofile \
+#                 EXT_PROVISION_PROFILE=~/secrets/ext.provisionprofile
+# then: ./scripts/ne-smoke.sh (or: make smoke-ne)
+build-ne:
+	@test -n "$(APP_PROVISION_PROFILE)" || (echo "error: APP_PROVISION_PROFILE is not set (app .provisionprofile)" >&2; exit 1)
+	@test -n "$(EXT_PROVISION_PROFILE)" || (echo "error: EXT_PROVISION_PROFILE is not set (extension .provisionprofile)" >&2; exit 1)
+	$(WAILS) build -clean -platform darwin/$(ARCH) -ldflags "$(LDFLAGS)"
+	APP_PROVISION_PROFILE="$(APP_PROVISION_PROFILE)" EXT_PROVISION_PROFILE="$(EXT_PROVISION_PROFILE)" \
+		SIGN_ID="$(SIGN_ID)" ./macos/build-extension.sh $(APP) $(ARCH)
+	codesign --verify --deep --strict $(APP)
+	@echo "Built $(APP) with the Network Extension. Verify it with: make smoke-ne"
+
+smoke-ne:
+	./scripts/ne-smoke.sh $(APP)
 
 sign-macos:
 	@test -n "$(DEV_ID)" || (echo "error: no Developer ID Application certificate found in Keychain" >&2; exit 1)

@@ -30,6 +30,7 @@ type Options struct {
 	ShowVersion  bool
 	ShowHelp     bool
 	CheckUpdate  bool
+	ShowStatus   bool
 }
 
 // ShouldRunCLI reports whether the process arguments request headless CLI mode
@@ -40,7 +41,7 @@ func ShouldRunCLI(args []string) bool {
 			continue
 		}
 		switch a {
-		case "-h", "--help", "--version", "-v", "--list-profiles", "--profile", "-p", "--verbose", "--test-proxy", "--update":
+		case "-h", "--help", "--version", "-v", "--list-profiles", "--profile", "-p", "--verbose", "--test-proxy", "--update", "--status":
 			return true
 		}
 		if strings.HasPrefix(a, "--profile=") || strings.HasPrefix(a, "--verbose=") || strings.HasPrefix(a, "--test-proxy=") {
@@ -104,6 +105,8 @@ func ParseArgs(args []string) (Options, error) {
 			opts.TestProxyID = strings.TrimPrefix(arg, "--test-proxy=")
 		case arg == "--update":
 			opts.CheckUpdate = true
+		case arg == "--status":
+			opts.ShowStatus = true
 		default:
 			return opts, fmt.Errorf("unknown flag %q (run with --help for usage)", arg)
 		}
@@ -146,6 +149,12 @@ func Run(ctx context.Context, svc *service.Service, args []string, in io.Reader,
 		} else {
 			_, _ = fmt.Fprintln(out, "You are running the latest version.")
 		}
+		return nil
+	}
+	if opts.ShowStatus {
+		st := svc.Status()
+		_, _ = fmt.Fprintf(out, "backend=%s state=%s enabled=%t dns=%t rules=%d message=%s\n",
+			st.Backend, st.State, st.Enabled, st.DNSProxyActive, st.ActiveRules, st.Message)
 		return nil
 	}
 	if opts.ListProfiles {
@@ -283,6 +292,9 @@ When launched with any flag below, AnyProxy runs in headless CLI mode:
   -v, --verbose <0-3>           Log output: 0=silent, 1=activity, 2=connections, 3=both (default: 1)
       --test-proxy <id|name>    Run 5-step Proxy Checker on the specified proxy and exit
       --update                  Check for software updates
+      --status                  Print the interception backend status and exit
+                                (backend=macos-ne proves the Network Extension
+                                path is the one running, not macos-sysproxy)
       --version                 Print version and exit
   -h, --help                    Show this help message`)
 }
