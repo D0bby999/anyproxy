@@ -1,7 +1,7 @@
 {
-  "version": "1.0.6",
+  "version": "1.0.7",
   "date": "2026-11-18",
-  "notes": "Core & UI optimization: unified rule priority/CIDR/exclude matching across macOS NE & Windows WinDivert, live byte counters on macOS NE, local SOCKS5 UDP ASSOCIATE support, and concurrent batch proxy checking.",
+  "notes": "Direct in-app updates with SHA-256 verification, live download progress, and automatic daily update checks.",
   "assets": {
     "darwin-arm64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.6/AnyProxy-darwin-arm64.dmg",
