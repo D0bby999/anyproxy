@@ -532,7 +532,7 @@ class AppProxyProvider: NETransparentProxyProvider {
     private let rulesLock = NSLock()
     private var nextRuleId: UInt32 = 1
     
-    private struct StoredProxyConfig {
+    private struct StoredProxyConfig: Equatable {
         let type: String
         let host: String
         let port: Int
@@ -543,6 +543,16 @@ class AppProxyProvider: NETransparentProxyProvider {
     private var storedProxyConfigs: [String: StoredProxyConfig] = [:]
     private var defaultProxyId: String = ""
     private let proxyLock = NSLock()
+    // a config change only affects connections opened after it. http/2 and quic
+    // sockets that are already established keep the previous proxy for as long
+    // as the browser holds them (hours), so the switch looks like it did nothing.
+    // set when a pushed config differs from the previous one and acted on once
+    // the matching rule list has been applied, dropping the flows that are
+    // still running on the old proxy. guarded by proxyLock.
+    private var pendingFlowReset = false
+    // same idea for the rule list: a rewritten rule routes existing connections
+    // the old way until their sockets close, which looks like the edit did nothing
+    private var lastRulesSignature = ""
     private var _engineEnabled = true
     private let engineEnabledLock = NSLock()
     private var engineEnabled: Bool {
@@ -630,6 +640,13 @@ class AppProxyProvider: NETransparentProxyProvider {
         for a in all {
             a.release()
         }
+        // nothing is proxied while stopped, so don't keep stale tcp references
+        openTCPLock.lock()
+        openTCPFlows.removeAll()
+        openTCPLock.unlock()
+        proxyLock.lock()
+        pendingFlowReset = false
+        proxyLock.unlock()
         completionHandler()
     }
     
@@ -739,6 +756,10 @@ class AppProxyProvider: NETransparentProxyProvider {
             entry.connection.cancel()
             // a tcp flow must fail its connect (see FlowFailure), udp flows keep the clean close
             let reason: Error? = entry.flow is NEAppProxyTCPFlow ? FlowFailure.timedOut : nil
+            if let tcp = entry.flow as? NEAppProxyTCPFlow {
+                // the relay teardown may get here too, only one of them closes it
+                guard claimTCPFlowClose(tcp) else { continue }
+            }
             entry.flow.closeReadWithError(reason)
             entry.flow.closeWriteWithError(reason)
         }
@@ -760,6 +781,68 @@ class AppProxyProvider: NETransparentProxyProvider {
     private var activeFlows: [ObjectIdentifier: LiveFlowInfo] = [:]
     private let activeFlowsLock = NSLock()
     private var nextFlowSeq: UInt64 = 1
+
+    // the ui registry above keeps stats after a flow is gone, so it can't be used
+    // to close anything. this one holds the live tcp flows that are currently
+    // proxied, which is what a config change has to drop.
+    private var openTCPFlows: [ObjectIdentifier: NEAppProxyTCPFlow] = [:]
+    // a flow can be closed by the reset and again by its own relay teardown.
+    // closing an NEAppProxyFlow twice is not safe, so the first path that gets
+    // here claims it and the second one backs off.
+    private var closedTCPFlows = Set<ObjectIdentifier>()
+    private let openTCPLock = NSLock()
+
+    private func trackTCPFlow(_ flow: NEAppProxyTCPFlow) {
+        openTCPLock.lock()
+        openTCPFlows[ObjectIdentifier(flow)] = flow
+        openTCPLock.unlock()
+    }
+
+    // true when this call is the one that may close the flow
+    private func claimTCPFlowClose(_ flow: NEAppProxyTCPFlow) -> Bool {
+        let key = ObjectIdentifier(flow)
+        openTCPLock.lock()
+        defer { openTCPLock.unlock() }
+        openTCPFlows.removeValue(forKey: key)
+        if closedTCPFlows.contains(key) {
+            return false
+        }
+        closedTCPFlows.insert(key)
+        // bounded so the tombstones can't grow with flow churn
+        if closedTCPFlows.count > 512 {
+            closedTCPFlows.removeAll()
+        }
+        return true
+    }
+
+    // drops every flow that is still running on the old proxy list so the apps
+    // open fresh connections and match against the new one
+    private func resetOpenFlows(reason: String) {
+        openTCPLock.lock()
+        let tcpFlows = openTCPFlows
+        openTCPLock.unlock()
+
+        var closed = 0
+        for (_, flow) in tcpFlows {
+            guard claimTCPFlowClose(flow) else { continue }
+            closed += 1
+            unregisterLiveFlow(flow)
+            flow.closeReadWithError(nil)
+            flow.closeWriteWithError(nil)
+        }
+
+        udpLock.lock()
+        let udpFlows = Array(udpAssociations.keys)
+        udpLock.unlock()
+        for flow in udpFlows {
+            teardownUDP(flow)
+        }
+
+        // handshakes still in flight belong to the old config too
+        sweepHandshakes(all: true)
+
+        log("Closed \(closed) TCP and \(udpFlows.count) UDP flow(s): \(reason)", level: "INFO")
+    }
 
     private func registerLiveFlow(_ flow: NEAppProxyFlow, pid: Int, process: String, destIp: String, host: String, port: UInt16, isUdp: Bool, proxyLabel: String) {
         let key = ObjectIdentifier(flow)
@@ -801,8 +884,10 @@ class AppProxyProvider: NETransparentProxyProvider {
     }
 
     private func closeRelay(_ flow: NEAppProxyTCPFlow, _ connection: NWTCPConnection, error: Error? = nil) {
-        unregisterLiveFlow(flow)
         connection.cancel()
+        unregisterLiveFlow(flow)
+        // a config reset may have closed this flow already
+        guard claimTCPFlowClose(flow) else { return }
         flow.closeReadWithError(error)
         flow.closeWriteWithError(error)
     }
@@ -858,6 +943,11 @@ class AppProxyProvider: NETransparentProxyProvider {
         case "setEnabled":
             if let enabled = message["enabled"] as? Bool {
                 engineEnabled = enabled
+                if !enabled {
+                    // pausing has to release the connections that are already
+                    // proxied, otherwise they keep flowing through the proxy
+                    resetOpenFlows(reason: "engine paused")
+                }
                 completionHandler?(try? JSONSerialization.data(withJSONObject: ["status": "ok"]))
             } else {
                 completionHandler?(nil)
@@ -873,6 +963,8 @@ class AppProxyProvider: NETransparentProxyProvider {
         case "setProxyConfigs":
             if let configs = message["configs"] as? [[String: Any]] {
                 proxyLock.lock()
+                let previousConfigs = storedProxyConfigs
+                let previousDefault = defaultProxyId
                 storedProxyConfigs = [:]
                 defaultProxyId = message["defaultProxyId"] as? String ?? ""
                 warnedKeys.removeAll()
@@ -889,6 +981,11 @@ class AppProxyProvider: NETransparentProxyProvider {
                         sendDomain: configDict["sendDomainToProxy"] as? Bool ?? false
                     )
                 }
+                // a changed proxy list or default invalidates every flow that is
+                // still running on the old one. the reset waits for setRules so
+                // the reconnecting flows already match the new rule list.
+                let changed = defaultProxyId != previousDefault || storedProxyConfigs != previousConfigs
+                if changed { pendingFlowReset = true }
                 proxyLock.unlock()
                 log("Proxy configs updated: \(storedProxyConfigs.count) config(s)")
             }
@@ -942,6 +1039,20 @@ class AppProxyProvider: NETransparentProxyProvider {
                 return (rule, item.matcher)
             }
             rulesLock.unlock()
+            // both halves of the config are in place now, so flows still running
+            // on the previous proxy can be dropped and will reconnect against
+            // the new one instead of keeping the old exit ip
+            let signature = (try? JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys]))
+                .map { String(decoding: $0, as: UTF8.self) } ?? ""
+            proxyLock.lock()
+            let shouldReset = pendingFlowReset
+            pendingFlowReset = false
+            let rulesChanged = signature != lastRulesSignature
+            lastRulesSignature = signature
+            proxyLock.unlock()
+            if shouldReset || rulesChanged {
+                resetOpenFlows(reason: shouldReset ? "proxy configuration changed" : "rules changed")
+            }
             let response: [String: Any] = ["status": "ok", "count": built.count, "skipped": raw.count - built.count]
             completionHandler?(try? JSONSerialization.data(withJSONObject: response))
 
@@ -958,6 +1069,11 @@ class AppProxyProvider: NETransparentProxyProvider {
             proxyLock.lock()
             storedProxyConfigs.removeAll()
             warnedKeys.removeAll()
+            // leaving the old default id behind made the next setProxyConfigs
+            // compare against a default that no longer exists
+            defaultProxyId = ""
+            pendingFlowReset = false
+            lastRulesSignature = ""
             proxyLock.unlock()
             completionHandler?(try? JSONSerialization.data(withJSONObject: ["status": "ok"]))
         default:
@@ -1053,6 +1169,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                 }
                 sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
                 registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
+                trackTCPFlow(flow)
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
                 return true
             }
@@ -1063,6 +1180,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             if let config = defConfig {
                 sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
                 registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
+                trackTCPFlow(flow)
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
                 return true
             }
