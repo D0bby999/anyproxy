@@ -48,6 +48,42 @@ func TestTrackerLifecycleAndEviction(t *testing.T) {
 	}
 }
 
+func TestTrackerReplaceFromExternalPreservesClosedAndLocal(t *testing.T) {
+	tr := NewTracker(10)
+	localID := tr.StartFlow(Flow{PID: 50, ProcessName: "curl", DestIP: "1.1.1.1", Port: 443})
+
+	tr.ReplaceFromExternal([]Flow{
+		{ID: "ne-1", PID: 200, ProcessName: "Chrome", DestIP: "8.8.8.8", Host: "dns.google", Port: 443, Sent: 100, Received: 200, AgeMs: 500},
+		{ID: "ne-2", PID: 201, ProcessName: "Safari", DestIP: "1.1.1.1", Host: "one.one.one.one", Port: 443, Sent: 50, Received: 60, AgeMs: 100},
+	})
+
+	// Second poll: ne-1 is gone (closed), ne-2 has more bytes
+	tr.ReplaceFromExternal([]Flow{
+		{ID: "ne-2", PID: 201, ProcessName: "Safari", DestIP: "1.1.1.1", Host: "one.one.one.one", Port: 443, Sent: 500, Received: 1600, AgeMs: 1100},
+	})
+
+	all := tr.GetFlows(10)
+	if len(all) != 3 {
+		t.Fatalf("expected 3 flows (local + active ne-2 + closed ne-1), got %d: %+v", len(all), all)
+	}
+	byID := make(map[string]Flow, len(all))
+	for _, f := range all {
+		byID[f.ID] = f
+	}
+	if !byID["ne-1"].Closed || byID["ne-1"].Sent != 100 {
+		t.Fatalf("expected ne-1 to be marked closed with preserved bytes, got %+v", byID["ne-1"])
+	}
+	if byID["ne-2"].Closed || byID["ne-2"].Sent != 500 || byID["ne-2"].Received != 1600 {
+		t.Fatalf("expected ne-2 to remain active with updated bytes, got %+v", byID["ne-2"])
+	}
+	if byID[localID].Closed {
+		t.Fatalf("expected local flow %s to remain untouched, got %+v", localID, byID[localID])
+	}
+	if removed := tr.ClearClosed(); removed != 1 {
+		t.Fatalf("expected ClearClosed to remove 1 flow (ne-1), got %d", removed)
+	}
+}
+
 func TestLogManagerDedupUDPWindowAndFilters(t *testing.T) {
 	lm := NewLogManager()
 

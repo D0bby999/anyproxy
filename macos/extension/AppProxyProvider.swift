@@ -74,7 +74,7 @@ struct ProxyRule: Codable {
     // domain like *.github.com
     func matchesHost(ip: String, domains: [String]) -> Bool {
         if targetHosts.isEmpty || targetHosts == "*" { return true }
-        for raw in targetHosts.components(separatedBy: ";") {
+        for raw in targetHosts.components(separatedBy: CharacterSet(charactersIn: ",;")) {
             let pattern = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if pattern.isEmpty { continue }
             if Self.matchIPPattern(pattern, ipString: ip) { return true }
@@ -122,7 +122,7 @@ struct ProxyRule: Codable {
         return globMatch(pattern.lowercased(), matchTarget.lowercased())
     }
 
-    // wildcard match supporting any number of "*", e.g. *chrome*, com.*.browser, curl*
+    // wildcard match supporting any number of "*" and "?", e.g. *chrome*, com.*.browser, api?.example.org
     private static func globMatch(_ pattern: String, _ text: String) -> Bool {
         return globMatch(Array(pattern), Array(text))
     }
@@ -130,7 +130,7 @@ struct ProxyRule: Codable {
     fileprivate static func globMatch(_ p: [Character], _ t: [Character]) -> Bool {
         var pi = 0, ti = 0, star = -1, mark = 0
         while ti < t.count {
-            if pi < p.count, p[pi] == t[ti] {
+            if pi < p.count, (p[pi] == t[ti] || p[pi] == "?") {
                 pi += 1; ti += 1
             } else if pi < p.count, p[pi] == "*" {
                 star = pi; mark = ti; pi += 1
@@ -149,7 +149,7 @@ struct ProxyRule: Codable {
             return true
         }
         
-        let patterns = ipList.components(separatedBy: ";")
+        let patterns = ipList.components(separatedBy: CharacterSet(charactersIn: ",;"))
         for pattern in patterns {
             let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
             if matchIPPattern(trimmed, ipString: ipString) {
@@ -173,6 +173,32 @@ struct ProxyRule: Codable {
         return 0
     }
 
+    private static func matchCIDR(_ pattern: String, ipString: String) -> Bool {
+        guard let slash = pattern.firstIndex(of: "/") else { return false }
+        let netStr = String(pattern[..<slash]).trimmingCharacters(in: .whitespaces)
+        let pfxStr = String(pattern[pattern.index(after: slash)...]).trimmingCharacters(in: .whitespaces)
+        guard let prefix = Int(pfxStr),
+              let netBytes = ipToBytes(netStr),
+              let targetBytes = ipToBytes(ipString),
+              netBytes.count == targetBytes.count else {
+            return false
+        }
+        let maxBits = netBytes.count * 8
+        guard prefix >= 0 && prefix <= maxBits else { return false }
+        let fullBytes = prefix / 8
+        let remBits = prefix % 8
+        for i in 0..<fullBytes where netBytes[i] != targetBytes[i] {
+            return false
+        }
+        if remBits > 0 {
+            let mask = UInt8(0xFF << (8 - remBits))
+            if (netBytes[fullBytes] & mask) != (targetBytes[fullBytes] & mask) {
+                return false
+            }
+        }
+        return true
+    }
+
     // full 8 hextet form of a v6 address, e.g. ["2001","db8","0",...]
     private static func expandIPv6(_ ipString: String) -> [String]? {
         guard let v6 = IPv6Address(ipString) else { return nil }
@@ -190,17 +216,21 @@ struct ProxyRule: Codable {
             return true
         }
 
-        // range, works for v4 and v6, e.g. 10.0.0.1-10.0.0.254 or fe80::1-fe80::ff
+        // CIDR notation, e.g. 10.0.0.0/8 or 2001:db8::/32
+        if pattern.contains("/") {
+            return matchCIDR(pattern, ipString: ipString)
+        }
+
+        // full IP range, works for v4 and v6, e.g. 10.0.0.1-10.0.0.254 or fe80::1-fe80::ff
         if pattern.contains("-") {
             let parts = pattern.components(separatedBy: "-")
-            guard parts.count == 2,
-                  let lo = ipToBytes(parts[0].trimmingCharacters(in: .whitespaces)),
-                  let hi = ipToBytes(parts[1].trimmingCharacters(in: .whitespaces)),
-                  let target = ipToBytes(ipString),
-                  lo.count == hi.count, target.count == lo.count else {
-                return false
+            if parts.count == 2,
+               let lo = ipToBytes(parts[0].trimmingCharacters(in: .whitespaces)),
+               let hi = ipToBytes(parts[1].trimmingCharacters(in: .whitespaces)),
+               let target = ipToBytes(ipString),
+               lo.count == hi.count, target.count == lo.count {
+                return compareBytes(target, lo) >= 0 && compareBytes(target, hi) <= 0
             }
-            return compareBytes(target, lo) >= 0 && compareBytes(target, hi) <= 0
         }
 
         // v6 pattern (contains a colon)
@@ -208,15 +238,24 @@ struct ProxyRule: Codable {
             return matchIPv6Pattern(pattern, ipString: ipString)
         }
 
-        // v4 wildcard, e.g. 192.168.1.*
+        // v4 wildcard / per-octet range, e.g. 192.168.1.* or 10.1-5.*.*
         let patternOctets = pattern.components(separatedBy: ".")
         let ipOctets = ipString.components(separatedBy: ".")
         if patternOctets.count != 4 || ipOctets.count != 4 {
             return false
         }
         for i in 0..<4 {
-            if patternOctets[i] == "*" { continue }
-            if patternOctets[i] != ipOctets[i] { return false }
+            let pOct = patternOctets[i]
+            if pOct == "*" { continue }
+            guard let ipVal = UInt8(ipOctets[i]) else { return false }
+            if let dash = pOct.firstIndex(of: "-") {
+                guard let lo = UInt8(pOct[..<dash]),
+                      let hi = UInt8(pOct[pOct.index(after: dash)...]),
+                      lo <= hi else { return false }
+                if ipVal < lo || ipVal > hi { return false }
+            } else {
+                guard let exact = UInt8(pOct), ipVal == exact else { return false }
+            }
         }
         return true
     }
@@ -331,7 +370,7 @@ extension ProxyRule {
             var hostsAll = isAll(rule.targetHosts)
             var hosts: [(raw: String, glob: [Character], apex: String?)] = []
             if !hostsAll {
-                for raw in rule.targetHosts.components(separatedBy: ";") {
+                for raw in rule.targetHosts.components(separatedBy: CharacterSet(charactersIn: ",;")) {
                     let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                     if t.isEmpty { continue }
                     if t == "*" { hostsAll = true; break }
@@ -401,13 +440,13 @@ class AppProxyProvider: NETransparentProxyProvider {
     // one log entry, kept as an enum so we don't allocate a dictionary per line,
     // the dict is only built when the gui drains a batch
     private enum LogEntry {
-        case connection(proto: String, process: String, destination: String, port: String, proxy: String)
+        case connection(proto: String, pid: Int, process: String, destination: String, port: String, proxy: String)
         case activity(timestamp: String, level: String, message: String)
 
         func toDict() -> [String: String] {
             switch self {
-            case let .connection(proto, process, destination, port, proxy):
-                return ["type": "connection", "protocol": proto, "process": process,
+            case let .connection(proto, pid, process, destination, port, proxy):
+                return ["type": "connection", "protocol": proto, "pid": String(pid), "process": process,
                         "destination": destination, "port": port, "proxy": proxy]
             case let .activity(timestamp, level, message):
                 return ["type": "activity", "timestamp": timestamp, "level": level, "message": message]
@@ -428,6 +467,7 @@ class AppProxyProvider: NETransparentProxyProvider {
     // connection. the version changes when a pid is reused, so a new process
     // never inherits the previous owner's name
     private struct ProcessIdentity {
+        let pid: Int
         let name: String   // file name of the executable, what the logs show
         let path: String   // full path of the executable, what a rule with a path is compared with
     }
@@ -465,7 +505,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         }
         
         let fullPath = String(cString: pathBuffer)
-        let identity = ProcessIdentity(name: (fullPath as NSString).lastPathComponent, path: fullPath)
+        let identity = ProcessIdentity(pid: Int(pid), name: (fullPath as NSString).lastPathComponent, path: fullPath)
         
         // store in cache, evict everything if full - processes rarely hit this
         pidCacheLock.lock()
@@ -695,6 +735,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         for key in expired.keys { pendingHandshakes.removeValue(forKey: key) }
         handshakeLock.unlock()
         for (_, entry) in expired {
+            unregisterLiveFlow(entry.flow)
             entry.connection.cancel()
             // a tcp flow must fail its connect (see FlowFailure), udp flows keep the clean close
             let reason: Error? = entry.flow is NEAppProxyTCPFlow ? FlowFailure.timedOut : nil
@@ -705,24 +746,50 @@ class AppProxyProvider: NETransparentProxyProvider {
 
     private struct LiveFlowInfo {
         let id: String
+        let pid: Int
         let processName: String
-        let destIp: String
-        let host: String
-        let port: UInt16
+        var destIp: String
+        var host: String
+        var port: UInt16
         let isUdp: Bool
         let proxyLabel: String
+        var sent: Int64
+        var received: Int64
         let startedAt: Date
     }
     private var activeFlows: [ObjectIdentifier: LiveFlowInfo] = [:]
     private let activeFlowsLock = NSLock()
     private var nextFlowSeq: UInt64 = 1
 
-    private func registerLiveFlow(_ flow: NEAppProxyFlow, process: String, destIp: String, host: String, port: UInt16, isUdp: Bool, proxyLabel: String) {
+    private func registerLiveFlow(_ flow: NEAppProxyFlow, pid: Int, process: String, destIp: String, host: String, port: UInt16, isUdp: Bool, proxyLabel: String) {
         let key = ObjectIdentifier(flow)
         activeFlowsLock.lock()
         let seq = nextFlowSeq
         nextFlowSeq += 1
-        activeFlows[key] = LiveFlowInfo(id: "ne-\(seq)", processName: process, destIp: destIp, host: host, port: port, isUdp: isUdp, proxyLabel: proxyLabel, startedAt: Date())
+        activeFlows[key] = LiveFlowInfo(id: "ne-\(seq)", pid: pid, processName: process, destIp: destIp, host: host, port: port, isUdp: isUdp, proxyLabel: proxyLabel, sent: 0, received: 0, startedAt: Date())
+        activeFlowsLock.unlock()
+    }
+
+    private func addFlowBytes(_ flow: NEAppProxyFlow, sentDelta: Int64, recvDelta: Int64) {
+        let key = ObjectIdentifier(flow)
+        activeFlowsLock.lock()
+        if var info = activeFlows[key] {
+            info.sent += sentDelta
+            info.received += recvDelta
+            activeFlows[key] = info
+        }
+        activeFlowsLock.unlock()
+    }
+
+    private func updateUDPFlowEndpoint(_ flow: NEAppProxyFlow, destIp: String, host: String, port: UInt16) {
+        let key = ObjectIdentifier(flow)
+        activeFlowsLock.lock()
+        if var info = activeFlows[key], info.port == 0 {
+            info.destIp = destIp
+            info.host = host
+            info.port = port
+            activeFlows[key] = info
+        }
         activeFlowsLock.unlock()
     }
 
@@ -754,12 +821,15 @@ class AppProxyProvider: NETransparentProxyProvider {
             let list: [[String: Any]] = activeFlows.values.map { f in
                 [
                     "id": f.id,
+                    "pid": f.pid,
                     "processName": f.processName,
                     "destIp": f.destIp,
                     "host": f.host,
                     "port": Int(f.port),
                     "isUdp": f.isUdp,
                     "proxyLabel": f.proxyLabel,
+                    "sent": f.sent,
+                    "received": f.received,
                     "ageMs": Int(now.timeIntervalSince(f.startedAt) * 1000),
                 ]
             }
@@ -940,6 +1010,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         }
         
         let identity = getProcessIdentity(from: metaData)
+        let pid = identity?.pid ?? 0
         let processName = identity?.name
         let displayName = processName ?? processPath
         
@@ -956,10 +1027,10 @@ class AppProxyProvider: NETransparentProxyProvider {
         if let rule = matchedRule {
             switch rule.action {
             case "DIRECT":
-                sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: "Direct")
+                sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
                 return false
             case "BLOCK":
-                sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
+                sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
                 flow.closeReadWithError(nil)
                 flow.closeWriteWithError(nil)
                 return true
@@ -971,11 +1042,11 @@ class AppProxyProvider: NETransparentProxyProvider {
                     // rule points at a proxy that no longer exists. it still goes
                     // direct, but say so instead of leaking silently
                     warnOnce("missing:\(rule.action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
-                    sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: "Direct")
+                    sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
                     return false
                 }
-                sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
-                registerLiveFlow(flow, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
+                sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
+                registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
                 return true
             }
@@ -984,12 +1055,12 @@ class AppProxyProvider: NETransparentProxyProvider {
             let defConfig = defaultProxyId.isEmpty ? nil : storedProxyConfigs[defaultProxyId]
             proxyLock.unlock()
             if let config = defConfig {
-                sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
-                registerLiveFlow(flow, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
+                sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
+                registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
                 return true
             }
-            sendLogToApp(protocol: "TCP", process: displayName, destination: logDest, port: portStr, proxy: "Direct")
+            sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
             return false
         }
     }
@@ -1003,6 +1074,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         let metaData = flow.metaData
         let processPath = metaData.sourceAppSigningIdentifier
         let identity = getProcessIdentity(from: metaData)
+        let pid = identity?.pid ?? 0
         let processName = identity?.name
         let displayName = processName ?? processPath
         
@@ -1022,10 +1094,10 @@ class AppProxyProvider: NETransparentProxyProvider {
             let action = rule.action
             switch action {
             case "DIRECT":
-                sendLogToApp(protocol: "UDP", process: displayName, destination: "unknown", port: "unknown", proxy: "Direct")
+                sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "Direct")
                 return false
             case "BLOCK":
-                sendLogToApp(protocol: "UDP", process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
+                sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
                 // a handled flow that is never closed stays pinned in the extension
                 flow.closeReadWithError(nil)
                 flow.closeWriteWithError(nil)
@@ -1042,6 +1114,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                     warnOnce("udp-http:\(action)", "UDP can't go through an HTTP proxy, UDP traffic for that rule is going direct")
                     return false
                 }
+                let label = proxyLabel(socks5Config)
                 flow.open(withLocalEndpoint: nil) { [weak self] error in
                     guard let self = self else { return }
                     // a closed flow here is normal churn (quic opening and dropping
@@ -1049,6 +1122,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                     if error != nil {
                         return
                     }
+                    self.registerLiveFlow(flow, pid: pid, process: displayName, destIp: "0.0.0.0", host: "UDP association", port: 0, isUdp: true, proxyLabel: label)
                     // pass the resolved display name (curl), not the raw signing id (curl-<hash>)
                     self.proxyUDPFlowViaSOCKS5(flow, displayName: displayName, socksHost: socks5Config.host, socksPort: socks5Config.port, username: socks5Config.username, password: socks5Config.password)
                 }
@@ -1059,8 +1133,10 @@ class AppProxyProvider: NETransparentProxyProvider {
             let defConfig = defaultProxyId.isEmpty ? nil : storedProxyConfigs[defaultProxyId]
             proxyLock.unlock()
             if let socks5Config = defConfig, socks5Config.type.lowercased() == "socks5" {
+                let label = proxyLabel(socks5Config)
                 flow.open(withLocalEndpoint: nil) { [weak self] error in
                     guard let self = self, error == nil else { return }
+                    self.registerLiveFlow(flow, pid: pid, process: displayName, destIp: "0.0.0.0", host: "UDP association", port: 0, isUdp: true, proxyLabel: label)
                     self.proxyUDPFlowViaSOCKS5(flow, displayName: displayName, socksHost: socks5Config.host, socksPort: socks5Config.port, username: socks5Config.username, password: socks5Config.password)
                 }
                 return true
@@ -1068,7 +1144,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             // no rule matched. as before, only log it when udp proxying is possible
             // at all, otherwise every mDNS/NTP flow would fill the log
             if hasAnySocks5 {
-                sendLogToApp(protocol: "UDP", process: displayName, destination: "unknown", port: "unknown", proxy: "Direct")
+                sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "Direct")
             }
             return false
         }
@@ -1353,6 +1429,7 @@ class AppProxyProvider: NETransparentProxyProvider {
 
     // idempotent, cancels both channels and closes the flow exactly once
     private func teardownUDP(_ flow: NEAppProxyUDPFlow) {
+        unregisterLiveFlow(flow)
         udpLock.lock()
         guard let assoc = udpAssociations.removeValue(forKey: flow), !assoc.isTornDown else {
             udpLock.unlock()
@@ -1388,19 +1465,25 @@ class AppProxyProvider: NETransparentProxyProvider {
             association.touch()
             var toSend: [Data] = []
             toSend.reserveCapacity(datagrams.count)
+            var sentPayloadBytes: Int64 = 0
 
             for i in 0..<min(datagrams.count, endpoints.count) {
                 guard let nwHost = endpoints[i] as? NWHostEndpoint else { continue }
                 let destHost = nwHost.hostname
                 let destPort = UInt16(nwHost.port) ?? 0
                 guard destPort != 0 else { continue }
+                if Self.isLocalOrMulticastAddress(destHost) || destPort == 67 || destPort == 68 || destPort == 546 || destPort == 547 {
+                    continue
+                }
 
                 // log each distinct destination once, cap the set so it can't grow forever
                 if !association.loggedDestinations.contains(destHost) {
                     if association.loggedDestinations.count < 64 {
                         association.loggedDestinations.insert(destHost)
                     }
-                    self.sendLogToApp(protocol: "UDP", process: association.displayName, destination: destHost, port: nwHost.port, proxy: "SOCKS5")
+                    let logHost = DNSMapStore.shared.domains(forIP: destHost).first ?? destHost
+                    self.updateUDPFlowEndpoint(clientFlow, destIp: destHost, host: logHost, port: destPort)
+                    self.sendLogToApp(protocol: "UDP", process: association.displayName, destination: logHost, port: nwHost.port, proxy: "SOCKS5")
                 }
 
                 let key = UDPAssociation.HostPort(host: destHost, port: destPort)
@@ -1415,7 +1498,12 @@ class AppProxyProvider: NETransparentProxyProvider {
                     packet.append(header)
                     packet.append(datagrams[i])
                     toSend.append(packet)
+                    sentPayloadBytes += Int64(datagrams[i].count)
                 }
+            }
+
+            if sentPayloadBytes > 0 {
+                self.addFlowBytes(clientFlow, sentDelta: sentPayloadBytes, recvDelta: 0)
             }
 
             if !toSend.isEmpty {
@@ -1449,12 +1537,18 @@ class AppProxyProvider: NETransparentProxyProvider {
             var endpoints: [NWEndpoint] = []
             payloads.reserveCapacity(datagrams.count)
             endpoints.reserveCapacity(datagrams.count)
+            var recvPayloadBytes: Int64 = 0
 
             for datagram in datagrams {
                 if let (payload, destHost, destPort) = self.decapsulateSOCKS5UDPWithEndpoint(datagram: datagram, association: association) {
                     payloads.append(payload)
                     endpoints.append(NWHostEndpoint(hostname: destHost, port: String(destPort)))
+                    recvPayloadBytes += Int64(payload.count)
                 }
+            }
+
+            if recvPayloadBytes > 0 {
+                self.addFlowBytes(clientFlow, sentDelta: 0, recvDelta: recvPayloadBytes)
             }
 
             if !payloads.isEmpty {
@@ -1577,8 +1671,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             handleHTTPProxy(clientFlow: flow, proxyConnection: proxyConnection, destination: destination, port: port, username: config.username, password: config.password)
         default:
             log("unsupported proxy type: \(config.type)", level: "ERROR")
-            flow.closeReadWithError(FlowFailure.refused)
-            flow.closeWriteWithError(FlowFailure.refused)
+            closeRelay(flow, proxyConnection, error: FlowFailure.refused)
         }
     }
     
@@ -1594,9 +1687,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         proxyConnection.write(greetingData) { [weak self] error in
             if let error = error {
                 self?.log("SOCKS5 greeting write failed: \(error.localizedDescription)", level: "ERROR")
-                clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                proxyConnection.cancel()
+                self?.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                 return
             }
             
@@ -1605,17 +1696,13 @@ class AppProxyProvider: NETransparentProxyProvider {
                 
                 if let error = error {
                     self.log("SOCKS5 greeting response failed: \(error.localizedDescription)", level: "ERROR")
-                    clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                    clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                    proxyConnection.cancel()
+                    self.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                     return
                 }
                 
                 guard let data = data, data.count == 2 else {
                     self.log("SOCKS5 invalid greeting response", level: "ERROR")
-                    clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                    clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                    proxyConnection.cancel()
+                    self.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                     return
                 }
                 
@@ -1624,9 +1711,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                 
                 if version != 0x05 {
                     self.log("SOCKS5 invalid version: \(version)", level: "ERROR")
-                    clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                    clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                    proxyConnection.cancel()
+                    self.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                     return
                 }
                 
@@ -1636,9 +1721,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                     self.sendSOCKS5Auth(clientFlow: clientFlow, proxyConnection: proxyConnection, destination: destination, port: port, username: username ?? "", password: password ?? "")
                 } else {
                     self.log("SOCKS5 no acceptable auth method: \(method)", level: "ERROR")
-                    clientFlow.closeReadWithError(FlowFailure.refused)
-                    clientFlow.closeWriteWithError(FlowFailure.refused)
-                    proxyConnection.cancel()
+                    self.closeRelay(clientFlow, proxyConnection, error: FlowFailure.refused)
                 }
             }
         }
@@ -1661,9 +1744,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         proxyConnection.write(authData) { [weak self] error in
             if let error = error {
                 self?.log("SOCKS5 auth write failed: \(error.localizedDescription)", level: "ERROR")
-                clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                proxyConnection.cancel()
+                self?.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                 return
             }
             
@@ -1672,17 +1753,13 @@ class AppProxyProvider: NETransparentProxyProvider {
                 
                 if let error = error {
                     self.log("SOCKS5 auth response failed: \(error.localizedDescription)", level: "ERROR")
-                    clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                    clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                    proxyConnection.cancel()
+                    self.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                     return
                 }
                 
                 guard let data = data, data.count == 2, data[1] == 0x00 else {
                     self.log("SOCKS5 auth failed", level: "ERROR")
-                    clientFlow.closeReadWithError(FlowFailure.refused)
-                    clientFlow.closeWriteWithError(FlowFailure.refused)
-                    proxyConnection.cancel()
+                    self.closeRelay(clientFlow, proxyConnection, error: FlowFailure.refused)
                     return
                 }
                 
@@ -1721,9 +1798,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         proxyConnection.write(request) { [weak self] error in
             if let error = error {
                 self?.log("SOCKS5 connect write failed: \(error.localizedDescription)", level: "ERROR")
-                clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                proxyConnection.cancel()
+                self?.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                 return
             }
             
@@ -1761,18 +1836,14 @@ class AppProxyProvider: NETransparentProxyProvider {
         
         guard let requestData = request.data(using: .utf8) else {
             log("HTTP CONNECT request encoding failed", level: "ERROR")
-            clientFlow.closeReadWithError(FlowFailure.refused)
-            clientFlow.closeWriteWithError(FlowFailure.refused)
-            proxyConnection.cancel()
+            closeRelay(clientFlow, proxyConnection, error: FlowFailure.refused)
             return
         }
         
         proxyConnection.write(requestData) { [weak self] error in
             if let error = error {
                 self?.log("HTTP CONNECT write failed: \(error.localizedDescription)", level: "ERROR")
-                clientFlow.closeReadWithError(FlowFailure.proxyUnreachable)
-                clientFlow.closeWriteWithError(FlowFailure.proxyUnreachable)
-                proxyConnection.cancel()
+                self?.closeRelay(clientFlow, proxyConnection, error: FlowFailure.proxyUnreachable)
                 return
             }
             
@@ -1803,6 +1874,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             // bytes the proxy sent right behind its reply are the start of the
             // server's data, deliver them before the normal relay takes over
             if let initial = initialData, !initial.isEmpty {
+                self?.addFlowBytes(clientFlow, sentDelta: 0, recvDelta: Int64(initial.count))
                 clientFlow.write(initial) { [weak self] error in
                     if let error = error {
                         self?.log("Client write error: \(error.localizedDescription)", level: "ERROR")
@@ -1843,6 +1915,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                 return
             }
 
+            self?.addFlowBytes(clientFlow, sentDelta: Int64(data.count), recvDelta: 0)
             proxyConnection.write(data) { error in
                 if let error = error {
                     self?.log("Proxy write error: \(error.localizedDescription)", level: "ERROR")
@@ -1870,6 +1943,7 @@ class AppProxyProvider: NETransparentProxyProvider {
                 return
             }
             
+            self?.addFlowBytes(clientFlow, sentDelta: 0, recvDelta: Int64(data.count))
             clientFlow.write(data) { error in
                 if let error = error {
                     self?.log("Client write error: \(error.localizedDescription)", level: "ERROR")
@@ -1890,7 +1964,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         let flowProcess = ProxyRule.FlowProcess(bundleId: bundleId, processName: processName, executablePath: executablePath)
         let domainChars = domains.map { (name: $0, chars: Array($0)) }
 
-        var wildcardRule: ProxyRule? = nil
+        var excludedBy: ProxyRule? = nil
 
         for (rule, m) in currentRules {
             guard rule.enabled else { continue }
@@ -1899,66 +1973,53 @@ class AppProxyProvider: NETransparentProxyProvider {
                 continue
             }
 
-            if m.processAll {
-                if m.hasHostFilter || m.hasPortFilter {
-                    // udp has no destination here, so a filtered wildcard can't match
-                    if checkIpPort, m.matchesHost(ip: destination, domains: domainChars), m.matchesPort(port) {
-                        return rule
-                    }
+            if checkIpPort {
+                if !m.matchesPort(port) || !m.matchesHost(ip: destination, domains: domainChars) {
                     continue
                 }
-
-                // pure wildcard, keep the first one as a fallback
-                if wildcardRule == nil {
-                    wildcardRule = rule
-                }
+            } else if m.processAll && (m.hasHostFilter || m.hasPortFilter) {
+                // UDP flow has no initial destination here, so a host/port-filtered wildcard cannot match
                 continue
             }
 
             if rule.excludeProcess {
                 if m.matchesProcess(flowProcess) {
-                    // Excluded from this rule -> keep DIRECT instead of falling back to defaultProxyId.
-                    return ProxyRule(
-                        ruleId: rule.ruleId,
-                        processNames: rule.processNames,
-                        targetHosts: rule.targetHosts,
-                        targetPorts: rule.targetPorts,
-                        ruleProtocol: rule.ruleProtocol,
-                        action: "DIRECT",
-                        enabled: true,
-                        excludeProcess: false
-                    )
-                }
-                if checkIpPort {
-                    if m.matchesHost(ip: destination, domains: domainChars) && m.matchesPort(port) {
-                        return rule
+                    // Process is explicitly excluded from this rule: allow later rules to match it,
+                    // but if none do, keep it DIRECT instead of falling back to defaultProxyId.
+                    if rule.action != "DIRECT" && rule.action != "BLOCK" && excludedBy == nil {
+                        excludedBy = rule
                     }
-                } else {
-                    return rule
+                    continue
                 }
-                continue
+                return rule
             }
+
             if m.matchesProcess(flowProcess) {
-                if checkIpPort {
-                    if m.matchesHost(ip: destination, domains: domainChars) && m.matchesPort(port) {
-                        return rule
-                    }
-                } else {
-                    // udp matches on process alone
-                    return rule
-                }
+                return rule
             }
         }
 
-        return wildcardRule
+        if let ex = excludedBy {
+            return ProxyRule(
+                ruleId: ex.ruleId,
+                processNames: ex.processNames,
+                targetHosts: ex.targetHosts,
+                targetPorts: ex.targetPorts,
+                ruleProtocol: ex.ruleProtocol,
+                action: "DIRECT",
+                enabled: true,
+                excludeProcess: false
+            )
+        }
+        return nil
     }
     
     private static func isLocalOrMulticastAddress(_ ip: String) -> Bool {
         let lower = ip.lowercased()
-        if lower == "localhost" || lower == "::1" || lower == "::" || lower == "0.0.0.0" {
+        if lower == "localhost" || lower == "::1" || lower == "::" || lower == "0.0.0.0" || lower == "255.255.255.255" {
             return true
         }
-        if lower.hasPrefix("127.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("ff") {
+        if lower.hasPrefix("127.") || lower.hasPrefix("0.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("fec0:") || lower.hasPrefix("ff") || lower.hasSuffix(".255") {
             return true
         }
         if let firstDot = lower.firstIndex(of: "."), let firstOctet = Int(lower[..<firstDot]), firstOctet >= 224 && firstOctet <= 239 {
@@ -1967,9 +2028,9 @@ class AppProxyProvider: NETransparentProxyProvider {
         return false
     }
 
-    private func sendLogToApp(protocol: String, process: String, destination: String, port: String, proxy: String) {
+    private func sendLogToApp(protocol: String, pid: Int = 0, process: String, destination: String, port: String, proxy: String) {
         guard trafficLoggingEnabled else { return }
-        appendLog(.connection(proto: `protocol`, process: process, destination: destination, port: port, proxy: proxy))
+        appendLog(.connection(proto: `protocol`, pid: pid, process: process, destination: destination, port: port, proxy: proxy))
     }
 }
 

@@ -255,7 +255,7 @@ func (d *NEDriver) pushConfig(proxies []pbprofile.ProxyConfig, ruleList []pbprof
 		}
 		rulesPayload = append(rulesPayload, map[string]any{
 			"processNames":   r.ProcessNames,
-			"targetHosts":    r.TargetHosts,
+			"targetHosts":    r.CombinedHosts(),
 			"targetPorts":    r.TargetPorts,
 			"ruleProtocol":   string(r.Protocol),
 			"ruleAction":     action,
@@ -359,7 +359,9 @@ func (d *NEDriver) drainLogs() {
 			d.logs.LogActivity(e["level"], e["message"])
 		default:
 			port, _ := strconv.Atoi(e["port"])
+			pid, _ := strconv.Atoi(e["pid"])
 			d.logs.RecordConnection(flows.ConnectionLogEntry{
+				PID:         pid,
 				ProcessName: e["process"],
 				Host:        e["destination"],
 				DestIP:      e["destination"],

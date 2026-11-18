@@ -19,6 +19,7 @@ import (
 	"github.com/D0bby999/anyproxy/internal/dnsmap"
 	"github.com/D0bby999/anyproxy/internal/flows"
 	"github.com/D0bby999/anyproxy/internal/pbprofile"
+	"github.com/D0bby999/anyproxy/internal/rules"
 )
 
 const (
@@ -133,16 +134,34 @@ func NewWinDivertDriver(dns *dnsmap.Store, tracker *flows.Tracker, logs *flows.L
 		drv := winActive
 		winActiveMu.RUnlock()
 		if drv != nil && drv.logs != nil {
-			host := cstrToGo(ipPtr, 128)
+			destIP := cstrToGo(ipPtr, 128)
+			host := destIP
+			if drv.dns != nil {
+				if doms := drv.dns.DomainsForIP(destIP); len(doms) > 0 {
+					host = doms[0]
+				}
+			}
 			proxyInfo := cstrToGo(proxyPtr, 128)
+			proto := "TCP"
+			if strings.HasSuffix(proxyInfo, " (UDP)") {
+				proto = "UDP"
+				proxyInfo = strings.TrimSuffix(proxyInfo, " (UDP)")
+			}
+			action := proxyInfo
+			if strings.EqualFold(proxyInfo, "Blocked") {
+				action = "BLOCK"
+				proxyInfo = "BLOCK"
+			} else if strings.EqualFold(proxyInfo, "Direct") {
+				action = "DIRECT"
+			}
 			drv.logs.RecordConnection(flows.ConnectionLogEntry{
 				PID:         int(pid),
 				ProcessName: cstrToGo(procPtr, 128),
-				DestIP:      host,
+				DestIP:      destIP,
 				Host:        host,
 				Port:        uint16(port),
-				Protocol:    "TCP",
-				Action:      proxyInfo,
+				Protocol:    proto,
+				Action:      action,
 				ProxyName:   proxyInfo,
 			})
 		}
@@ -231,6 +250,14 @@ func (d *WinDivertDriver) Status() EngineStatus {
 			activeRules++
 		}
 	}
+	activeFlows := 0
+	if d.tracker != nil {
+		for _, f := range d.tracker.GetFlows(0) {
+			if !f.Closed {
+				activeFlows++
+			}
+		}
+	}
 	return EngineStatus{
 		State:              d.state,
 		Enabled:            d.enabled,
@@ -239,6 +266,7 @@ func (d *WinDivertDriver) Status() EngineStatus {
 		DNSProxyActive:     d.state == StateRunning,
 		ActiveProxies:      len(d.proxies),
 		ActiveRules:        activeRules,
+		ActiveFlows:        activeFlows,
 		Message:            d.message,
 	}
 }
@@ -284,6 +312,12 @@ func (d *WinDivertDriver) GetFlows(max int) ([]flows.Flow, error) {
 	if n > max {
 		n = max
 	}
+	revProxy := make(map[uint32]pbprofile.ProxyConfig, len(d.proxies))
+	for _, px := range d.proxies {
+		if cid := d.proxyIDMap[px.ID]; cid != 0 {
+			revProxy[cid] = px
+		}
+	}
 	out := make([]flows.Flow, 0, n)
 	for i := 0; i < n; i++ {
 		f := &buf[i]
@@ -293,8 +327,21 @@ func (d *WinDivertDriver) GetFlows(max int) ([]flows.Flow, error) {
 		} else {
 			ip = net.IP(f.Dest[:4])
 		}
+		var proxyID, proxyLabel string
+		if px, ok := revProxy[f.ProxyConfigID]; ok {
+			proxyID = px.ID
+			proxyLabel = px.Label()
+		}
+		var ruleID string
+		if f.RuleID != 0 {
+			ruleID = fmt.Sprintf("%d", f.RuleID)
+		}
+		ageMs := int64(f.AgeMs)
+		if f.AgeMs == 0xFFFFFFFF {
+			ageMs = 0
+		}
 		out = append(out, flows.Flow{
-			ID:          fmt.Sprintf("%d", f.ID),
+			ID:          fmt.Sprintf("ext-win-%d", f.ID),
 			PID:         int(f.PID),
 			ProcessName: cstrBytes(f.Name[:]),
 			DestIP:      ip.String(),
@@ -302,10 +349,17 @@ func (d *WinDivertDriver) GetFlows(max int) ([]flows.Flow, error) {
 			Port:        f.Port,
 			IsUDP:       f.IsUDP != 0,
 			IsIPv6:      f.IsIPv6 != 0,
-			AgeMs:       int64(f.AgeMs),
+			ProxyID:     proxyID,
+			ProxyLabel:  proxyLabel,
+			RuleID:      ruleID,
+			AgeMs:       ageMs,
 			Sent:        int64(f.Sent),
 			Received:    int64(f.Received),
 		})
+	}
+	if d.tracker != nil {
+		d.tracker.ReplaceFromExternal(out)
+		return d.tracker.GetFlows(max), nil
 	}
 	return out, nil
 }
@@ -394,28 +448,22 @@ func (d *WinDivertDriver) syncLocked() {
 		if r.LocalhostViaProxy {
 			localhost = 1
 		}
-		if r.ExcludeProcess && r.ProcessNames != "" && r.ProcessNames != "*" {
-			// ProxyBridgeCore.dll lacks excludeProcess; emit DIRECT for excluded processes first, then rule action for "*".
-			if r1, _, _ := addRule.Call(cstrPtr(r.ProcessNames), cstrPtr(r.TargetHosts), cstrPtr(r.TargetPorts), 0, proto, uintptr(winActionDirect), 0, 0); r1 != 0 {
-				d.ruleIDs = append(d.ruleIDs, uint32(r1))
-			}
-			if r1, _, _ := addRule.Call(cstrPtr("*"), cstrPtr(r.TargetHosts), cstrPtr(r.TargetPorts), 0, proto, action, proxyID, localhost); r1 != 0 {
-				d.ruleIDs = append(d.ruleIDs, uint32(r1))
-			}
-			continue
-		}
+		ipHosts, domHosts := rules.SplitHostAndDomainTokens(r.CombinedHosts())
 		proc := r.ProcessNames
 		if proc == "" {
 			proc = "*"
 		}
-		if r1, _, _ := addRule.Call(cstrPtr(proc), cstrPtr(r.TargetHosts), cstrPtr(r.TargetPorts), 0, proto, action, proxyID, localhost); r1 != 0 {
+		if r.ExcludeProcess && proc != "*" {
+			proc = "!" + proc
+		}
+		if r1, _, _ := addRule.Call(cstrPtr(proc), cstrPtr(ipHosts), cstrPtr(r.TargetPorts), cstrPtr(domHosts), proto, action, proxyID, localhost); r1 != 0 {
 			d.ruleIDs = append(d.ruleIDs, uint32(r1))
 		}
 	}
 
 	if d.opts.DefaultProxyID != "" {
 		if defID := d.proxyIDMap[d.opts.DefaultProxyID]; defID != 0 {
-			if r1, _, _ := addRule.Call(cstrPtr("*"), cstrPtr("*"), cstrPtr("*"), 0, uintptr(winProtoBoth), uintptr(winActionProxy), uintptr(defID), 0); r1 != 0 {
+			if r1, _, _ := addRule.Call(cstrPtr("~*"), cstrPtr("*"), cstrPtr("*"), 0, uintptr(winProtoBoth), uintptr(winActionProxy), uintptr(defID), 0); r1 != 0 {
 				d.ruleIDs = append(d.ruleIDs, uint32(r1))
 			}
 		}

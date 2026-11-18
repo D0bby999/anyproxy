@@ -217,6 +217,27 @@ func TestEngineMandatoryDirectAndLocalhostViaProxy(t *testing.T) {
 	}
 }
 
+func TestSplitHostAndDomainTokens(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantIPs string
+		wantDom string
+	}{
+		{"*", "*", ""},
+		{"", "*", ""},
+		{"*.google.com; github.com", "*", "*.google.com;github.com"},
+		{"1.1.1.1, 10.0.0.0/8", "1.1.1.1;10.0.0.0/8", ""},
+		{"1.1.1.1; *.google.com, 192.168.1.*", "1.1.1.1;192.168.1.*", "*.google.com"},
+		{"*.google.com; *", "*", ""},
+	}
+	for _, tc := range cases {
+		gotIPs, gotDom := SplitHostAndDomainTokens(tc.in)
+		if gotIPs != tc.wantIPs || gotDom != tc.wantDom {
+			t.Errorf("SplitHostAndDomainTokens(%q) = (%q, %q), want (%q, %q)", tc.in, gotIPs, gotDom, tc.wantIPs, tc.wantDom)
+		}
+	}
+}
+
 func BenchmarkRuleEvaluate(b *testing.B) {
 	eng := NewEngine([]pbprofile.ProxyRule{
 		{ID: "r1", ProcessNames: "safari;firefox", TargetHosts: "10.0.0.0/8", TargetPorts: "80;443", Protocol: pbprofile.ProtoTCP, Action: pbprofile.ActionDirect, Enabled: true},

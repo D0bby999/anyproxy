@@ -114,6 +114,46 @@ static NETransparentProxyManager *load_proxy_manager(NSError **outErr) {
     return found;
 }
 
+static NETransparentProxyManager *configure_and_save_manager(NETransparentProxyManager *manager, NSString *extID, NSString *desc, NSError **outErr) {
+    if (!manager) {
+        manager = [[NETransparentProxyManager alloc] init];
+    }
+    NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)manager.protocolConfiguration;
+    if (!proto || ![proto isKindOfClass:[NETunnelProviderProtocol class]]) {
+        proto = [[NETunnelProviderProtocol alloc] init];
+    }
+    proto.providerBundleIdentifier = extID;
+    proto.serverAddress = @"127.0.0.1";
+    manager.protocolConfiguration = proto;
+    manager.localizedDescription = desc;
+    manager.enabled = YES;
+
+    __block NSError *saveErr = nil;
+    dispatch_semaphore_t saveSema = dispatch_semaphore_create(0);
+    [manager saveToPreferencesWithCompletionHandler:^(NSError *error) {
+        saveErr = error;
+        dispatch_semaphore_signal(saveSema);
+    }];
+    wait_sema(saveSema, 10.0);
+    if (saveErr) {
+        if (outErr) *outErr = saveErr;
+        return nil;
+    }
+
+    __block NSError *reloadErr = nil;
+    dispatch_semaphore_t reloadSema = dispatch_semaphore_create(0);
+    [manager loadFromPreferencesWithCompletionHandler:^(NSError *error) {
+        reloadErr = error;
+        dispatch_semaphore_signal(reloadSema);
+    }];
+    wait_sema(reloadSema, 10.0);
+    if (reloadErr) {
+        if (outErr) *outErr = reloadErr;
+        return nil;
+    }
+    return manager;
+}
+
 int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *errBuf, int errLen) {
     @autoreleasepool {
         NSString *extID = [NSString stringWithUTF8String:extBundleID ?: "dev.anyproxy.app.extension"];
@@ -135,52 +175,7 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
             return -1;
         }
 
-        NSError *err = nil;
-        NETransparentProxyManager *manager = load_proxy_manager(&err);
-        if (err) {
-            write_cstr(errBuf, errLen, err.localizedDescription);
-            return -1;
-        }
-        if (!manager) {
-            manager = [[NETransparentProxyManager alloc] init];
-        }
-
-        NETunnelProviderProtocol *proto = (NETunnelProviderProtocol *)manager.protocolConfiguration;
-        if (!proto || ![proto isKindOfClass:[NETunnelProviderProtocol class]]) {
-            proto = [[NETunnelProviderProtocol alloc] init];
-        }
-        proto.providerBundleIdentifier = extID;
-        proto.serverAddress = @"127.0.0.1";
-        manager.protocolConfiguration = proto;
-        manager.localizedDescription = desc;
-        manager.enabled = YES;
-
-        __block NSError *saveErr = nil;
-        dispatch_semaphore_t saveSema = dispatch_semaphore_create(0);
-        [manager saveToPreferencesWithCompletionHandler:^(NSError *error) {
-            saveErr = error;
-            dispatch_semaphore_signal(saveSema);
-        }];
-        wait_sema(saveSema, 10.0);
-        if (saveErr) {
-            write_cstr(errBuf, errLen, saveErr.localizedDescription);
-            return -1;
-        }
-
-        __block NSError *reloadErr = nil;
-        dispatch_semaphore_t reloadSema = dispatch_semaphore_create(0);
-        [manager loadFromPreferencesWithCompletionHandler:^(NSError *error) {
-            reloadErr = error;
-            dispatch_semaphore_signal(reloadSema);
-        }];
-        wait_sema(reloadSema, 10.0);
-        if (reloadErr) {
-            write_cstr(errBuf, errLen, reloadErr.localizedDescription);
-            return -1;
-        }
-        s_cachedManager = manager;
-
-        // Configure NEDNSProxyManager so DNS queries map IP <-> domain cleanly.
+        // Configure NEDNSProxyManager before starting the tunnel so DNS resolutions are captured immediately.
         NEDNSProxyManager *dns = [NEDNSProxyManager sharedManager];
         dispatch_semaphore_t dnsSema = dispatch_semaphore_create(0);
         [dns loadFromPreferencesWithCompletionHandler:^(NSError *error) {
@@ -199,9 +194,39 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
         }];
         wait_sema(dnsSema, 5.0);
 
+        NSError *err = nil;
+        NETransparentProxyManager *manager = load_proxy_manager(&err);
+        if (err) {
+            write_cstr(errBuf, errLen, err.localizedDescription);
+            return -1;
+        }
+        manager = configure_and_save_manager(manager, extID, desc, &err);
+        if (!manager || err) {
+            write_cstr(errBuf, errLen, err ? err.localizedDescription : @"Failed to configure transparent proxy manager");
+            return -1;
+        }
+        s_cachedManager = manager;
+
         NSError *startErr = nil;
         if (![manager.connection startVPNTunnelAndReturnError:&startErr]) {
-            write_cstr(errBuf, errLen, startErr.localizedDescription ?: @"Failed to start transparent proxy tunnel");
+            // Auto-repair stale NetworkExtension configuration once (#282)
+            dispatch_semaphore_t rmSema = dispatch_semaphore_create(0);
+            [manager removeFromPreferencesWithCompletionHandler:^(NSError *rmErr) {
+                dispatch_semaphore_signal(rmSema);
+            }];
+            wait_sema(rmSema, 5.0);
+            s_cachedManager = nil;
+
+            NSError *repairErr = nil;
+            NETransparentProxyManager *fresh = configure_and_save_manager(nil, extID, desc, &repairErr);
+            if (fresh && !repairErr) {
+                s_cachedManager = fresh;
+                startErr = nil;
+                if ([fresh.connection startVPNTunnelAndReturnError:&startErr]) {
+                    return 0;
+                }
+            }
+            write_cstr(errBuf, errLen, startErr ? startErr.localizedDescription : (repairErr ? repairErr.localizedDescription : @"Failed to start transparent proxy tunnel"));
             return -1;
         }
         return 0;

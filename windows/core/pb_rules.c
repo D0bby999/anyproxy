@@ -125,7 +125,7 @@ BOOL match_ip_pattern(const char *pattern, UINT32 ip)
 
             return (ip_be >= start_be && ip_be <= end_be);
         }
-        return FALSE;
+        // If not a full IP-to-IP range, fall through to per-octet range/wildcard parsing (e.g. 10.1-5.*.*)
     }
 
     // Extract 4 octets from IP (little-endian)
@@ -168,6 +168,15 @@ BOOL match_ip_pattern(const char *pattern, UINT32 ip)
     {
         if (strcmp(pattern_octets[i], "*") == 0)
             continue;
+        char *oct_dash = strchr(pattern_octets[i], '-');
+        if (oct_dash != NULL)
+        {
+            int lo = atoi(pattern_octets[i]);
+            int hi = atoi(oct_dash + 1);
+            if (lo > hi || ip_octets[i] < lo || ip_octets[i] > hi)
+                return FALSE;
+            continue;
+        }
         int pattern_val = atoi(pattern_octets[i]);
         if (pattern_val != ip_octets[i])
             return FALSE;
@@ -200,7 +209,7 @@ BOOL ip_match_wrapper(const char *token, const void *data)
 // Match IP list: "192.168.*.*;10.0.0.1"
 BOOL match_ip_list(const char *ip_list, UINT32 ip)
 {
-    return parse_token_list(ip_list, ";", ip_match_wrapper, &ip);
+    return parse_token_list(ip_list, ",;", ip_match_wrapper, &ip);
 }
 
 // Match IPv6 pattern against a 16-byte address.
@@ -282,7 +291,7 @@ BOOL ip_match_wrapper_v6(const char *token, const void *data)
 // Match IPv6 address against a semicolon-separated host list
 BOOL match_ip_list_v6(const char *ip_list, const UINT8 ip6[16])
 {
-    return parse_token_list(ip_list, ";", ip_match_wrapper_v6, ip6);
+    return parse_token_list(ip_list, ",;", ip_match_wrapper_v6, ip6);
 }
 
 BOOL port_match_wrapper(const char *token, const void *data)
@@ -321,7 +330,7 @@ BOOL wildcard_match(const char *pattern, const char *text)
         }
         else
         {
-            if (tolower((unsigned char)*pattern) != tolower((unsigned char)*text))
+            if (*pattern != '?' && tolower((unsigned char)*pattern) != tolower((unsigned char)*text))
                 return FALSE;
             pattern++;
             text++;
@@ -350,8 +359,8 @@ BOOL match_process_pattern(const char *pattern, const char *process_full_path)
     // match against full path if pattern has a path separator, otherwise filename only
     const char *match_target = is_full_path_pattern ? process_full_path : filename;
 
-    // Wildcard pattern: use full wildcard matcher (handles *, *x*, x*y, etc.)
-    if (strchr(pattern, '*') != NULL)
+    // Wildcard pattern: use full wildcard matcher (handles *, ?, *x*, x*y, etc.)
+    if (strchr(pattern, '*') != NULL || strchr(pattern, '?') != NULL)
         return wildcard_match(pattern, match_target);
 
     // No wildcard, plain case-insensitive comparison
@@ -443,7 +452,7 @@ BOOL match_domain_pattern(const char *pattern, const char *domain)
             return TRUE;
     }
 
-    if (strchr(pattern, '*') != NULL)
+    if (strchr(pattern, '*') != NULL || strchr(pattern, '?') != NULL)
         return wildcard_match(pattern, domain);
 
     return _stricmp(pattern, domain) == 0;
@@ -578,13 +587,13 @@ BOOL is_broadcast_or_multicast(UINT32 ip)
 }
 
 // Unified rule matching function for both TCP and UDP
-// Matches rules by process name, IP, port, and protocol
+// Matches rules in strict top-to-bottom priority order (first-match-wins).
 // Inner matcher - caller MUST hold g_rules_lock (shared) for the whole traversal so
 // rules_list and the strings it points to cannot be freed/edited mid-match.
 RuleAction match_rule_inner(const char *process_name, UINT32 dest_ip, UINT16 dest_port, BOOL is_udp, UINT32 *out_proxy_config_id)
 {
     PROCESS_RULE *rule = rules_list;
-    PROCESS_RULE *wildcard_rule = NULL;  // Save fully wildcard rule for last
+    BOOL excluded_by_rule = FALSE;
 
     // Resolve the destination hostname once (only when domain rules exist) from the
     // DNS-snoop cache. Reused for every rule's domain filter below. Cache miss -> unknown.
@@ -602,7 +611,6 @@ RuleAction match_rule_inner(const char *process_name, UINT32 dest_ip, UINT16 des
         }
 
         // Check protocol compatibility
-        // RULE_PROTOCOL_BOTH (0x03) matches both TCP and UDP
         if (rule->protocol != RULE_PROTOCOL_BOTH)
         {
             if (rule->protocol == RULE_PROTOCOL_TCP && is_udp)
@@ -617,64 +625,59 @@ RuleAction match_rule_inner(const char *process_name, UINT32 dest_ip, UINT16 des
             }
         }
 
-        // Check if this is a wildcard process rule
-        BOOL is_wildcard_process = (strcmp(rule->process_name, "*") == 0 || strcmp(rule->process_name, "ANY") == 0);
-
-        if (is_wildcard_process)
+        // Default-proxy fallback rule ("~*"): only matches when no prior exclude-process rule excluded this app.
+        if (strcmp(rule->process_name, "~*") == 0)
         {
-            // Check if wildcard has specific filters
-            BOOL has_ip_filter = (strcmp(rule->target_hosts, "*") != 0);
-            BOOL has_port_filter = (strcmp(rule->target_ports, "*") != 0);
-            BOOL has_domain_filter = rule_has_domain_filter(rule);
-
-            if (has_ip_filter || has_port_filter || has_domain_filter)
+            if (excluded_by_rule)
             {
-                // Filtered wildcard - check if it matches
-                if (rule_host_match(rule, dest_ip, dst_domain) &&
-                    match_port_list(rule->target_ports, dest_port))
-                {
-                    // Matched! Return this rule's action
-                    g_tl_rule_localhost = rule->localhost_via_proxy; g_tl_rule_id = rule->rule_id;
-                    if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
-                    return rule->action;
-                }
-                // Didn't match, continue
                 rule = rule->next;
                 continue;
             }
-
-            // Fully wildcard rule (no filters) - save for later
-            if (wildcard_rule == NULL)
+            if (rule_host_match(rule, dest_ip, dst_domain) &&
+                match_port_list(rule->target_ports, dest_port))
             {
-                wildcard_rule = rule;
+                g_tl_rule_localhost = rule->localhost_via_proxy;
+                g_tl_rule_id = rule->rule_id;
+                if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
+                return rule->action;
             }
             rule = rule->next;
             continue;
         }
 
-        // Check if process name matches
-        if (match_process_list(rule->process_name, process_name))
+        if (!rule_host_match(rule, dest_ip, dst_domain) ||
+            !match_port_list(rule->target_ports, dest_port))
         {
-            // Process matched! Check IP, port and domain filters
-            if (rule_host_match(rule, dest_ip, dst_domain) &&
-                    match_port_list(rule->target_ports, dest_port))
+            rule = rule->next;
+            continue;
+        }
+
+        // Exclude-process rule ("!app1;app2"): matches all apps EXCEPT the listed ones.
+        if (rule->process_name[0] == '!')
+        {
+            if (match_process_list(rule->process_name + 1, process_name))
             {
-                // All filters matched! Return this rule's action
-                g_tl_rule_localhost = rule->localhost_via_proxy; g_tl_rule_id = rule->rule_id;
-                    if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
-                return rule->action;
+                if (rule->action == RULE_ACTION_PROXY)
+                    excluded_by_rule = TRUE;
+                rule = rule->next;
+                continue;
             }
+            g_tl_rule_localhost = rule->localhost_via_proxy;
+            g_tl_rule_id = rule->rule_id;
+            if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
+            return rule->action;
+        }
+
+        BOOL is_wildcard_process = (strcmp(rule->process_name, "*") == 0 || strcmp(rule->process_name, "ANY") == 0);
+        if (is_wildcard_process || match_process_list(rule->process_name, process_name))
+        {
+            g_tl_rule_localhost = rule->localhost_via_proxy;
+            g_tl_rule_id = rule->rule_id;
+            if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
+            return rule->action;
         }
 
         rule = rule->next;
-    }
-
-    // No specific rule matched, use wildcard if available
-    if (wildcard_rule != NULL)
-    {
-        g_tl_rule_localhost = wildcard_rule->localhost_via_proxy; g_tl_rule_id = wildcard_rule->rule_id;
-        if (out_proxy_config_id != NULL) *out_proxy_config_id = wildcard_rule->proxy_config_id;
-        return wildcard_rule->action;
     }
 
     // No rule matched at all
@@ -706,7 +709,7 @@ RuleAction match_rule(const char *process_name, UINT32 dest_ip, UINT16 dest_port
 RuleAction match_rule_v6_inner(const char *process_name, const UINT8 dest_ip6[16], UINT16 dest_port, BOOL is_udp, UINT32 *out_proxy_config_id)
 {
     PROCESS_RULE *rule = rules_list;
-    PROCESS_RULE *wildcard_rule = NULL;
+    BOOL excluded_by_rule = FALSE;
 
     // Resolve the destination hostname once (only when domain rules exist) from the
     // IPv6 DNS-snoop cache. Reused for every rule's domain filter below.
@@ -729,52 +732,57 @@ RuleAction match_rule_v6_inner(const char *process_name, const UINT8 dest_ip6[16
             if (rule->protocol == RULE_PROTOCOL_UDP && !is_udp) { rule = rule->next; continue; }
         }
 
-        BOOL is_wildcard_process = (strcmp(rule->process_name, "*") == 0 || strcmp(rule->process_name, "ANY") == 0);
-
-        if (is_wildcard_process)
+        if (strcmp(rule->process_name, "~*") == 0)
         {
-            BOOL has_ip_filter   = (strcmp(rule->target_hosts, "*") != 0);
-            BOOL has_port_filter = (strcmp(rule->target_ports, "*") != 0);
-            BOOL has_domain_filter = rule_has_domain_filter(rule);
-
-            if (has_ip_filter || has_port_filter || has_domain_filter)
+            if (excluded_by_rule)
             {
-                if (rule_host_match_v6(rule, dest_ip6, dst_domain) &&
-                    match_port_list(rule->target_ports, dest_port))
-                {
-                    g_tl_rule_localhost = rule->localhost_via_proxy; g_tl_rule_id = rule->rule_id;
-                    if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
-                    return rule->action;
-                }
                 rule = rule->next;
                 continue;
             }
-
-            if (wildcard_rule == NULL)
-                wildcard_rule = rule;
+            if (rule_host_match_v6(rule, dest_ip6, dst_domain) &&
+                match_port_list(rule->target_ports, dest_port))
+            {
+                g_tl_rule_localhost = rule->localhost_via_proxy;
+                g_tl_rule_id = rule->rule_id;
+                if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
+                return rule->action;
+            }
             rule = rule->next;
             continue;
         }
 
-        if (match_process_list(rule->process_name, process_name))
+        if (!rule_host_match_v6(rule, dest_ip6, dst_domain) ||
+            !match_port_list(rule->target_ports, dest_port))
         {
-            if (rule_host_match_v6(rule, dest_ip6, dst_domain) &&
-                    match_port_list(rule->target_ports, dest_port))
+            rule = rule->next;
+            continue;
+        }
+
+        if (rule->process_name[0] == '!')
+        {
+            if (match_process_list(rule->process_name + 1, process_name))
             {
-                g_tl_rule_localhost = rule->localhost_via_proxy; g_tl_rule_id = rule->rule_id;
-                    if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
-                return rule->action;
+                if (rule->action == RULE_ACTION_PROXY)
+                    excluded_by_rule = TRUE;
+                rule = rule->next;
+                continue;
             }
+            g_tl_rule_localhost = rule->localhost_via_proxy;
+            g_tl_rule_id = rule->rule_id;
+            if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
+            return rule->action;
+        }
+
+        BOOL is_wildcard_process = (strcmp(rule->process_name, "*") == 0 || strcmp(rule->process_name, "ANY") == 0);
+        if (is_wildcard_process || match_process_list(rule->process_name, process_name))
+        {
+            g_tl_rule_localhost = rule->localhost_via_proxy;
+            g_tl_rule_id = rule->rule_id;
+            if (out_proxy_config_id != NULL) *out_proxy_config_id = rule->proxy_config_id;
+            return rule->action;
         }
 
         rule = rule->next;
-    }
-
-    if (wildcard_rule != NULL)
-    {
-        g_tl_rule_localhost = wildcard_rule->localhost_via_proxy; g_tl_rule_id = wildcard_rule->rule_id;
-        if (out_proxy_config_id != NULL) *out_proxy_config_id = wildcard_rule->proxy_config_id;
-        return wildcard_rule->action;
     }
 
     g_tl_rule_localhost = FALSE; g_tl_rule_id = 0;

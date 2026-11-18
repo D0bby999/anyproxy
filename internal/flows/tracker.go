@@ -161,23 +161,63 @@ func (t *Tracker) ClearAll() {
 	t.order = t.order[:0]
 }
 
-// ReplaceFromExternal replaces the tracker's flow snapshot with externally reported flows
-// (such as macOS NetworkExtension getFlows IPC responses).
+// ReplaceFromExternal reconciles externally reported active flows (such as macOS
+// NetworkExtension getFlows IPC responses) with the tracker: active external flows
+// are inserted or updated in place, external flows no longer present are marked
+// closed, and local inbound ("f-*") or previously closed flows are preserved.
 func (t *Tracker) ReplaceFromExternal(ext []Flow) {
+	now := time.Now().UnixMilli()
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.byID = make(map[string]*Flow, len(ext))
-	t.order = make([]string, 0, len(ext))
+
+	seen := make(map[string]struct{}, len(ext))
 	for i := range ext {
-		if len(t.order) >= t.maxSize {
-			break
-		}
 		cp := ext[i]
 		if cp.ID == "" {
 			cp.ID = fmt.Sprintf("ext-%d", i+1)
 		}
+		if !cp.IsIPv6 && strings.Contains(cp.DestIP, ":") {
+			cp.IsIPv6 = true
+		}
+		seen[cp.ID] = struct{}{}
+
+		if existing, ok := t.byID[cp.ID]; ok {
+			if cp.StartedAt == 0 {
+				cp.StartedAt = existing.StartedAt
+			}
+			*existing = cp
+			continue
+		}
+
+		if cp.StartedAt == 0 {
+			if cp.AgeMs > 0 {
+				cp.StartedAt = now - cp.AgeMs
+			} else {
+				cp.StartedAt = now
+			}
+		}
+		if len(t.order) >= t.maxSize {
+			t.evictOneLocked()
+		}
 		t.byID[cp.ID] = &cp
 		t.order = append(t.order, cp.ID)
+	}
+
+	// Mark any previously active external flow that disappeared as closed.
+	for id, fl := range t.byID {
+		if fl.Closed {
+			continue
+		}
+		if strings.HasPrefix(id, "ne-") || strings.HasPrefix(id, "ext-") {
+			if _, ok := seen[id]; !ok {
+				fl.Closed = true
+				fl.ClosedAt = now
+				if fl.StartedAt > 0 {
+					fl.AgeMs = max(0, now-fl.StartedAt)
+				}
+			}
+		}
 	}
 }
 

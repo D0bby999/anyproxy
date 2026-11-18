@@ -424,6 +424,35 @@ func splitList(s string, allowNewline bool) []string {
 	return out
 }
 
+// SplitHostAndDomainTokens separates a combined host/domain pattern string into
+// semicolon-separated IP patterns (target_hosts) and domain patterns (target_domains)
+// for drivers such as ProxyBridgeCore.dll that take separate IP and domain lists.
+func SplitHostAndDomainTokens(combined string) (ipHosts, domainHosts string) {
+	combined = strings.TrimSpace(combined)
+	if combined == "" || combined == "*" {
+		return "*", ""
+	}
+	var ips, domains []string
+	for _, tok := range splitList(combined, true) {
+		if tok == "*" {
+			return "*", ""
+		}
+		hp := compileHostPattern(tok)
+		if hp.domainGlob != "" {
+			domains = append(domains, tok)
+		} else {
+			ips = append(ips, tok)
+		}
+	}
+	if len(ips) == 0 {
+		ipHosts = "*"
+	} else {
+		ipHosts = strings.Join(ips, ";")
+	}
+	domainHosts = strings.Join(domains, ";")
+	return ipHosts, domainHosts
+}
+
 // FlowInput describes an intercepted connection or datagram flow to evaluate.
 type FlowInput struct {
 	Process   FlowProcess
