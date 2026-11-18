@@ -82,3 +82,34 @@ func TestTranslocatedAppRefused(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestSwapRealDMG(t *testing.T) {
+	dmg, _ := filepath.Abs("../../dist/AnyProxy-darwin-arm64.dmg")
+	if _, err := os.Stat(dmg); err != nil {
+		t.Skip("needs dist/AnyProxy-darwin-arm64.dmg")
+	}
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	app := filepath.Join(root, "Applications", bundleName)
+	if err := os.MkdirAll(filepath.Join(app, "Contents", "MacOS"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(app, "Contents", "old-marker"), nil, 0o600)
+
+	old := executable
+	executable = func() (string, error) { return filepath.Join(app, "Contents", "MacOS", "AnyProxy"), nil }
+	t.Cleanup(func() { executable = old })
+
+	if err := swap(app, dmg); err != nil {
+		t.Fatalf("swap from DMG failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(app, "Contents", "old-marker")); err == nil {
+		t.Fatal("old app was not replaced")
+	}
+	if err := checkBundle(app); err != nil {
+		t.Fatalf("swapped app signature check failed: %v", err)
+	}
+	CleanStale()
+	if _, err := os.Stat(filepath.Join(filepath.Dir(app), oldBundle)); err == nil {
+		t.Fatal("CleanStale left old bundle")
+	}
+}
