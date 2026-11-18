@@ -93,6 +93,35 @@ static BOOL wait_sema(dispatch_semaphore_t sema, double timeoutSec) {
     return dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutSec * NSEC_PER_SEC))) == 0;
 }
 
+// Spins until the tunnel reaches the wanted state, or the deadline passes.
+// This is the missing wait from the stop/start race: the tunnel transitions
+// asynchronously, so returning right after startVPNTunnel/stopVPNTunnel meant
+// the Go side could push a config into an extension that was not running yet,
+// or re-enable one that was still tearing down.
+static BOOL wait_tunnel_status(NETunnelProviderSession *session, BOOL wantConnected, double timeoutSec) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutSec];
+    while (true) {
+        NEVPNStatus status = session.status;
+        if (wantConnected) {
+            if (status == NEVPNStatusConnected) return YES;
+        } else if (status == NEVPNStatusDisconnected || status == NEVPNStatusInvalid) {
+            return YES;
+        }
+        if ([deadline timeIntervalSinceNow] <= 0) {
+            status = session.status;
+            if (wantConnected) return status == NEVPNStatusConnected;
+            return status == NEVPNStatusDisconnected || status == NEVPNStatusInvalid;
+        }
+        if ([NSThread isMainThread]) {
+            @autoreleasepool {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+            }
+        } else {
+            [NSThread sleepForTimeInterval:0.05];
+        }
+    }
+}
+
 static NETransparentProxyManager *load_proxy_manager(NSError **outErr) {
     if (s_cachedManager) {
         if (outErr) *outErr = nil;
@@ -207,6 +236,12 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
         }
         s_cachedManager = manager;
 
+        // already up (start called twice, or the engine was resumed): do not
+        // tear down a working tunnel just to start it again
+        if (manager.connection.status == NEVPNStatusConnected) {
+            return 0;
+        }
+
         NSError *startErr = nil;
         if (![manager.connection startVPNTunnelAndReturnError:&startErr]) {
             // Auto-repair stale NetworkExtension configuration once (#282)
@@ -219,14 +254,27 @@ int anyproxy_ne_start(const char *extBundleID, const char *localizedName, char *
 
             NSError *repairErr = nil;
             NETransparentProxyManager *fresh = configure_and_save_manager(nil, extID, desc, &repairErr);
+            BOOL started = NO;
             if (fresh && !repairErr) {
                 s_cachedManager = fresh;
                 startErr = nil;
                 if ([fresh.connection startVPNTunnelAndReturnError:&startErr]) {
-                    return 0;
+                    manager = fresh;
+                    started = YES;
                 }
             }
-            write_cstr(errBuf, errLen, startErr ? startErr.localizedDescription : (repairErr ? repairErr.localizedDescription : @"Failed to start transparent proxy tunnel"));
+            if (!started) {
+                write_cstr(errBuf, errLen, startErr ? startErr.localizedDescription : (repairErr ? repairErr.localizedDescription : @"Failed to start transparent proxy tunnel"));
+                return -1;
+            }
+        }
+
+        // the tunnel reports Connected only after the provider applied its
+        // network settings. pushConfig runs right after this returns and used
+        // to race an extension that had not started yet.
+        NETunnelProviderSession *session = (NETunnelProviderSession *)manager.connection;
+        if (!wait_tunnel_status(session, YES, 15.0)) {
+            write_cstr(errBuf, errLen, @"Timed out waiting for the Network Extension to connect");
             return -1;
         }
         return 0;
@@ -241,8 +289,19 @@ int anyproxy_ne_stop(char *errBuf, int errLen) {
             write_cstr(errBuf, errLen, err.localizedDescription);
             return -1;
         }
+        BOOL timedOut = NO;
         if (manager) {
-            [manager.connection stopVPNTunnel];
+            NETunnelProviderSession *session = (NETunnelProviderSession *)manager.connection;
+            NEVPNStatus before = session.status;
+            if (before != NEVPNStatusDisconnected && before != NEVPNStatusInvalid) {
+                [manager.connection stopVPNTunnel];
+                // wait for the teardown to finish: startVPNTunnel on the next
+                // toggle used to run against a tunnel that was still stopping,
+                // which left a live extension with an empty config
+                if (!wait_tunnel_status(session, NO, 10.0)) {
+                    timedOut = YES;
+                }
+            }
         }
         NEDNSProxyManager *dns = [NEDNSProxyManager sharedManager];
         dispatch_semaphore_t dnsSema = dispatch_semaphore_create(0);
@@ -257,6 +316,10 @@ int anyproxy_ne_stop(char *errBuf, int errLen) {
             }
         }];
         wait_sema(dnsSema, 2.0);
+        if (timedOut) {
+            write_cstr(errBuf, errLen, @"Timed out waiting for the Network Extension to stop");
+            return -1;
+        }
         return 0;
     }
 }
