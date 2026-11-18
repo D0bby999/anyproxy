@@ -258,7 +258,8 @@ func (s *Server) handleSOCKS5(client net.Conn, reader *bufio.Reader) {
 	if _, err := io.ReadFull(reader, reqHeader); err != nil {
 		return
 	}
-	if reqHeader[1] != 0x01 { // 0x01 = CONNECT
+	cmd := reqHeader[1]
+	if cmd != 0x01 && cmd != 0x03 { // 0x01 = CONNECT, 0x03 = UDP ASSOCIATE
 		// Command not supported
 		_, _ = client.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		return
@@ -299,6 +300,11 @@ func (s *Server) handleSOCKS5(client net.Conn, reader *bufio.Reader) {
 		return
 	}
 	destPort := binary.BigEndian.Uint16(portBytes[:])
+
+	if cmd == 0x03 {
+		s.handleSOCKS5UDPAssociate(client, reader)
+		return
+	}
 
 	// Evaluate routing rule using resolved local process identity
 	proc := s.resolveProcess(client.RemoteAddr())
@@ -493,11 +499,252 @@ func (s *Server) resolveProcess(addr net.Addr) ProcessInfo {
 	return ProcessInfo{Name: "unknown"}
 }
 
+func (s *Server) handleSOCKS5UDPAssociate(client net.Conn, reader *bufio.Reader) {
+	bindIP := net.IPv4(127, 0, 0, 1)
+	if tcpAddr, ok := client.LocalAddr().(*net.TCPAddr); ok && len(tcpAddr.IP) > 0 {
+		bindIP = tcpAddr.IP
+	}
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindIP, Port: 0})
+	if err != nil {
+		_, _ = client.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	defer udpConn.Close()
+
+	localUDP := udpConn.LocalAddr().(*net.UDPAddr)
+	var reply []byte
+	if ip4 := localUDP.IP.To4(); ip4 != nil {
+		reply = make([]byte, 10)
+		reply[0] = 0x05
+		reply[1] = 0x00
+		reply[2] = 0x00
+		reply[3] = 0x01
+		copy(reply[4:8], ip4)
+		binary.BigEndian.PutUint16(reply[8:10], uint16(localUDP.Port))
+	} else {
+		ip6 := localUDP.IP.To16()
+		reply = make([]byte, 22)
+		reply[0] = 0x05
+		reply[1] = 0x00
+		reply[2] = 0x00
+		reply[3] = 0x04
+		copy(reply[4:20], ip6)
+		binary.BigEndian.PutUint16(reply[20:22], uint16(localUDP.Port))
+	}
+	if _, err := client.Write(reply); err != nil {
+		return
+	}
+
+	proc := s.resolveProcess(client.RemoteAddr())
+
+	var (
+		clientMu      sync.RWMutex
+		clientUDPAddr *net.UDPAddr
+		directConn    *net.UDPConn
+		upAssocs      = make(map[string]*netproxy.UDPAssociation)
+		flowIDs       = make(map[string]string)
+	)
+	defer func() {
+		clientMu.Lock()
+		if directConn != nil {
+			_ = directConn.Close()
+		}
+		for _, a := range upAssocs {
+			_ = a.Close()
+		}
+		ids := make([]string, 0, len(flowIDs))
+		for _, id := range flowIDs {
+			ids = append(ids, id)
+		}
+		clientMu.Unlock()
+		if s.tracker != nil {
+			for _, id := range ids {
+				s.tracker.CloseFlow(id)
+			}
+		}
+	}()
+
+	// RFC 1928: close the UDP relay socket when the TCP control connection closes.
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		var buf [1]byte
+		_, _ = reader.Read(buf[:])
+		_ = udpConn.Close()
+	}()
+
+	writeToClient := func(srcHost string, srcPort uint16, payload []byte, flowID string) {
+		hdr, err := netproxy.PackSOCKS5UDPHeader(srcHost, srcPort)
+		if err != nil {
+			return
+		}
+		clientMu.RLock()
+		cAddr := clientUDPAddr
+		clientMu.RUnlock()
+		if cAddr == nil {
+			return
+		}
+		pkt := make([]byte, len(hdr)+len(payload))
+		copy(pkt, hdr)
+		copy(pkt[len(hdr):], payload)
+		if _, err := udpConn.WriteToUDP(pkt, cAddr); err == nil && s.tracker != nil && flowID != "" {
+			s.tracker.AddBytes(flowID, 0, int64(len(payload)))
+		}
+	}
+
+	buf := make([]byte, 65535)
+	for {
+		_ = udpConn.SetReadDeadline(time.Now().Add(netproxy.UDPIdleTimeout))
+		n, srcAddr, err := udpConn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		if !srcAddr.IP.IsLoopback() {
+			continue
+		}
+		clientMu.Lock()
+		clientUDPAddr = srcAddr
+		clientMu.Unlock()
+
+		targetHost, targetPort, payload, err := netproxy.UnpackSOCKS5UDPDatagram(buf[:n])
+		if err != nil || targetPort == 0 {
+			continue
+		}
+
+		decision, targetProxy := s.evaluateTargetForProcessProto(targetHost, targetPort, proc, pbprofile.ProtoUDP)
+		if decision.Action == pbprofile.ActionBlock {
+			s.recordLogProto(proc, targetHost, targetPort, "UDP", "BLOCK", "", decision.RuleID)
+			continue
+		}
+
+		if decision.Action == pbprofile.ActionProxy && targetProxy != nil && strings.ToUpper(string(targetProxy.Type)) != "SOCKS5" {
+			if s.logs != nil {
+				s.logs.WarnOnce("udp-http:"+targetProxy.ID, "HTTP/HTTPS proxy does not support UDP; routing UDP traffic DIRECT")
+			}
+			decision.Action = pbprofile.ActionDirect
+			targetProxy = nil
+		}
+
+		flowKey := string(decision.Action) + "|" + targetHost + ":" + strconv.Itoa(int(targetPort))
+		proxyName := ""
+		if targetProxy != nil {
+			proxyName = targetProxy.Name
+		}
+
+		clientMu.Lock()
+		flowID := flowIDs[flowKey]
+		if flowID == "" && s.tracker != nil {
+			procLabel := proc.Name
+			if procLabel == "" {
+				procLabel = "inbound"
+			}
+			proxyLabel := proxyName
+			if proxyLabel == "" {
+				proxyLabel = strings.ToUpper(string(decision.Action))
+			}
+			ruleID := decision.RuleID
+			if ruleID == "" {
+				ruleID = "default"
+			}
+			flowID = s.tracker.StartFlow(flows.Flow{
+				PID:         proc.PID,
+				ProcessName: procLabel,
+				DestIP:      targetHost,
+				Host:        targetHost,
+				Port:        targetPort,
+				IsUDP:       true,
+				ProxyLabel:  proxyLabel,
+				RuleID:      ruleID,
+				StartedAt:   time.Now().UnixMilli(),
+			})
+			flowIDs[flowKey] = flowID
+		}
+		clientMu.Unlock()
+
+		s.recordLogProto(proc, targetHost, targetPort, "UDP", string(decision.Action), proxyName, decision.RuleID)
+
+		if decision.Action == pbprofile.ActionProxy && targetProxy != nil {
+			clientMu.Lock()
+			assoc := upAssocs[targetProxy.ID]
+			if assoc == nil || assoc.IsClosed() {
+				up := s.buildUpstream(*targetProxy)
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				newAssoc, dialErr := up.DialUDP(ctx)
+				cancel()
+				if dialErr != nil {
+					clientMu.Unlock()
+					continue
+				}
+				assoc = newAssoc
+				upAssocs[targetProxy.ID] = assoc
+				fid := flowID
+				go func(a *netproxy.UDPAssociation) {
+					rbuf := make([]byte, 65535)
+					for {
+						sh, sp, pl, rerr := a.ReadDatagram(rbuf, time.Now().Add(netproxy.UDPIdleTimeout))
+						if rerr != nil {
+							return
+						}
+						writeToClient(sh, sp, pl, fid)
+					}
+				}(assoc)
+			}
+			clientMu.Unlock()
+
+			destIP := ""
+			if parsedIP, perr := netip.ParseAddr(targetHost); perr == nil {
+				destIP = parsedIP.String()
+			}
+			if sent, werr := assoc.SendDatagram(destIP, targetHost, targetPort, payload); werr == nil && s.tracker != nil && flowID != "" {
+				s.tracker.AddBytes(flowID, int64(sent), 0)
+			}
+			continue
+		}
+
+		// DIRECT UDP relay
+		dstUDPAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(targetHost, strconv.Itoa(int(targetPort))))
+		if err != nil {
+			continue
+		}
+		clientMu.Lock()
+		dConn := directConn
+		if dConn == nil {
+			dConn, err = net.ListenUDP("udp", nil)
+			if err != nil {
+				clientMu.Unlock()
+				continue
+			}
+			directConn = dConn
+			fid := flowID
+			go func(dc *net.UDPConn) {
+				rbuf := make([]byte, 65535)
+				for {
+					_ = dc.SetReadDeadline(time.Now().Add(netproxy.UDPIdleTimeout))
+					rn, raddr, rerr := dc.ReadFromUDP(rbuf)
+					if rerr != nil {
+						return
+					}
+					writeToClient(raddr.IP.String(), uint16(raddr.Port), rbuf[:rn], fid)
+				}
+			}(dConn)
+		}
+		clientMu.Unlock()
+
+		if _, err := dConn.WriteToUDP(payload, dstUDPAddr); err == nil && s.tracker != nil && flowID != "" {
+			s.tracker.AddBytes(flowID, int64(len(payload)), 0)
+		}
+	}
+}
+
 func (s *Server) evaluateTarget(host string, port uint16) (rules.Decision, *pbprofile.ProxyConfig) {
 	return s.evaluateTargetForProcess(host, port, ProcessInfo{Name: "anyprofile"})
 }
 
 func (s *Server) evaluateTargetForProcess(host string, port uint16, proc ProcessInfo) (rules.Decision, *pbprofile.ProxyConfig) {
+	return s.evaluateTargetForProcessProto(host, port, proc, pbprofile.ProtoTCP)
+}
+
+func (s *Server) evaluateTargetForProcessProto(host string, port uint16, proc ProcessInfo, proto pbprofile.RuleProtocol) (rules.Decision, *pbprofile.ProxyConfig) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -527,7 +774,7 @@ func (s *Server) evaluateTargetForProcess(host string, port uint16, proc Process
 		DestIP:    destIP,
 		Domains:   domains,
 		DestPort:  port,
-		Protocol:  pbprofile.ProtoTCP,
+		Protocol:  proto,
 		CheckHost: true,
 	}
 
@@ -636,6 +883,10 @@ func (s *Server) relayTraffic(client, upstream net.Conn, proc ProcessInfo, destH
 }
 
 func (s *Server) recordLog(proc ProcessInfo, destHost string, destPort uint16, action, proxyName, ruleID string) {
+	s.recordLogProto(proc, destHost, destPort, "TCP", action, proxyName, ruleID)
+}
+
+func (s *Server) recordLogProto(proc ProcessInfo, destHost string, destPort uint16, proto, action, proxyName, ruleID string) {
 	if s.logs == nil {
 		return
 	}
@@ -653,7 +904,7 @@ func (s *Server) recordLog(proc ProcessInfo, destHost string, destPort uint16, a
 		DestIP:      destHost,
 		Host:        destHost,
 		Port:        destPort,
-		Protocol:    "TCP",
+		Protocol:    proto,
 		Action:      strings.ToUpper(action),
 		ProxyName:   proxyLabel,
 		RuleID:      ruleID,

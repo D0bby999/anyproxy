@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/D0bby999/anyproxy/internal/flows"
+	"github.com/D0bby999/anyproxy/internal/netproxy"
 	"github.com/D0bby999/anyproxy/internal/pbprofile"
 )
 
@@ -188,6 +189,83 @@ func TestInboundSOCKS5Direct(t *testing.T) {
 	}
 	if string(echoBuf) != string(testPayload) {
 		t.Fatalf("echo mismatch: got %q, want %q", echoBuf, testPayload)
+	}
+}
+
+func TestInboundSOCKS5UDPAssociateDirect(t *testing.T) {
+	// 1. Start a local UDP echo server
+	echoUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatalf("listen udp: %v", err)
+	}
+	defer echoUDP.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, addr, rerr := echoUDP.ReadFromUDP(buf)
+			if rerr != nil {
+				return
+			}
+			_, _ = echoUDP.WriteToUDP(buf[:n], addr)
+		}
+	}()
+	echoAddr := echoUDP.LocalAddr().(*net.UDPAddr)
+
+	// 2. Start Inbound Server
+	tracker := flows.NewTracker(100)
+	logs := flows.NewLogManager()
+	srv := NewServer(Config{
+		ListenAddr: "127.0.0.1:0",
+		Tracker:    tracker,
+		Logs:       logs,
+		ProcessResolver: func(net.Addr) ProcessInfo {
+			return ProcessInfo{PID: 4242, Name: "quic-client"}
+		},
+	})
+	srv.SyncProfile(nil, []pbprofile.ProxyRule{{
+		ID:          "udp-direct",
+		Enabled:     true,
+		TargetHosts: "*",
+		TargetPorts: "*",
+		Protocol:    pbprofile.ProtoUDP,
+		Action:      pbprofile.ActionDirect,
+	}}, "")
+	if err := srv.Start(); err != nil {
+		t.Fatalf("srv.Start: %v", err)
+	}
+	defer srv.Stop()
+
+	// 3. Dial inbound via Upstream.DialUDP (RFC 1928 client)
+	host, portStr, _ := net.SplitHostPort(srv.ListenAddr())
+	var port int
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	up := netproxy.Upstream{Type: "SOCKS5", Host: host, Port: port}
+	assoc, err := up.DialUDP(t.Context())
+	if err != nil {
+		t.Fatalf("DialUDP: %v", err)
+	}
+	defer assoc.Close()
+
+	payload := []byte("hello-socks5-udp-associate")
+	if _, err := assoc.SendDatagram("127.0.0.1", "", uint16(echoAddr.Port), payload); err != nil {
+		t.Fatalf("SendDatagram: %v", err)
+	}
+	rbuf := make([]byte, 2048)
+	_, _, got, err := assoc.ReadDatagram(rbuf, time.Now().Add(3*time.Second))
+	if err != nil {
+		t.Fatalf("ReadDatagram: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("UDP echo mismatch: got %q, want %q", got, payload)
+	}
+
+	fl := tracker.GetFlows(10)
+	if len(fl) != 1 || !fl[0].IsUDP || fl[0].Sent != int64(len(payload)) || fl[0].Received != int64(len(payload)) {
+		t.Fatalf("expected tracked UDP flow with Sent/Received=%d, got %+v", len(payload), fl)
+	}
+	cl := logs.ConnectionLogs(10)
+	if len(cl) != 1 || cl[0].Protocol != "UDP" || cl[0].ProcessName != "quic-client" {
+		t.Fatalf("expected UDP connection log entry, got %+v", cl)
 	}
 }
 
