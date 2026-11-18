@@ -972,6 +972,13 @@ class AppProxyProvider: NETransparentProxyProvider {
     override func wake() {
     }
     
+    private func resolveProxyConfig(forAction action: String) -> StoredProxyConfig? {
+        proxyLock.lock()
+        defer { proxyLock.unlock() }
+        let key = action == "PROXY" ? defaultProxyId : action
+        return key.isEmpty ? nil : storedProxyConfigs[key]
+    }
+
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {
         guard engineEnabled else { return false }
         if let tcpFlow = flow as? NEAppProxyTCPFlow {
@@ -1035,13 +1042,12 @@ class AppProxyProvider: NETransparentProxyProvider {
                 flow.closeWriteWithError(nil)
                 return true
             default:
-                proxyLock.lock()
-                let config = storedProxyConfigs[rule.action]
-                proxyLock.unlock()
-                guard let config = config else {
-                    // rule points at a proxy that no longer exists. it still goes
-                    // direct, but say so instead of leaking silently
-                    warnOnce("missing:\(rule.action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
+                guard let config = resolveProxyConfig(forAction: rule.action) else {
+                    if rule.action != "PROXY" {
+                        // rule points at a proxy that no longer exists. it still goes
+                        // direct, but say so instead of leaking silently
+                        warnOnce("missing:\(rule.action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
+                    }
                     sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
                     return false
                 }
@@ -1103,11 +1109,10 @@ class AppProxyProvider: NETransparentProxyProvider {
                 flow.closeWriteWithError(nil)
                 return true
             default:
-                proxyLock.lock()
-                let matched = storedProxyConfigs[action]
-                proxyLock.unlock()
-                guard let socks5Config = matched else {
-                    warnOnce("missing:\(action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
+                guard let socks5Config = resolveProxyConfig(forAction: action) else {
+                    if action != "PROXY" {
+                        warnOnce("missing:\(action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
+                    }
                     return false
                 }
                 guard socks5Config.type.lowercased() == "socks5" else {
