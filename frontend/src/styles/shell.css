@@ -845,11 +845,11 @@ button.enginechip:hover {
 /* Rule editor dialog & selected application chips */
 .dialog.ruledialog {
   width: min(660px, 100%);
-  height: min(392px, 100%);
+  height: min(520px, 100%);
   min-height: 0;
 }
 .dialog.ruledialog.advanced-open {
-  height: min(612px, 100%);
+  height: min(640px, 100%);
 }
 .dialog.ruledialog > .dialog-head {
   padding: 9px 18px;
