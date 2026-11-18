@@ -1,18 +1,18 @@
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "date": "2026-11-18",
-  "notes": "Proxy exit IP and country code detection during checks, persisted across restarts and shown in Proxies, Sidebar, and Compact View.",
+  "notes": "Fix macOS Network Extension routing for rules using Default proxy, and increase New/Edit Rule modal height.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.8/AnyProxy-darwin-arm64.dmg",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.9/AnyProxy-darwin-arm64.dmg",
       "sha256": "a9d282fb086a2a11ccb1745fd0c5018cb06f0cb2802e5a54131d67e179e22059"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.8/AnyProxy-darwin-amd64.dmg",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.9/AnyProxy-darwin-amd64.dmg",
       "sha256": "2b66b369edab878d549a9f8392af193d7fd4cf1b2d583d55048716ab523e9b83"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.8/AnyProxy-windows-amd64.exe",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.9/AnyProxy-windows-amd64.exe",
       "sha256": "d26e8a24ac9f8255dd2ca6fcffa36f7e82cdb178fcfe9d9e4e3382badf0e9390"
     }
   }
