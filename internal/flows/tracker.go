@@ -153,6 +153,11 @@ func (t *Tracker) ClearClosed() int {
 	return removed
 }
 
+// TrimMemory drops closed flows and compacts internal slices when the UI is hidden.
+func (t *Tracker) TrimMemory() {
+	t.ClearClosed()
+}
+
 // ClearAll removes both active and closed flows from the tracker.
 func (t *Tracker) ClearAll() {
 	t.mu.Lock()

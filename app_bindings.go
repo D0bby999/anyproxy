@@ -202,6 +202,53 @@ func (a *App) ExportRulesJSON(ruleIDs []string) (string, error) {
 	return string(raw), nil
 }
 
+// SimulateRule tests which rule (or Default Route) matches a hypothetical connection.
+func (a *App) SimulateRule(processName, host string, port int, protocol string) (service.RuleSimulationResult, error) {
+	if err := a.ready(); err != nil {
+		return service.RuleSimulationResult{}, err
+	}
+	return a.svc.SimulateRule(processName, host, port, protocol)
+}
+
+// CheckLeak verifies exit IP, local gateway route, DNS posture, UDP guard, and fail-closed engine state.
+func (a *App) CheckLeak() (service.LeakReport, error) {
+	if err := a.ready(); err != nil {
+		return service.LeakReport{}, err
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return a.svc.CheckLeak(ctx)
+}
+
+// ProxyHealth returns the current reachability snapshot of the active default proxy.
+func (a *App) ProxyHealth() service.ProxyHealthStatus {
+	if a.ready() != nil {
+		return service.ProxyHealthStatus{}
+	}
+	return a.svc.ProxyHealth()
+}
+
+// CheckActiveProxyHealth immediately probes TCP reachability of the active default proxy.
+func (a *App) CheckActiveProxyHealth() service.ProxyHealthStatus {
+	if a.ready() != nil {
+		return service.ProxyHealthStatus{}
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return a.svc.CheckActiveProxyHealth(ctx)
+}
+
+// TrimMemory releases closed flows, prunes log maps, and returns unused Go heap pages to the OS.
+func (a *App) TrimMemory() {
+	if a.svc != nil {
+		a.svc.TrimMemory()
+	}
+}
+
 // StartEngine activates the OS interception driver.
 func (a *App) StartEngine() (driver.EngineStatus, error) {
 	if err := a.ready(); err != nil {

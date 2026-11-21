@@ -88,35 +88,46 @@ export function ConnectionsPage({
     <>
       <PageHead title={t.connections.title} sub={t.connections.sub}>
         <div className="row nodrag connection-toolbar" style={{ gap: 8 }}>
-          <div
-            className="row"
-            style={{
-              background: 'var(--surface-hover)',
-              borderRadius: 'var(--r-md)',
-              padding: 2,
-            }}
-          >
+          <div className="seg" role="group" aria-label={t.connections.title}>
             <button
-              className={`btn sm ${mode === 'live' ? 'primary' : ''}`}
+              type="button"
+              aria-pressed={mode === 'live'}
               onClick={() => setMode('live')}
             >
-              {t.connections.live} ({activeFlows.length})
+              <span>{t.connections.live}</span>
+              <span className="seg-count">{activeFlows.length}</span>
             </button>
             <button
-              className={`btn sm ${mode === 'history' ? 'primary' : ''}`}
+              type="button"
+              aria-pressed={mode === 'history'}
               onClick={() => setMode('history')}
             >
-              {t.connections.history} ({logs.length})
+              <span>{t.connections.history}</span>
+              <span className="seg-count">{logs.length}</span>
             </button>
           </div>
 
-          <input
-            className="input"
-            style={{ width: 180, height: 28 }}
-            placeholder={t.actions.search}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
+          <div className="search-field compact">
+            <Icon name="search" className="icon sm search-field-icon" />
+            <input
+              className="input search-field-input"
+              type="search"
+              placeholder={t.actions.search}
+              aria-label={t.actions.search}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+            {filter && (
+              <button
+                type="button"
+                className="search-field-clear"
+                onClick={() => setFilter('')}
+                aria-label={t.actions.clear}
+              >
+                <Icon name="close" className="icon xs" />
+              </button>
+            )}
+          </div>
 
           <button
             className="btn sm"

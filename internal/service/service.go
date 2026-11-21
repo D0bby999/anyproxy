@@ -54,6 +54,13 @@ type Service struct {
 	inbound    *inbound.Server
 	inboundErr error
 	onEvent    func(topic string, payload any)
+
+	healthMu     sync.Mutex
+	health       ProxyHealthStatus
+	healthFails  int
+	healthCtx    context.Context
+	healthCancel context.CancelFunc
+	healthWg     sync.WaitGroup
 }
 
 // New creates a Service backed by store, vault, and driver using the default inbound listen address.
@@ -119,6 +126,7 @@ const settingSysProxyOn = "sysproxy_on"
 
 // Close stops the OS interception driver and closes the store.
 func (s *Service) Close() error {
+	s.stopHealthWatchdog()
 	_ = s.drv.Stop()
 	if s.store != nil {
 		_ = s.store.SetSetting(settingSysProxyOn, "0")
@@ -197,6 +205,7 @@ func (s *Service) SwitchProfile(name string) (pbprofile.Profile, error) {
 	s.logs.LogActivity("INFO", "Switched active profile to "+name)
 	p, err := s.ActiveProfile()
 	s.emit("profile:changed", p)
+	s.triggerHealthProbe()
 	return p, err
 }
 
@@ -484,6 +493,7 @@ func (s *Service) SetDefaultProxy(proxyID string) (pbprofile.Profile, error) {
 	_ = s.syncActiveProfileToDriver()
 	s.fillProxyPasswordIndicators(&saved)
 	s.emit("profile:changed", saved)
+	s.triggerHealthProbe()
 	return saved, nil
 }
 
@@ -524,6 +534,33 @@ func (s *Service) TestProxy(ctx context.Context, proxyID, targetHost string, tar
 		s.emit("proxy:check-step", step)
 	})
 	s.logs.LogActivity("INFO", fmt.Sprintf("Proxy check %s (%s): %s", target.Label(), report.Target, report.Summary))
+	if p.DefaultProxyID == proxyID {
+		st := s.Status()
+		engineActive := st.State == driver.StateRunning && st.Enabled
+		if report.Success {
+			s.setHealthSnapshot(ProxyHealthStatus{
+				ProxyID:    target.ID,
+				ProxyName:  target.Name,
+				ProxyAddr:  up.Addr(),
+				Healthy:    true,
+				Checked:    true,
+				FailClosed: false,
+				LatencyMs:  report.AvgMs,
+				CheckedAt:  report.FinishedAt,
+			}, 0)
+		} else {
+			s.setHealthSnapshot(ProxyHealthStatus{
+				ProxyID:    target.ID,
+				ProxyName:  target.Name,
+				ProxyAddr:  up.Addr(),
+				Healthy:    false,
+				Checked:    true,
+				FailClosed: engineActive,
+				Error:      report.Summary,
+				CheckedAt:  report.FinishedAt,
+			}, healthFailureThreshold)
+		}
+	}
 	if report.Success && (report.Country != "" || report.ExitIP != "") &&
 		(target.Country != report.Country || target.ExitIP != report.ExitIP) {
 		if fresh, ferr := s.store.ActiveProfile(); ferr == nil {
@@ -789,11 +826,13 @@ func (s *Service) StartEngine(ctx context.Context) (driver.EngineStatus, error) 
 	}
 	st := s.drv.Status()
 	s.emit("engine:status", st)
+	s.startHealthWatchdog()
 	return st, nil
 }
 
 // StopEngine stops interception and wipes in-memory proxy credentials in the driver.
 func (s *Service) StopEngine() (driver.EngineStatus, error) {
+	s.stopHealthWatchdog()
 	err := s.drv.Stop()
 	if s.store != nil {
 		_ = s.store.SetSetting(settingSysProxyOn, "0")

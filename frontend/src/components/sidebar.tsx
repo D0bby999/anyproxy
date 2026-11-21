@@ -21,6 +21,7 @@ interface SidebarProps {
   defaultProxyId: string
   onSetDefaultProxy: (id: string) => void
   onTestProxy?: (px: ProxyConfig) => Promise<CheckReport | undefined>
+  onOpenLeakCheck?: () => void
   liveFlowCount: number
   rulesCount: number
   collapsed?: boolean
@@ -43,6 +44,7 @@ export function Sidebar({
   defaultProxyId,
   onSetDefaultProxy,
   onTestProxy,
+  onOpenLeakCheck,
   liveFlowCount,
   rulesCount,
   collapsed = false,
@@ -138,6 +140,17 @@ export function Sidebar({
           <div className="quick-proxy-head">
             <label>{t.engine.activeProxy}</label>
             <div className="row" style={{ gap: 4 }}>
+              {onOpenLeakCheck && (
+                <button
+                  type="button"
+                  className="iconbtn xs"
+                  onClick={onOpenLeakCheck}
+                  title={t.leak.btn}
+                  aria-label={t.leak.btn}
+                >
+                  <Icon name="shield" className="icon xs" />
+                </button>
+              )}
               {activePx && onTestProxy && (
                 <button
                   type="button"

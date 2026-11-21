@@ -6,6 +6,8 @@ import { normalizeConnectionLog, normalizeFlow } from './lib/normalize-traffic'
 import { Sidebar, type Page } from './components/sidebar'
 import { CompactView } from './components/compact-view'
 import { StatusBar } from './components/status-bar'
+import { LeakCheckDialog } from './components/leak-check-dialog'
+import { Icon } from './components/icons'
 import { ProxiesPage } from './pages/proxies-page'
 import { RulesPage } from './pages/rules-page'
 import { ConnectionsPage } from './pages/connections-page'
@@ -21,6 +23,7 @@ import type {
   ProxyConfig,
   ProxyRule,
   ReleaseInfo,
+  ProxyHealthStatus,
 } from './types'
 
 export default function App() {
@@ -40,6 +43,9 @@ export default function App() {
   const [installingUpdate, setInstallingUpdate] = useState(false)
   const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null)
   const [updateError, setUpdateError] = useState('')
+  const [proxyHealth, setProxyHealth] = useState<ProxyHealthStatus | null>(null)
+  const [retryingHealth, setRetryingHealth] = useState(false)
+  const [showLeakModal, setShowLeakModal] = useState(false)
   const [profileDialog, setProfileDialog] = useState<{
     mode: 'create' | 'duplicate' | 'rename'
     targetName: string
@@ -65,13 +71,14 @@ export default function App() {
     const wantConn = !isCompact && (curPage === 'connections' || curPage === 'rules')
     const wantAct = !isCompact && curPage === 'activity'
     try {
-      const [st, fl, cl, al] = await Promise.all([
+      const [st, fl, cl, al, ph] = await Promise.all([
         // the driver can lose the tunnel on its own, so keep reading the real
         // status instead of trusting the last command the ui sent
         app.Status(),
         active ? app.GetFlows(100) : null,
         active && wantConn ? app.GetConnectionLogs(100) : null,
         wantAct ? app.GetActivityLogs(100) : null,
+        app.ProxyHealth ? app.ProxyHealth() : null,
       ])
       if (st && (st.state !== curEngine?.state || st.message !== curEngine?.message || st.enabled !== curEngine?.enabled)) {
         setEngine(st)
@@ -80,6 +87,7 @@ export default function App() {
       if (fl) setFlows(fl.map(normalizeFlow))
       if (cl) setConnLogs(cl.map(normalizeConnectionLog))
       if (al) setActivityLogs(al)
+      if (ph) setProxyHealth(ph)
     } catch {}
   }
 
@@ -122,11 +130,47 @@ export default function App() {
       }
     }
     void waitForStartup()
-    const timer = setInterval(() => void pollLive(), 1200)
+    let pollTimer: ReturnType<typeof setInterval> | null = setInterval(() => void pollLive(), 1200)
+    let hibernateTimer: ReturnType<typeof setTimeout> | null = null
+
+    const enterTrayHibernation = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+      if (!hibernateTimer) {
+        hibernateTimer = setTimeout(() => {
+          hibernateTimer = null
+          setFlows([])
+          setConnLogs([])
+          setActivityLogs([])
+          try {
+            void app.TrimMemory?.()
+          } catch {}
+        }, 3000)
+      }
+    }
+
+    const wakeFromTrayHibernation = () => {
+      if (hibernateTimer) {
+        clearTimeout(hibernateTimer)
+        hibernateTimer = null
+      }
+      void pollLive()
+      if (!pollTimer) {
+        pollTimer = setInterval(() => void pollLive(), 1200)
+      }
+    }
+
     const onVis = () => {
-      if (!document.hidden) void pollLive()
+      if (document.hidden) enterTrayHibernation()
+      else wakeFromTrayHibernation()
     }
     document.addEventListener('visibilitychange', onVis)
+    const unsubVis = api.subscribeEvent('ui:visibility', (visible: unknown) => {
+      if (visible === false) enterTrayHibernation()
+      else wakeFromTrayHibernation()
+    })
 
     const unsubProfile = api.subscribeEvent('profile:changed', (data: unknown) => {
       if (data) {
@@ -166,17 +210,25 @@ export default function App() {
         setUpdateProgress({ done: Number(p.done || 0), total: Number(p.total ?? -1) })
       }
     })
+    const unsubHealth = api.subscribeEvent('proxy:health', (data: unknown) => {
+      if (data && typeof data === 'object') {
+        setProxyHealth(data as ProxyHealthStatus)
+      }
+    })
 
     return () => {
       cancelled = true
       clearTimeout(startupTimer)
-      clearInterval(timer)
+      if (pollTimer) clearInterval(pollTimer)
+      if (hibernateTimer) clearTimeout(hibernateTimer)
       document.removeEventListener('visibilitychange', onVis)
+      unsubVis()
       unsubProfile()
       unsubCompact()
       unsubMenu()
       unsubEngine()
       unsubUpdateProgress()
+      unsubHealth()
     }
   }, [])
 
@@ -432,6 +484,13 @@ export default function App() {
         </div>
       )}
 
+      {showLeakModal && (
+        <LeakCheckDialog
+          onCheckLeak={() => app.CheckLeak()}
+          onClose={() => setShowLeakModal(false)}
+        />
+      )}
+
       <div className="toasts">
           {toasts.map((item) => (
             <div key={item.id} className={`toast ${item.type}`}>
@@ -459,6 +518,7 @@ export default function App() {
         defaultProxyId={profile?.defaultProxyId || ''}
         onSetDefaultProxy={handleSetDefaultProxy}
         onTestProxy={handleTestProxy}
+        onOpenLeakCheck={() => setShowLeakModal(true)}
         liveFlowCount={flows.filter((f) => f.state === 'open').length}
         rulesCount={profile?.rules?.length || 0}
         collapsed={sidebarCollapsed}
@@ -468,6 +528,69 @@ export default function App() {
       />
 
       <main className="main">
+        {proxyHealth?.checked && !proxyHealth.healthy && engine?.state === 'running' && (
+          <div className="health-alert-bar" role="alert">
+            <Icon name="warn" className="icon sm health-alert-icon" />
+            <div className="health-alert-copy">
+              <b>{t.health.failClosedTitle}</b>
+              <span>
+                {t.health.failClosedBody(
+                  proxyHealth.proxyName || t.rules.defaultProxy,
+                  proxyHealth.proxyAddr || ''
+                )}
+              </span>
+            </div>
+            <div className="health-alert-actions">
+              {(profile?.proxies || []).filter((p) => p.id !== profile?.defaultProxyId).length > 0 ? (
+                <select
+                  className="select health-backup-select"
+                  aria-label={t.health.switchBackup}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) void handleSetDefaultProxy(e.target.value)
+                  }}
+                >
+                  <option value="">{t.health.switchBackup}</option>
+                  {(profile?.proxies || [])
+                    .filter((p) => p.id !== profile?.defaultProxyId)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => setPage('proxies')}
+                >
+                  {t.health.openProxies}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn sm"
+                disabled={retryingHealth}
+                aria-busy={retryingHealth}
+                onClick={async () => {
+                  if (!app.CheckActiveProxyHealth || retryingHealth) return
+                  setRetryingHealth(true)
+                  try {
+                    const next = await app.CheckActiveProxyHealth()
+                    setProxyHealth(next)
+                  } finally {
+                    setRetryingHealth(false)
+                  }
+                }}
+              >
+                <Icon name="refresh" className="icon xs" />
+                {t.health.retry}
+              </button>
+            </div>
+          </div>
+        )}
+
         {page === 'connections' && (
           <ConnectionsPage
             flows={flows}
@@ -562,6 +685,7 @@ export default function App() {
               await navigator.clipboard.writeText(raw)
               toast(t.messages.rulesExported, 'success')
             }}
+            onSimulateRule={async (proc, host, port, proto) => app.SimulateRule(proc, host, port, proto)}
           />
         )}
 
@@ -663,6 +787,13 @@ export default function App() {
             </form>
           </div>
         </div>
+      )}
+
+      {showLeakModal && (
+        <LeakCheckDialog
+          onCheckLeak={() => app.CheckLeak()}
+          onClose={() => setShowLeakModal(false)}
+        />
       )}
 
       <div className="toasts">

@@ -13,6 +13,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  GripVertical,
   ListFilter,
   Maximize2,
   MoreHorizontal,
@@ -70,6 +71,7 @@ export type IconName =
   | 'zap'
   | 'shield'
   | 'globe'
+  | 'grip'
   | 'ban'
   | 'external'
 
@@ -105,6 +107,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   zap: Zap,
   shield: ShieldCheck,
   globe: Globe,
+  grip: GripVertical,
   ban: Ban,
   external: ExternalLink,
 }

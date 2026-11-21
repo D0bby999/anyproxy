@@ -170,6 +170,7 @@ func (a *App) showMainWindow() {
 	runtime.Show(a.ctx)
 	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowShow(a.ctx)
+	runtime.EventsEmit(a.ctx, "ui:visibility", true)
 }
 
 func (a *App) hideMainWindow() {
@@ -177,7 +178,11 @@ func (a *App) hideMainWindow() {
 		return
 	}
 	a.saveCurrentWindowPosition()
+	runtime.EventsEmit(a.ctx, "ui:visibility", false)
 	runtime.Hide(a.ctx)
+	if a.svc != nil {
+		go a.svc.TrimMemory()
+	}
 }
 
 func (a *App) currentTraySnapshot() traySnapshot {

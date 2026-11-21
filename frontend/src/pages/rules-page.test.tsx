@@ -283,3 +283,235 @@ it('lets users save app directly without clearing "*", opens Advanced when editi
   )
 })
 
+it('filters rules by action and multi-word search, locks reordering while filtered, and resets filters', async () => {
+  const user = userEvent.setup()
+  const onMoveRule = vi.fn().mockResolvedValue(undefined)
+  const proxies: ProxyConfig[] = [
+    { id: 'p1', name: 'Tokyo SOCKS', type: 'socks5', host: '10.0.0.1', port: 1080 },
+  ]
+  const rules = [
+    {
+      id: 'r1',
+      name: 'Chrome via Tokyo',
+      enabled: true,
+      processNames: 'Google Chrome*',
+      targetHosts: '*',
+      targetPorts: '*',
+      protocol: 'both' as const,
+      action: 'proxy' as const,
+      proxyConfigId: 'p1',
+    },
+    {
+      id: 'r2',
+      name: 'Bypass LAN',
+      enabled: true,
+      processNames: '*',
+      targetHosts: '192.168.0.0/16',
+      targetPorts: '*',
+      protocol: 'both' as const,
+      action: 'direct' as const,
+      proxyConfigId: '',
+    },
+    {
+      id: 'r3',
+      name: 'Block Telemetry',
+      enabled: false,
+      processNames: '*',
+      targetHosts: '*.ads.example',
+      targetPorts: '443',
+      protocol: 'tcp' as const,
+      action: 'block' as const,
+      proxyConfigId: '',
+    },
+  ]
+
+  render(
+    <RulesPage
+      rules={rules}
+      proxies={proxies}
+      defaultProxyId="p1"
+      onSaveRule={vi.fn()}
+      onDeleteRule={vi.fn()}
+      onToggleRule={vi.fn()}
+      onMoveRule={onMoveRule}
+      onCloneRule={vi.fn()}
+    />
+  )
+
+  // Unfiltered: second row can move up
+  const moveUpBtns = screen.getAllByRole('button', { name: t.actions.moveUp })
+  expect((moveUpBtns[1] as HTMLButtonElement).disabled).toBe(false)
+
+  // Filter by Block action -> only r3 shown, reorder locked
+  const filterGroup = screen.getByRole('group', { name: t.rules.action })
+  await user.click(within(filterGroup).getByRole('button', { name: new RegExp(t.rules.actionBlock) }))
+  expect(screen.getByText('Block Telemetry')).toBeTruthy()
+  expect(screen.queryByText('Chrome via Tokyo')).toBeNull()
+  expect((screen.getByRole('button', { name: t.actions.moveUp }) as HTMLButtonElement).disabled).toBe(true)
+
+  // Switch back to All and search multi-word ("chrome tokyo")
+  await user.click(within(filterGroup).getByRole('button', { name: new RegExp(t.rules.filterAll) }))
+  const searchInput = screen.getByLabelText(t.rules.searchPlaceholder)
+  await user.type(searchInput, 'chrome tokyo')
+  expect(screen.getByText('Chrome via Tokyo')).toBeTruthy()
+  expect(screen.queryByText('Bypass LAN')).toBeNull()
+
+  // Non-matching query shows filtered empty state with Clear Filters
+  await user.clear(searchInput)
+  await user.type(searchInput, 'nonexistent-host-xyz')
+  expect(screen.getByText(t.rules.noFilterMatches)).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: t.rules.clearFilters }))
+  expect(screen.getByText('Chrome via Tokyo')).toBeTruthy()
+  expect(screen.getByText('Bypass LAN')).toBeTruthy()
+  expect(screen.getByText('Block Telemetry')).toBeTruthy()
+})
+
+it('confirms before deleting a rule and switches Default Route from the footer row', async () => {
+  const user = userEvent.setup()
+  const onDeleteRule = vi.fn().mockResolvedValue(undefined)
+  const onSetDefaultProxy = vi.fn().mockResolvedValue(undefined)
+  const proxies: ProxyConfig[] = [
+    { id: 'p1', name: 'SG Fast', type: 'socks5', host: '1.1.1.1', port: 1080 },
+  ]
+
+  render(
+    <RulesPage
+      rules={[
+        {
+          id: 'r1',
+          name: 'Dev Rule',
+          enabled: true,
+          processNames: 'git',
+          targetHosts: '*',
+          targetPorts: '*',
+          protocol: 'tcp',
+          action: 'proxy',
+          proxyConfigId: '',
+        },
+      ]}
+      proxies={proxies}
+      defaultProxyId=""
+      onSaveRule={vi.fn()}
+      onDeleteRule={onDeleteRule}
+      onToggleRule={vi.fn()}
+      onMoveRule={vi.fn()}
+      onCloneRule={vi.fn()}
+      onSetDefaultProxy={onSetDefaultProxy}
+    />
+  )
+
+  // Default Route footer row switches default proxy directly
+  const defaultSelect = screen.getByLabelText(t.rules.defaultRouteLabel) as HTMLSelectElement
+  expect(defaultSelect.value).toBe('')
+  await user.selectOptions(defaultSelect, 'p1')
+  expect(onSetDefaultProxy).toHaveBeenCalledWith('p1')
+
+  // Clicking delete opens confirmation modal instead of deleting immediately
+  await user.click(screen.getByRole('button', { name: t.actions.delete }))
+  const confirmDialog = screen.getByRole('dialog', { name: t.rules.confirmDelete })
+  expect(confirmDialog.textContent).toContain('Dev Rule')
+  expect(onDeleteRule).not.toHaveBeenCalled()
+
+  // Cancel keeps the rule
+  await user.click(within(confirmDialog).getByRole('button', { name: t.actions.cancel }))
+  expect(onDeleteRule).not.toHaveBeenCalled()
+
+  // Confirm deletes the rule
+  await user.click(screen.getByRole('button', { name: t.actions.delete }))
+  const confirmDialog2 = screen.getByRole('dialog', { name: t.rules.confirmDelete })
+  await user.click(within(confirmDialog2).getByRole('button', { name: t.actions.delete }))
+  await waitFor(() => expect(onDeleteRule).toHaveBeenCalledWith('r1'))
+})
+
+it('starts a rule from a starter template and saves localhostViaProxy from Advanced', async () => {
+  const user = userEvent.setup()
+  const onSaveRule = vi.fn().mockResolvedValue(undefined)
+
+  render(
+    <RulesPage
+      rules={[]}
+      proxies={[{ id: 'p1', name: 'Burp HTTP', type: 'http', host: '127.0.0.1', port: 8080 }]}
+      onSaveRule={onSaveRule}
+      onDeleteRule={vi.fn()}
+      onToggleRule={vi.fn()}
+      onMoveRule={vi.fn()}
+      onCloneRule={vi.fn()}
+    />
+  )
+
+  // Click "Proxy Browser" starter template in empty state
+  await user.click(screen.getByRole('button', { name: t.rules.templateProxyBrowser }))
+  const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
+  const chipsList = within(dialog).getByRole('list', { name: t.rules.selectedApps })
+  expect(within(chipsList).getByText('Google Chrome*')).toBeTruthy()
+
+  // Expand Advanced and toggle localhostViaProxy
+  await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
+  const localhostSwitch = within(dialog).getByRole('switch', { name: t.rules.localhostViaProxy })
+  expect(localhostSwitch.getAttribute('aria-checked')).toBe('false')
+  await user.click(localhostSwitch)
+  expect(localhostSwitch.getAttribute('aria-checked')).toBe('true')
+
+  await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
+  expect(onSaveRule).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: 'proxy',
+      localhostViaProxy: true,
+      processNames: 'Google Chrome*; *com.google.Chrome*',
+    })
+  )
+})
+
+it('simulates a rule inline and highlights the matched row', async () => {
+  const user = userEvent.setup()
+  const onSimulateRule = vi.fn().mockResolvedValue({
+    matched: true,
+    ruleId: 'r1',
+    ruleName: 'Burp Inspection',
+    ruleIndex: 1,
+    action: 'proxy',
+    proxyId: 'p1',
+    proxyName: 'Burp HTTP',
+    viaDefault: false,
+    failClosed: false,
+    reason: 'Routed via Burp HTTP',
+  })
+
+  render(
+    <RulesPage
+      rules={[
+        {
+          id: 'r1',
+          name: 'Burp Inspection',
+          enabled: true,
+          processNames: 'Google Chrome*',
+          targetHosts: '*.staging.app',
+          targetPorts: '443',
+          protocol: 'tcp',
+          action: 'proxy',
+          proxyConfigId: 'p1',
+        },
+      ]}
+      proxies={[{ id: 'p1', name: 'Burp HTTP', type: 'http', host: '127.0.0.1', port: 8080 }]}
+      onSaveRule={vi.fn()}
+      onDeleteRule={vi.fn()}
+      onToggleRule={vi.fn()}
+      onMoveRule={vi.fn()}
+      onCloneRule={vi.fn()}
+      onSimulateRule={onSimulateRule}
+    />
+  )
+
+  await user.click(screen.getByRole('button', { name: t.rules.testBtn }))
+  const hostInput = screen.getByLabelText(t.rules.simHost)
+  await user.clear(hostInput)
+  await user.type(hostInput, 'api.staging.app')
+  await user.click(screen.getByRole('button', { name: t.rules.simRun }))
+
+  await waitFor(() => expect(onSimulateRule).toHaveBeenCalledWith('Google Chrome', 'api.staging.app', 443, 'tcp'))
+  expect(screen.getByText(t.rules.simMatched(1, 'Burp Inspection'))).toBeTruthy()
+  const matchedRow = screen.getByText('Burp Inspection').closest('tr')
+  expect(matchedRow?.className).toContain('is-sim-match')
+})
+

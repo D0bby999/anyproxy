@@ -32,6 +32,7 @@ export interface ProxyRule {
   protocol: RuleProtocol
   action: RuleAction
   proxyConfigId?: string
+  localhostViaProxy?: boolean
 }
 
 export interface LogFilter {
@@ -153,6 +154,49 @@ export interface CheckReport {
   country?: string
   responseStatus?: string
   totalDurationMs: number
+}
+
+export interface RuleSimulationResult {
+  matched: boolean
+  ruleId?: string
+  ruleName?: string
+  ruleIndex: number
+  action: RuleAction
+  proxyId?: string
+  proxyName?: string
+  proxyAddr?: string
+  viaDefault: boolean
+  failClosed: boolean
+  reason: string
+}
+
+export interface LeakCheckItem {
+  id: string
+  name: string
+  status: 'ok' | 'warn' | 'fail'
+  detail: string
+}
+
+export interface LeakReport {
+  overall: 'protected' | 'warning' | 'unprotected'
+  exitIp?: string
+  country?: string
+  proxyName?: string
+  proxyType?: string
+  checkedAt: string
+  items: LeakCheckItem[]
+}
+
+export interface ProxyHealthStatus {
+  proxyId?: string
+  proxyName?: string
+  proxyAddr?: string
+  healthy: boolean
+  checked: boolean
+  failClosed: boolean
+  latencyMs?: number
+  error?: string
+  checkedAt?: string
 }
 
 export function countryFlag(code?: string): string {

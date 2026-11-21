@@ -12,6 +12,9 @@ import type {
   ProxyConfig,
   ProxyRule,
   LogFilter,
+  RuleSimulationResult,
+  LeakReport,
+  ProxyHealthStatus,
 } from '../types'
 
 const mockProxies: ProxyConfig[] = [
@@ -69,6 +72,7 @@ const mockRules: ProxyRule[] = [
     protocol: 'tcp',
     action: 'proxy',
     proxyConfigId: 'px-burp',
+    localhostViaProxy: true,
   },
   {
     id: 'rl-bypass-local',
@@ -461,6 +465,202 @@ export const stubApp = {
       : activeProfileData.rules
     return JSON.stringify(rules, null, 2)
   },
+  SimulateRule: async (
+    processName: string,
+    host: string,
+    port: number,
+    protocol: string
+  ): Promise<RuleSimulationResult> => {
+    const globMatch = (pattern: string, text: string) => {
+      const re = new RegExp(
+        '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+        'i'
+      )
+      return re.test(text)
+    }
+    const proto = protocol.toLowerCase() === 'udp' ? 'udp' : 'tcp'
+    const cleanHost = (host || 'example.com').trim()
+    const cleanProc = (processName || '').trim()
+    const numPort = port > 0 ? port : 443
+    for (let i = 0; i < activeProfileData.rules.length; i++) {
+      const r = activeProfileData.rules[i]
+      if (!r.enabled) continue
+      const rp = r.protocol.toLowerCase()
+      if (rp !== 'both' && rp !== proto) continue
+      const portTokens = (r.targetPorts || '*').split(/[;,]/).map((s) => s.trim()).filter(Boolean)
+      const portOk =
+        portTokens.length === 0 ||
+        portTokens.includes('*') ||
+        portTokens.some((tok) => {
+          if (tok.includes('-')) {
+            const [a, b] = tok.split('-').map(Number)
+            return numPort >= a && numPort <= b
+          }
+          return Number(tok) === numPort
+        })
+      if (!portOk) continue
+      const hostTokens = (r.targetHosts || '*').split(/[;,]/).map((s) => s.trim()).filter(Boolean)
+      const hostOk =
+        hostTokens.length === 0 ||
+        hostTokens.includes('*') ||
+        hostTokens.some((tok) => globMatch(tok, cleanHost) || (tok.startsWith('*.') && cleanHost.toLowerCase() === tok.slice(2).toLowerCase()))
+      if (!hostOk) continue
+      const procTokens = (r.processNames || '*').split(/[;,]/).map((s) => s.trim()).filter(Boolean)
+      const procListed =
+        procTokens.length === 0 ||
+        procTokens.includes('*') ||
+        procTokens.some((tok) => globMatch(tok, cleanProc))
+      if (r.excludeProcess ? procListed : !procListed) {
+        if (r.excludeProcess && r.action === 'proxy') {
+          return {
+            matched: true,
+            ruleId: r.id,
+            ruleName: r.name,
+            ruleIndex: i + 1,
+            action: 'direct',
+            viaDefault: false,
+            failClosed: false,
+            reason: 'Excluded by rule -> Direct',
+          }
+        }
+        continue
+      }
+      const px = activeProfileData.proxies.find((p) => p.id === (r.proxyConfigId || activeProfileData.defaultProxyId))
+      if (r.action === 'proxy' && proto === 'udp' && px && px.type !== 'socks5') {
+        return {
+          matched: true,
+          ruleId: r.id,
+          ruleName: r.name,
+          ruleIndex: i + 1,
+          action: 'block',
+          proxyId: px.id,
+          proxyName: px.name,
+          proxyAddr: `${px.host}:${px.port}`,
+          viaDefault: false,
+          failClosed: true,
+          reason: `Blocked (fail-closed): ${px.type.toUpperCase()} proxy does not relay UDP`,
+        }
+      }
+      return {
+        matched: true,
+        ruleId: r.id,
+        ruleName: r.name,
+        ruleIndex: i + 1,
+        action: r.action,
+        proxyId: px?.id,
+        proxyName: px?.name,
+        proxyAddr: px ? `${px.host}:${px.port}` : undefined,
+        viaDefault: false,
+        failClosed: false,
+        reason: r.action === 'proxy' && px ? `Routed via ${px.name}` : r.action === 'block' ? 'Blocked by rule' : 'Direct by rule',
+      }
+    }
+    const defPx = activeProfileData.proxies.find((p) => p.id === activeProfileData.defaultProxyId)
+    if (!defPx) {
+      return {
+        matched: false,
+        ruleIndex: 0,
+        action: 'direct',
+        viaDefault: true,
+        failClosed: false,
+        reason: 'Default Route: Direct',
+      }
+    }
+    if (proto === 'udp' && defPx.type !== 'socks5') {
+      return {
+        matched: false,
+        ruleIndex: 0,
+        action: 'block',
+        proxyId: defPx.id,
+        proxyName: defPx.name,
+        proxyAddr: `${defPx.host}:${defPx.port}`,
+        viaDefault: true,
+        failClosed: true,
+        reason: `Blocked (fail-closed): Default Route uses ${defPx.type.toUpperCase()} proxy (no UDP)`,
+      }
+    }
+    return {
+      matched: false,
+      ruleIndex: 0,
+      action: 'proxy',
+      proxyId: defPx.id,
+      proxyName: defPx.name,
+      proxyAddr: `${defPx.host}:${defPx.port}`,
+      viaDefault: true,
+      failClosed: false,
+      reason: `Default Route via ${defPx.name}`,
+    }
+  },
+  CheckLeak: async (): Promise<LeakReport> => {
+    const px = activeProfileData.proxies.find((p) => p.id === activeProfileData.defaultProxyId)
+    const now = new Date().toISOString()
+    if (!px) {
+      return {
+        overall: 'warning',
+        checkedAt: now,
+        items: [
+          { id: 'engine', name: 'Engine & Fail-Closed Guard', status: 'ok', detail: 'Active (macos-ne). Unreachable proxies block traffic instead of falling back to Direct.' },
+          { id: 'proxy_ip', name: 'Proxy Exit IP', status: 'warn', detail: 'Default Route is set to Direct. Only apps matching explicit Proxy rules use a proxy.' },
+        ],
+      }
+    }
+    const isSocks = px.type === 'socks5'
+    return {
+      overall: activeProfileData.dnsViaProxy && px.sendDomainToProxy ? 'protected' : 'warning',
+      exitIp: px.exitIp || '103.21.244.10',
+      country: px.country || 'SG',
+      proxyName: px.name,
+      proxyType: px.type.toUpperCase(),
+      checkedAt: now,
+      items: [
+        { id: 'engine', name: 'Engine & Fail-Closed Guard', status: 'ok', detail: 'Active (macos-ne). Unreachable proxies block traffic instead of falling back to Direct.' },
+        { id: 'proxy_ip', name: 'Proxy Exit IP', status: 'ok', detail: `Verified ${px.exitIp || '103.21.244.10'} (${px.country || 'SG'}) via ${px.name} in ${px.latencyMs || 12} ms.` },
+        { id: 'gateway', name: 'Local Gateway Route', status: 'ok', detail: `Local gateway 127.0.0.1:10800 exits at ${px.exitIp || '103.21.244.10'} (matches proxy).` },
+        {
+          id: 'dns',
+          name: 'DNS Leak Protection',
+          status: activeProfileData.dnsViaProxy && px.sendDomainToProxy ? 'ok' : 'warn',
+          detail: activeProfileData.dnsViaProxy && px.sendDomainToProxy
+            ? 'DNS via Proxy and Remote Domain Resolution are both enabled.'
+            : 'Local DNS may see hostnames. Enable DNS via Proxy and Resolve domains via proxy.',
+        },
+        {
+          id: 'udp',
+          name: 'UDP & QUIC Protection',
+          status: 'ok',
+          detail: isSocks
+            ? 'SOCKS5 UDP ASSOCIATE succeeded. UDP/QUIC traffic relays through proxy.'
+            : `${px.type.toUpperCase()} proxy is TCP-only; UDP/QUIC is blocked fail-closed with zero direct fallback.`,
+        },
+      ],
+    }
+  },
+  ProxyHealth: async (): Promise<ProxyHealthStatus> => {
+    const px = activeProfileData.proxies.find((p) => p.id === activeProfileData.defaultProxyId)
+    return {
+      proxyId: px?.id,
+      proxyName: px?.name,
+      proxyAddr: px ? `${px.host}:${px.port}` : undefined,
+      healthy: true,
+      checked: Boolean(px),
+      failClosed: false,
+      latencyMs: px?.latencyMs || 4,
+      checkedAt: new Date().toISOString(),
+    }
+  },
+  CheckActiveProxyHealth: async (): Promise<ProxyHealthStatus> => {
+    const px = activeProfileData.proxies.find((p) => p.id === activeProfileData.defaultProxyId)
+    return {
+      proxyId: px?.id,
+      proxyName: px?.name,
+      proxyAddr: px ? `${px.host}:${px.port}` : undefined,
+      healthy: true,
+      checked: Boolean(px),
+      failClosed: false,
+      latencyMs: px?.latencyMs || 4,
+      checkedAt: new Date().toISOString(),
+    }
+  },
   StartEngine: async (): Promise<EngineStatus> => {
     engineStatusData = { ...engineStatusData, state: 'running', enabled: true }
     return { ...engineStatusData }
@@ -517,6 +717,7 @@ export const stubApp = {
   }),
   InstallUpdate: async (): Promise<void> => {},
   SetCompactMode: async (): Promise<void> => {},
+  TrimMemory: async (): Promise<void> => {},
 }
 
 // Attach to window.go.main.App for preview mode

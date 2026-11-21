@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PageHead } from '../components/page-head'
 import { EmptyState } from '../components/empty-state'
 import { Icon } from '../components/icons'
 import { t } from '../i18n'
-import type { ProxyRule, ProxyConfig } from '../types'
+import { formatProxyLocation, type ProxyRule, type ProxyConfig, type RuleSimulationResult } from '../types'
 
 function parseAppTokens(raw: string): string[] {
   return (raw || '')
@@ -47,7 +47,7 @@ function defaultRuleName(r: ProxyRule): string {
   return `${verb} ${subject}`.trim()
 }
 
-type QuickAppOption = { label: string; value: string }
+type QuickAppOption = { label: string; value: string; detected?: boolean }
 
 const QUICK_APP_PRESETS: QuickAppOption[] = [
   { label: 'Google Chrome (+ Helper)', value: 'Google Chrome*; *com.google.Chrome*' },
@@ -63,6 +63,9 @@ const QUICK_APP_PRESETS: QuickAppOption[] = [
   { label: 'node', value: 'node' },
 ]
 
+type StarterTemplateId = 'proxy-browser' | 'exclude-app' | 'bypass-lan' | 'block-host'
+type ActionFilter = 'all' | 'proxy' | 'direct' | 'block'
+
 export function RulesPage({
   rules,
   proxies,
@@ -77,6 +80,7 @@ export function RulesPage({
   onPickExecutable,
   onImportRules,
   onExportRules,
+  onSimulateRule,
 }: {
   rules: ProxyRule[]
   proxies: ProxyConfig[]
@@ -91,6 +95,12 @@ export function RulesPage({
   onPickExecutable?: () => Promise<string>
   onImportRules?: (raw: string) => Promise<void>
   onExportRules?: () => Promise<void>
+  onSimulateRule?: (
+    processName: string,
+    host: string,
+    port: number,
+    protocol: string
+  ) => Promise<RuleSimulationResult>
 }) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<ProxyRule | null>(null)
@@ -102,37 +112,209 @@ export function RulesPage({
   const [showImportModal, setShowImportModal] = useState(false)
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<ProxyRule | null>(null)
+
+  const [search, setSearch] = useState('')
+  const [actionFilter, setActionFilter] = useState<ActionFilter>('all')
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; pos: 'before' | 'after' } | null>(null)
+  const [showSim, setShowSim] = useState(false)
+  const [simApp, setSimApp] = useState('Google Chrome')
+  const [simHost, setSimHost] = useState('api.example.com')
+  const [simPort, setSimPort] = useState('443')
+  const [simProto, setSimProto] = useState<'tcp' | 'udp'>('tcp')
+  const [simRunning, setSimRunning] = useState(false)
+  const [simResult, setSimResult] = useState<RuleSimulationResult | null>(null)
+
+  const handleRunSim = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!onSimulateRule || simRunning) return
+    setSimRunning(true)
+    try {
+      const parsedPort = parseInt(simPort, 10)
+      const res = await onSimulateRule(simApp, simHost, Number.isFinite(parsedPort) ? parsedPort : 443, simProto)
+      setSimResult(res)
+    } finally {
+      setSimRunning(false)
+    }
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (confirmDelete) {
+        setConfirmDelete(null)
+        return
+      }
+      if (showImportModal) setShowImportModal(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [confirmDelete, showImportModal])
 
   const presetValues = new Set(QUICK_APP_PRESETS.map((p) => p.value))
-  const quickAppCandidates: QuickAppOption[] = [
-    ...knownApps
-      .filter((a) => a && a !== 'local-client' && a !== 'AnyProxy' && !presetValues.has(a))
-      .map((a) => ({ label: a, value: a })),
-    ...QUICK_APP_PRESETS,
-  ].slice(0, 20)
+  const detectedApps: QuickAppOption[] = knownApps
+    .filter((a) => a && a !== 'local-client' && a !== 'AnyProxy' && !presetValues.has(a))
+    .map((a) => ({ label: a, value: a, detected: true }))
+  const quickAppCandidates: QuickAppOption[] = [...detectedApps, ...QUICK_APP_PRESETS].slice(0, 20)
 
-  const handleOpenAdd = () => {
-    setError('')
-    setAppMode('all')
-    setAppDraft('')
-    setShowAdvanced(false)
-    setEditing({
-      id: '',
-      name: '',
-      enabled: true,
-      processNames: '',
-      excludeProcess: false,
-      targetHosts: '',
-      targetPorts: '',
-      protocol: 'both',
-      action: 'proxy',
-      proxyConfigId: '',
+  const defaultProxy = proxies.find((p) => p.id === defaultProxyId)
+  const isFiltered = search.trim().length > 0 || actionFilter !== 'all'
+
+  const actionCounts = useMemo(() => {
+    const counts = { all: rules.length, proxy: 0, direct: 0, block: 0 }
+    for (const r of rules) {
+      const a = r.action.toLowerCase()
+      if (a === 'proxy') counts.proxy++
+      else if (a === 'direct') counts.direct++
+      else if (a === 'block') counts.block++
+    }
+    return counts
+  }, [rules])
+
+  const filteredRules = useMemo(() => {
+    const words = search
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+    return rules.filter((r) => {
+      const act = r.action.toLowerCase()
+      if (actionFilter !== 'all' && act !== actionFilter) return false
+      if (words.length === 0) return true
+      const px = proxies.find((p) => p.id === r.proxyConfigId)
+      const haystack = [
+        r.name,
+        r.processNames,
+        r.excludeProcess ? t.rules.exceptPrefix : '',
+        r.targetHosts,
+        r.targetPorts,
+        r.protocol,
+        r.action,
+        px?.name || '',
+        px ? `${px.host}:${px.port}` : '',
+        !r.proxyConfigId && act === 'proxy' ? `${t.rules.defaultProxy} ${defaultProxy?.name || ''}` : '',
+      ]
+        .join(' ')
+        .toLowerCase()
+      return words.every((w) => haystack.includes(w))
     })
+  }, [rules, proxies, defaultProxy, search, actionFilter])
+
+  const openEditorWith = (
+    draft: ProxyRule,
+    mode: 'all' | 'include' | 'exclude',
+    advanced: boolean
+  ) => {
+    setError('')
+    setAppMode(mode)
+    setAppDraft('')
+    setShowAdvanced(advanced)
+    setEditing(draft)
     setShowModal(true)
   }
 
+  const handleOpenAdd = () => {
+    openEditorWith(
+      {
+        id: '',
+        name: '',
+        enabled: true,
+        processNames: '',
+        excludeProcess: false,
+        targetHosts: '',
+        targetPorts: '',
+        protocol: 'both',
+        action: 'proxy',
+        proxyConfigId: '',
+        localhostViaProxy: false,
+      },
+      'all',
+      false
+    )
+  }
+
+  const handleOpenTemplate = (templateId: StarterTemplateId) => {
+    if (templateId === 'proxy-browser') {
+      openEditorWith(
+        {
+          id: '',
+          name: '',
+          enabled: true,
+          processNames: 'Google Chrome*; *com.google.Chrome*',
+          excludeProcess: false,
+          targetHosts: '',
+          targetPorts: '',
+          protocol: 'both',
+          action: 'proxy',
+          proxyConfigId: '',
+          localhostViaProxy: false,
+        },
+        'include',
+        false
+      )
+      return
+    }
+    if (templateId === 'exclude-app') {
+      openEditorWith(
+        {
+          id: '',
+          name: '',
+          enabled: true,
+          processNames: '',
+          excludeProcess: true,
+          targetHosts: '',
+          targetPorts: '',
+          protocol: 'both',
+          action: 'proxy',
+          proxyConfigId: '',
+          localhostViaProxy: false,
+        },
+        'exclude',
+        false
+      )
+      return
+    }
+    if (templateId === 'bypass-lan') {
+      openEditorWith(
+        {
+          id: '',
+          name: t.rules.templateBypassLan,
+          enabled: true,
+          processNames: '',
+          excludeProcess: false,
+          targetHosts: '10.0.0.0/8; 172.16.0.0/12; 192.168.0.0/16; *.local',
+          targetPorts: '',
+          protocol: 'both',
+          action: 'direct',
+          proxyConfigId: '',
+          localhostViaProxy: false,
+        },
+        'all',
+        true
+      )
+      return
+    }
+    openEditorWith(
+      {
+        id: '',
+        name: '',
+        enabled: true,
+        processNames: '',
+        excludeProcess: false,
+        targetHosts: '*.tracking.example; *.ads.example',
+        targetPorts: '',
+        protocol: 'both',
+        action: 'block',
+        proxyConfigId: '',
+        localhostViaProxy: false,
+      },
+      'all',
+      true
+    )
+  }
+
   const handleEdit = (r: ProxyRule) => {
-    setError('')
     const initialMode: 'all' | 'include' | 'exclude' = r.excludeProcess
       ? 'exclude'
       : (r.processNames || '*').trim() === '*'
@@ -142,22 +324,24 @@ export function RulesPage({
     const hasAdvanced =
       r.action.toLowerCase() !== 'proxy' ||
       Boolean(r.proxyConfigId) ||
-      ((r.targetHosts || '*').trim() !== '*') ||
-      ((r.targetPorts || '*').trim() !== '*') ||
+      Boolean(r.localhostViaProxy) ||
+      (r.targetHosts || '*').trim() !== '*' ||
+      (r.targetPorts || '*').trim() !== '*' ||
       normalizedProtocol !== 'both'
-    setAppMode(initialMode)
-    setAppDraft('')
-    setShowAdvanced(hasAdvanced)
-    setEditing({
-      ...r,
-      processNames: initialMode === 'all' ? '' : (r.processNames || ''),
-      targetHosts: (r.targetHosts || '').trim() === '*' ? '' : r.targetHosts,
-      targetPorts: (r.targetPorts || '').trim() === '*' ? '' : r.targetPorts,
-      excludeProcess: Boolean(r.excludeProcess),
-      action: r.action.toLowerCase() as ProxyRule['action'],
-      protocol: normalizedProtocol,
-    })
-    setShowModal(true)
+    openEditorWith(
+      {
+        ...r,
+        processNames: initialMode === 'all' ? '' : r.processNames || '',
+        targetHosts: (r.targetHosts || '').trim() === '*' ? '' : r.targetHosts,
+        targetPorts: (r.targetPorts || '').trim() === '*' ? '' : r.targetPorts,
+        excludeProcess: Boolean(r.excludeProcess),
+        localhostViaProxy: Boolean(r.localhostViaProxy),
+        action: r.action.toLowerCase() as ProxyRule['action'],
+        protocol: normalizedProtocol,
+      },
+      initialMode,
+      hasAdvanced
+    )
   }
 
   const handleAddApps = (tokens: string[]) => {
@@ -233,6 +417,7 @@ export function RulesPage({
       processNames: effectiveMode === 'all' || mergedTokens.length === 0 ? '*' : mergedTokens.join('; '),
       targetHosts: (editing.targetHosts || '').trim() || '*',
       targetPorts: (editing.targetPorts || '').trim() || '*',
+      localhostViaProxy: editing.action === 'proxy' ? Boolean(editing.localhostViaProxy) : false,
     }
     const payload: ProxyRule = (normalized.name || '').trim()
       ? normalized
@@ -265,9 +450,46 @@ export function RulesPage({
     }
   }
 
+  const handleDropReorder = async (sourceId: string, targetId: string, pos: 'before' | 'after') => {
+    if (isFiltered || sourceId === targetId) return
+    const fromIdx = rules.findIndex((r) => r.id === sourceId)
+    const rawTargetIdx = rules.findIndex((r) => r.id === targetId)
+    if (fromIdx < 0 || rawTargetIdx < 0) return
+    let toIdx = pos === 'before' ? rawTargetIdx : rawTargetIdx + 1
+    if (fromIdx < toIdx) toIdx -= 1
+    const steps = toIdx - fromIdx
+    if (steps === 0) return
+    const dir = steps > 0 ? 1 : -1
+    for (let i = 0; i < Math.abs(steps); i++) {
+      await onMoveRule(sourceId, dir)
+    }
+  }
+
+  const actionFilters: { id: ActionFilter; label: string; count: number }[] = [
+    { id: 'all', label: t.rules.filterAll, count: actionCounts.all },
+    { id: 'proxy', label: t.rules.actionProxy, count: actionCounts.proxy },
+    { id: 'direct', label: t.rules.actionDirect, count: actionCounts.direct },
+    { id: 'block', label: t.rules.actionBlock, count: actionCounts.block },
+  ]
+
   return (
     <>
       <PageHead title={t.rules.title} sub={t.rules.sub}>
+        {onSimulateRule && (
+          <button
+            type="button"
+            className={`btn nodrag${showSim ? ' active-toggle' : ''}`}
+            aria-pressed={showSim}
+            onClick={() => {
+              const next = !showSim
+              setShowSim(next)
+              if (!next) setSimResult(null)
+            }}
+          >
+            <Icon name="zap" />
+            {t.rules.testBtn}
+          </button>
+        )}
         {onImportRules && (
           <button
             type="button"
@@ -299,6 +521,141 @@ export function RulesPage({
 
       <div className="pagebody">
         <div className="card fill">
+          {rules.length > 0 && (
+            <div className="rules-toolbar">
+              <div className="seg" role="group" aria-label={t.rules.action}>
+                {actionFilters.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    aria-pressed={actionFilter === f.id}
+                    onClick={() => setActionFilter(f.id)}
+                  >
+                    {f.id !== 'all' && <span className={`rule-action-dot ${f.id}`} aria-hidden="true" />}
+                    <span>{f.label}</span>
+                    <span className="seg-count">{f.count}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="search-field">
+                <Icon name="search" className="icon sm search-field-icon" />
+                <input
+                  className="input search-field-input"
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t.rules.searchPlaceholder}
+                  aria-label={t.rules.searchPlaceholder}
+                />
+                {search && (
+                  <button
+                    type="button"
+                    className="search-field-clear"
+                    onClick={() => setSearch('')}
+                    aria-label={t.actions.clear}
+                    title={t.actions.clear}
+                  >
+                    <Icon name="close" className="icon xs" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {showSim && onSimulateRule && (
+            <form className="rule-sim-bar" onSubmit={(e) => void handleRunSim(e)}>
+              <div className="rule-sim-inputs">
+                <input
+                  className="input rule-sim-app"
+                  value={simApp}
+                  onChange={(e) => setSimApp(e.target.value)}
+                  placeholder={t.rules.simApp}
+                  aria-label={t.rules.simApp}
+                  list="rule-sim-apps-list"
+                  spellCheck={false}
+                />
+                <datalist id="rule-sim-apps-list">
+                  {quickAppCandidates.map((opt) => (
+                    <option key={opt.value} value={opt.label.replace(/\s*\([^)]*\)$/, '')} />
+                  ))}
+                </datalist>
+                <input
+                  className="input mono rule-sim-host"
+                  value={simHost}
+                  onChange={(e) => setSimHost(e.target.value)}
+                  placeholder={t.rules.simHost}
+                  aria-label={t.rules.simHost}
+                  spellCheck={false}
+                />
+                <input
+                  className="input mono rule-sim-port"
+                  value={simPort}
+                  onChange={(e) => setSimPort(e.target.value)}
+                  placeholder={t.rules.simPort}
+                  aria-label={t.rules.simPort}
+                  inputMode="numeric"
+                />
+                <div className="seg rule-sim-proto" role="group" aria-label={t.rules.protocol}>
+                  <button
+                    type="button"
+                    aria-pressed={simProto === 'tcp'}
+                    onClick={() => setSimProto('tcp')}
+                  >
+                    TCP
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={simProto === 'udp'}
+                    onClick={() => setSimProto('udp')}
+                  >
+                    UDP
+                  </button>
+                </div>
+                <button
+                  type="submit"
+                  className="btn sm primary"
+                  disabled={simRunning}
+                  aria-busy={simRunning}
+                >
+                  {t.rules.simRun}
+                </button>
+              </div>
+              {simResult && (
+                <div className="rule-sim-result" aria-live="polite">
+                  <span className="rule-sim-match-label">
+                    {simResult.viaDefault
+                      ? t.rules.simDefault
+                      : t.rules.simMatched(simResult.ruleIndex, simResult.ruleName || '')}
+                  </span>
+                  <span
+                    className={`chip ${
+                      simResult.action === 'proxy'
+                        ? 'accent'
+                        : simResult.action === 'block'
+                          ? 'danger'
+                          : 'ok'
+                    }`}
+                  >
+                    <span className="dot" />
+                    <span className="chiptext">
+                      {simResult.action === 'proxy'
+                        ? `${t.rules.actionProxy}: ${simResult.proxyName || t.rules.defaultProxy}`
+                        : simResult.action === 'block'
+                          ? t.rules.actionBlock
+                          : t.rules.actionDirect}
+                    </span>
+                  </span>
+                  {simResult.failClosed && (
+                    <span className="chip danger">
+                      <span className="chiptext">{t.rules.simFailClosed}</span>
+                    </span>
+                  )}
+                  <span className="rule-sim-reason">{simResult.reason}</span>
+                </div>
+              )}
+            </form>
+          )}
+
           <div className="tablewrap">
             {rules.length === 0 ? (
               <EmptyState
@@ -306,9 +663,44 @@ export function RulesPage({
                 title={t.rules.emptyTitle}
                 text={t.rules.emptyText}
               >
+                <div className="rule-templates">
+                  <button type="button" className="btn sm" onClick={() => handleOpenTemplate('proxy-browser')}>
+                    <Icon name="globe" className="icon xs" />
+                    {t.rules.templateProxyBrowser}
+                  </button>
+                  <button type="button" className="btn sm" onClick={() => handleOpenTemplate('exclude-app')}>
+                    <Icon name="rules" className="icon xs" />
+                    {t.rules.templateExcludeApp}
+                  </button>
+                  <button type="button" className="btn sm" onClick={() => handleOpenTemplate('bypass-lan')}>
+                    <Icon name="shield" className="icon xs" />
+                    {t.rules.templateBypassLan}
+                  </button>
+                  <button type="button" className="btn sm" onClick={() => handleOpenTemplate('block-host')}>
+                    <Icon name="ban" className="icon xs" />
+                    {t.rules.templateBlockHost}
+                  </button>
+                </div>
                 <button className="btn primary" onClick={handleOpenAdd}>
                   <Icon name="plus" />
                   {t.rules.newBtn}
+                </button>
+              </EmptyState>
+            ) : filteredRules.length === 0 ? (
+              <EmptyState
+                icon="search"
+                title={t.rules.noFilterMatches}
+                text={t.rules.noFilterMatchesText}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setSearch('')
+                    setActionFilter('all')
+                  }}
+                >
+                  {t.rules.clearFilters}
                 </button>
               </EmptyState>
             ) : (
@@ -326,30 +718,91 @@ export function RulesPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {rules.map((r, idx) => {
+                  {filteredRules.map((r) => {
+                    const realIdx = rules.findIndex((item) => item.id === r.id)
                     const matchedProxy = proxies.find((p) => p.id === r.proxyConfigId)
                     const action = r.action.toLowerCase()
+                    const isDropBefore = dropTarget?.id === r.id && dropTarget.pos === 'before'
+                    const isDropAfter = dropTarget?.id === r.id && dropTarget.pos === 'after'
+                    const actionLabel =
+                      action === 'proxy'
+                        ? matchedProxy
+                          ? `Proxy: ${matchedProxy.name}`
+                          : defaultProxy
+                            ? `${t.rules.defaultProxy} · ${defaultProxy.name}`
+                            : t.rules.defaultProxy
+                        : action === 'block'
+                          ? t.rules.actionBlock
+                          : t.rules.actionDirect
                     return (
                       <tr
                         key={r.id}
-                        className="clickable-row"
+                        draggable={!isFiltered}
+                        onDragStart={(e) => {
+                          if (isFiltered) return
+                          setDragId(r.id)
+                          e.dataTransfer.effectAllowed = 'move'
+                          e.dataTransfer.setData('text/plain', r.id)
+                        }}
+                        onDragOver={(e) => {
+                          if (isFiltered || !dragId || dragId === r.id) return
+                          e.preventDefault()
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const pos = e.clientY - rect.top < rect.height / 2 ? 'before' : 'after'
+                          setDropTarget({ id: r.id, pos })
+                        }}
+                        onDragLeave={() => {
+                          if (dropTarget?.id === r.id) setDropTarget(null)
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const src = dragId || e.dataTransfer.getData('text/plain')
+                          const pos = dropTarget?.pos || 'before'
+                          setDragId(null)
+                          setDropTarget(null)
+                          if (src) void handleDropReorder(src, r.id, pos)
+                        }}
+                        onDragEnd={() => {
+                          setDragId(null)
+                          setDropTarget(null)
+                        }}
+                        className={[
+                          'clickable-row',
+                          !r.enabled ? 'is-disabled' : '',
+                          simResult && !simResult.viaDefault && simResult.ruleId === r.id ? 'is-sim-match' : '',
+                          dragId === r.id ? 'is-dragging' : '',
+                          isDropBefore ? 'drop-before' : '',
+                          isDropAfter ? 'drop-after' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
                         onClick={() => handleEdit(r)}
                       >
-                        <td className="col-no">{idx + 1}</td>
+                        <td className="col-no" title={isFiltered ? t.rules.reorderDisabledFiltered : t.rules.dragToReorder}>
+                          <span className="rule-order-cell">
+                            {!isFiltered && <Icon name="grip" className="icon xs rule-grip" />}
+                            <span>{realIdx + 1}</span>
+                          </span>
+                        </td>
                         <td className="cellname col-name">
                           <b className="selectable" title={r.name}>
                             {r.name}
                           </b>
                           <span className="sub">
-                            {r.enabled ? t.rules.enabled : t.rules.disabled}
+                            <span>{r.enabled ? t.rules.enabled : t.rules.disabled}</span>
+                            {r.localhostViaProxy && action === 'proxy' && (
+                              <span className="rule-inline-tag">{t.rules.localhostBadge}</span>
+                            )}
                           </span>
                         </td>
                         <td className="col-apps">
                           <span
-                            className="mono selectable ellipsis-text"
+                            className={`mono selectable ellipsis-text${r.excludeProcess ? ' rule-exclude-text' : ''}`}
                             title={r.excludeProcess ? `${t.rules.exceptPrefix}: ${r.processNames}` : r.processNames}
                           >
-                            {r.excludeProcess ? `${t.rules.exceptPrefix}: ${r.processNames || '*'}` : (r.processNames || '*')}
+                            {r.excludeProcess
+                              ? `${t.rules.exceptPrefix}: ${r.processNames || '*'}`
+                              : r.processNames || '*'}
                           </span>
                         </td>
                         <td className="col-targets">
@@ -373,23 +826,13 @@ export function RulesPage({
                               action === 'proxy'
                                 ? 'accent'
                                 : action === 'block'
-                                ? 'danger'
-                                : 'ok'
+                                  ? 'danger'
+                                  : 'ok'
                             }`}
-                            title={
-                              action === 'proxy'
-                                ? `Proxy: ${matchedProxy ? matchedProxy.name : t.rules.defaultProxy}`
-                                : action.toUpperCase()
-                            }
+                            title={actionLabel}
                           >
                             <span className="dot" />
-                            <span className="chiptext">
-                              {action === 'proxy'
-                                ? matchedProxy
-                                  ? `Proxy: ${matchedProxy.name}`
-                                  : t.rules.defaultProxy
-                                : action.toUpperCase()}
-                            </span>
+                            <span className="chiptext">{actionLabel}</span>
                           </span>
                         </td>
                         <td className="col-actions" onClick={(e) => e.stopPropagation()}>
@@ -405,18 +848,18 @@ export function RulesPage({
                             />
                             <button
                               className="iconbtn sm"
-                              disabled={idx === 0}
+                              disabled={isFiltered || realIdx === 0}
                               onClick={() => void onMoveRule(r.id, -1)}
-                              title={t.actions.moveUp}
+                              title={isFiltered ? t.rules.reorderDisabledFiltered : t.actions.moveUp}
                               aria-label={t.actions.moveUp}
                             >
                               <Icon name="arrow-up" />
                             </button>
                             <button
                               className="iconbtn sm"
-                              disabled={idx === rules.length - 1}
+                              disabled={isFiltered || realIdx === rules.length - 1}
                               onClick={() => void onMoveRule(r.id, 1)}
-                              title={t.actions.moveDown}
+                              title={isFiltered ? t.rules.reorderDisabledFiltered : t.actions.moveDown}
                               aria-label={t.actions.moveDown}
                             >
                               <Icon name="arrow-down" />
@@ -440,7 +883,7 @@ export function RulesPage({
                             <button
                               type="button"
                               className="iconbtn sm danger"
-                              onClick={() => void onDeleteRule(r.id)}
+                              onClick={() => setConfirmDelete(r)}
                               title={t.actions.delete}
                               aria-label={t.actions.delete}
                             >
@@ -451,6 +894,55 @@ export function RulesPage({
                       </tr>
                     )
                   })}
+                  {!isFiltered && (
+                    <tr className={`rule-default-row${simResult?.viaDefault ? ' is-sim-match' : ''}`}>
+                      <td className="col-no">∞</td>
+                      <td className="cellname col-name">
+                        <b>{t.rules.defaultRouteLabel}</b>
+                        <span className="sub">{t.rules.defaultRouteSub}</span>
+                      </td>
+                      <td className="col-apps">
+                        <span className="mono muted">*</span>
+                      </td>
+                      <td className="col-targets">
+                        <span className="mono muted">*</span>
+                      </td>
+                      <td className="col-ports">
+                        <span className="mono muted">*</span>
+                      </td>
+                      <td className="col-proto">
+                        <span className="chip">
+                          <span className="chiptext">BOTH</span>
+                        </span>
+                      </td>
+                      <td className="col-action" colSpan={2}>
+                        <div className="rule-default-control">
+                          {onSetDefaultProxy ? (
+                            <select
+                              className="select rule-default-select"
+                              aria-label={t.rules.defaultRouteLabel}
+                              value={defaultProxyId || ''}
+                              onChange={(e) => void onSetDefaultProxy(e.target.value)}
+                            >
+                              <option value="">{t.engine.direct}</option>
+                              {proxies.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {t.rules.actionProxy}: {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className={`chip ${defaultProxy ? 'accent' : 'ok'}`}>
+                              <span className="dot" />
+                              <span className="chiptext">
+                                {defaultProxy ? `${t.rules.actionProxy}: ${defaultProxy.name}` : t.engine.direct}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             )}
@@ -484,12 +976,62 @@ export function RulesPage({
         />
       )}
 
+      {confirmDelete && (
+        <div className="dialog-backdrop" onClick={() => setConfirmDelete(null)}>
+          <div
+            className="dialog-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-delete-rule-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="dialog-head">
+              <h2 id="confirm-delete-rule-title">{t.rules.confirmDelete}</h2>
+              <button
+                type="button"
+                className="iconbtn sm"
+                onClick={() => setConfirmDelete(null)}
+                aria-label={t.actions.close}
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            <div className="dialog-body">
+              <p>{t.rules.confirmDeleteBody(confirmDelete.name || defaultRuleName(confirmDelete))}</p>
+            </div>
+            <div className="dialog-foot">
+              <button type="button" className="btn" autoFocus onClick={() => setConfirmDelete(null)}>
+                {t.actions.cancel}
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => {
+                  const id = confirmDelete.id
+                  setConfirmDelete(null)
+                  void onDeleteRule(id)
+                }}
+              >
+                <Icon name="trash" />
+                {t.actions.delete}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showImportModal && (
-        <div className="dialog-backdrop">
-          <div className="dialog-box">
+        <div className="dialog-backdrop" onClick={() => setShowImportModal(false)}>
+          <div
+            className="dialog-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-rules-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <form onSubmit={handleImportSubmit}>
               <div className="dialog-head">
-                <h2>{t.rules.importTitle}</h2>
+                <h2 id="import-rules-title">{t.rules.importTitle}</h2>
                 <button
                   type="button"
                   className="iconbtn sm"
@@ -500,7 +1042,12 @@ export function RulesPage({
                 </button>
               </div>
               <div className="dialog-body">
-                {importError && <p role="alert">{importError}</p>}
+                {importError && (
+                  <div className="banner danger" role="alert">
+                    <Icon name="warn" />
+                    <span className="grow">{importError}</span>
+                  </div>
+                )}
                 <textarea
                   className="input mono"
                   rows={6}
@@ -508,6 +1055,7 @@ export function RulesPage({
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
                   placeholder={t.rules.importPlaceholder}
+                  autoFocus
                   required
                 />
               </div>
@@ -601,13 +1149,22 @@ function RuleEditorDialog({
     ...selectedTokens,
     ...draftTokens.filter((tok) => !selectedTokens.includes(tok)),
   ]
+  const selectedLower = selectedTokens.map((tok) => tok.toLowerCase().replace(/\*+/g, '').trim())
   const availableQuickApps = quickAppCandidates.filter((preset) => {
     const tokens = parseAppTokens(preset.value)
-    return tokens.length > 0 && tokens.some((tok) => !selectedTokens.includes(tok))
+    if (tokens.length === 0) return false
+    const presetBase = preset.label.replace(/\s*\([^)]*\)$/, '').toLowerCase().trim()
+    if (selectedLower.includes(presetBase)) return false
+    return tokens.some((tok) => !selectedTokens.includes(tok))
   })
+  const detectedQuickApps = availableQuickApps.filter((a) => a.detected)
+  const commonQuickApps = availableQuickApps.filter((a) => !a.detected)
+  const quickPills = availableQuickApps.slice(0, 6)
+
   const targetsValue = editing.targetHosts
   const portsValue = editing.targetPorts
   const matchedProxy = proxies.find((p) => p.id === editing.proxyConfigId)
+  const defaultProxy = proxies.find((p) => p.id === defaultProxyId)
 
   const editIdx = editing.id ? rules.findIndex((r) => r.id === editing.id) : -1
   const trailingRules = editIdx >= 0 ? rules.slice(editIdx + 1) : []
@@ -619,20 +1176,18 @@ function RuleEditorDialog({
       (r.targetHosts || '*').trim() === '*' &&
       (r.targetPorts || '*').trim() === '*' &&
       r.protocol.toLowerCase() === 'both' &&
-      r.action.toLowerCase() === 'direct',
+      r.action.toLowerCase() === 'direct'
   )
   const effectiveExclude = appMode === 'exclude'
-  const hasAppFilter = effectiveExclude || previewTokens.length > 0
   const showFallbackWarn =
     Boolean(defaultProxyId) &&
     Boolean(onSetDefaultProxy) &&
     editing.action === 'proxy' &&
-    hasAppFilter &&
+    effectiveExclude &&
     !hasCatchAllDirectAfter
 
   const handleSwitchFallbackDirect = async () => {
     if (!onSetDefaultProxy) return
-    // Keep the rule pinned to the current active proxy before clearing the global fallback.
     if (!editing.proxyConfigId && defaultProxyId) {
       onChange({ ...editing, proxyConfigId: defaultProxyId })
     }
@@ -652,7 +1207,13 @@ function RuleEditorDialog({
   const actionChipClass = editing.action === 'proxy' ? 'accent' : editing.action === 'block' ? 'danger' : 'ok'
   const actionSummary =
     editing.action === 'proxy'
-      ? `${t.rules.actionProxy}: ${matchedProxy ? matchedProxy.name : t.rules.defaultProxy}`
+      ? `${t.rules.actionProxy}: ${
+          matchedProxy
+            ? matchedProxy.name
+            : defaultProxy
+              ? `${t.rules.defaultProxy} (${defaultProxy.name})`
+              : t.rules.defaultProxy
+        }`
       : editing.action === 'block'
         ? t.rules.actionBlock
         : t.rules.actionDirect
@@ -661,6 +1222,7 @@ function RuleEditorDialog({
   if (hostsSummary !== '*') advancedParts.push(hostsSummary)
   if (portsSummary !== '*') advancedParts.push(`:${portsSummary}`)
   if (editing.protocol !== 'both') advancedParts.push(protoLabel)
+  if (editing.action === 'proxy' && editing.localhostViaProxy) advancedParts.push(t.rules.localhostBadge)
   const advancedSummary =
     advancedParts.length > 0 ? advancedParts.join(' · ') : t.rules.advancedDefaultHint
 
@@ -813,11 +1375,24 @@ function RuleEditorDialog({
                         }}
                       >
                         <option value="">{t.rules.pickAppPlaceholder}</option>
-                        {availableQuickApps.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
+                        {detectedQuickApps.length > 0 && (
+                          <optgroup label={t.rules.detectedAppsGroup}>
+                            {detectedQuickApps.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {commonQuickApps.length > 0 && (
+                          <optgroup label={t.rules.commonAppsGroup}>
+                            {commonQuickApps.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     )}
                     {onBrowseExecutable && (
@@ -831,6 +1406,7 @@ function RuleEditorDialog({
                       </button>
                     )}
                   </div>
+
                   <div className="selected-chip-bar" role="list" aria-label={t.rules.selectedApps}>
                     {selectedTokens.length === 0 ? (
                       <span className="hint">
@@ -838,7 +1414,11 @@ function RuleEditorDialog({
                       </span>
                     ) : (
                       selectedTokens.map((appName) => (
-                        <span key={appName} className="app-chip" role="listitem">
+                        <span
+                          key={appName}
+                          className={`app-chip${appMode === 'exclude' ? ' is-exclude' : ''}`}
+                          role="listitem"
+                        >
                           <span className="app-chip-name" title={appName}>{appName}</span>
                           <button
                             type="button"
@@ -853,6 +1433,23 @@ function RuleEditorDialog({
                       ))
                     )}
                   </div>
+
+                  {quickPills.length > 0 && (
+                    <div className="rule-suggest-row" aria-label={t.rules.suggestedApps}>
+                      <span className="rule-suggest-label">{t.rules.suggestedApps}:</span>
+                      {quickPills.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className="rule-suggest-pill"
+                          onClick={() => onAddApps(parseAppTokens(opt.value))}
+                          title={opt.value}
+                        >
+                          <span>+ {opt.label.replace(/\s*\([^)]*\)$/, '')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -886,12 +1483,18 @@ function RuleEditorDialog({
                     value={editing.proxyConfigId || ''}
                     onChange={(e) => onChange({ ...editing, proxyConfigId: e.target.value })}
                   >
-                    <option value="">{t.rules.defaultProxy}</option>
-                    {proxies.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
-                      </option>
-                    ))}
+                    <option value="">
+                      {defaultProxy ? `${t.rules.defaultProxy} (${defaultProxy.name})` : t.rules.defaultProxy}
+                    </option>
+                    {proxies.map((p) => {
+                      const loc = formatProxyLocation(p.country, p.exitIp)
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {loc ? `${loc} · ` : ''}
+                          {p.name} ({p.type.toUpperCase()} {p.host}:{p.port})
+                        </option>
+                      )
+                    })}
                   </select>
                 </div>
               ) : (
@@ -925,7 +1528,30 @@ function RuleEditorDialog({
             <div id="rule-advanced-panel" className="rule-group">
               <div className="rule-grid">
                 <div className="field">
-                  <label htmlFor="rule-targets">{t.rules.targets}</label>
+                  <div className="rule-field-head">
+                    <label htmlFor="rule-targets">{t.rules.targets}</label>
+                    <div className="rule-mini-presets">
+                      <button
+                        type="button"
+                        className="rule-mini-chip"
+                        onClick={() => onChange({ ...editing, targetHosts: '' })}
+                      >
+                        {t.rules.presetAny}
+                      </button>
+                      <button
+                        type="button"
+                        className="rule-mini-chip"
+                        onClick={() =>
+                          onChange({
+                            ...editing,
+                            targetHosts: '10.0.0.0/8; 172.16.0.0/12; 192.168.0.0/16; *.local',
+                          })
+                        }
+                      >
+                        {t.rules.presetLan}
+                      </button>
+                    </div>
+                  </div>
                   <input
                     id="rule-targets"
                     className="input mono"
@@ -937,7 +1563,39 @@ function RuleEditorDialog({
                 </div>
 
                 <div className="field">
-                  <label htmlFor="rule-ports">{t.rules.ports}</label>
+                  <div className="rule-field-head">
+                    <label htmlFor="rule-ports">{t.rules.ports}</label>
+                    <div className="rule-mini-presets">
+                      <button
+                        type="button"
+                        className="rule-mini-chip"
+                        onClick={() => onChange({ ...editing, targetPorts: '' })}
+                      >
+                        {t.rules.presetAny}
+                      </button>
+                      <button
+                        type="button"
+                        className="rule-mini-chip"
+                        onClick={() => onChange({ ...editing, targetPorts: '80, 443' })}
+                      >
+                        {t.rules.presetWebPorts}
+                      </button>
+                      <button
+                        type="button"
+                        className="rule-mini-chip"
+                        onClick={() => onChange({ ...editing, targetPorts: '443' })}
+                      >
+                        {t.rules.presetHttpsPort}
+                      </button>
+                      <button
+                        type="button"
+                        className="rule-mini-chip"
+                        onClick={() => onChange({ ...editing, targetPorts: '53' })}
+                      >
+                        {t.rules.presetDnsPort}
+                      </button>
+                    </div>
+                  </div>
                   <input
                     id="rule-ports"
                     className="input mono"
@@ -964,6 +1622,30 @@ function RuleEditorDialog({
                   ))}
                 </div>
               </div>
+
+              {editing.action === 'proxy' && (
+                <div className="rule-switch-row">
+                  <div className="settings-row-copy">
+                    <label htmlFor="rule-localhost-proxy" className="settings-row-title">
+                      {t.rules.localhostViaProxy}
+                    </label>
+                    <span id="rule-localhost-proxy-desc" className="hint">
+                      {t.rules.localhostViaProxyHint}
+                    </span>
+                  </div>
+                  <button
+                    id="rule-localhost-proxy"
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(editing.localhostViaProxy)}
+                    aria-describedby="rule-localhost-proxy-desc"
+                    className="switch"
+                    onClick={() =>
+                      onChange({ ...editing, localhostViaProxy: !editing.localhostViaProxy })
+                    }
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -983,6 +1665,7 @@ function RuleEditorDialog({
         )}
 
         <div className="rule-preview" aria-live="polite">
+          <span className="rule-preview-when">{t.rules.previewWhen}</span>
           <span className="rule-preview-match mono">
             {appsSummary} · {hostsSummary}:{portsSummary} · {protoLabel}
           </span>
@@ -1002,6 +1685,6 @@ function RuleEditorDialog({
         </div>
       </form>
     </div>,
-    document.body,
+    document.body
   )
 }

@@ -12,6 +12,9 @@ import type {
   ProxyRule,
   LogFilter,
   ReleaseInfo,
+  RuleSimulationResult,
+  LeakReport,
+  ProxyHealthStatus,
 } from './types'
 
 interface WailsApp {
@@ -36,6 +39,11 @@ interface WailsApp {
   CloneRule(ruleId: string): Promise<Profile>
   ImportRulesJSON(raw: string): Promise<Profile>
   ExportRulesJSON(ruleIds: string[]): Promise<string>
+  SimulateRule(processName: string, host: string, port: number, protocol: string): Promise<RuleSimulationResult>
+  CheckLeak(): Promise<LeakReport>
+  ProxyHealth(): Promise<ProxyHealthStatus>
+  CheckActiveProxyHealth(): Promise<ProxyHealthStatus>
+  TrimMemory(): Promise<void>
   StartEngine(): Promise<EngineStatus>
   StopEngine(): Promise<EngineStatus>
   SetEngineEnabled(enabled: boolean): Promise<EngineStatus>

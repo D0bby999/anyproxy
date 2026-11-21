@@ -200,9 +200,28 @@ func (m *LogManager) ConnectionLogs(limit int) []ConnectionLogEntry {
 func (m *LogManager) ClearConnectionLogs() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.connLogs = m.connLogs[:0]
+	m.connLogs = nil
 	clear(m.dedupIndex)
 	clear(m.udpLastSeen)
+}
+
+// TrimMemory prunes expired UDP silence-window entries and shrinks slice backing
+// arrays so long-running background sessions do not accumulate unused memory.
+func (m *LogManager) TrimMemory(now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for k, last := range m.udpLastSeen {
+		if now.Sub(last) >= UDPSilenceWindow {
+			delete(m.udpLastSeen, k)
+		}
+	}
+	if cap(m.connLogs) > len(m.connLogs)+64 {
+		m.connLogs = append([]ConnectionLogEntry(nil), m.connLogs...)
+	}
+	if cap(m.actLogs) > len(m.actLogs)+64 {
+		m.actLogs = append([]ActivityLogEntry(nil), m.actLogs...)
+	}
 }
 
 // LogActivity appends an entry to the Activity Log ring buffer.
