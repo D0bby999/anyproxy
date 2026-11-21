@@ -1,18 +1,18 @@
 {
-  "version": "1.0.10",
-  "date": "2026-11-18",
-  "notes": "Fix macOS Network Extension routing for rules using Default proxy, and increase New/Edit Rule modal height.",
+  "version": "1.0.11",
+  "date": "2026-11-21",
+  "notes": "Enforce fail-closed proxy routing without direct fallback, upgrade Routing Rules UX with drag-and-drop and inline Rule Simulator, add 1-click Leak & Protection Check and fail-closed health watchdog, and hibernate WebView memory in tray.",
   "assets": {
     "darwin-arm64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.10/AnyProxy-darwin-arm64.dmg",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.11/AnyProxy-darwin-arm64.dmg",
       "sha256": "8c1fa104d0c659ab857f0a5c37f4e05b3af72d6a342b8775646606108d555fce"
     },
     "darwin-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.10/AnyProxy-darwin-amd64.dmg",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.11/AnyProxy-darwin-amd64.dmg",
       "sha256": "1a404115c1d2f32aa8a10eac44ad8434abb8524b86375c40b494e32ff7e3dcdd"
     },
     "windows-amd64": {
-      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.10/AnyProxy-windows-amd64.exe",
+      "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.11/AnyProxy-windows-amd64.exe",
       "sha256": "1d57084a2d3d319f059e9f7080b900ef8e15da956c82051171071eba8082323e"
     }
   }
