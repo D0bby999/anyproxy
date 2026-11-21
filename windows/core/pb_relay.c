@@ -617,7 +617,7 @@ static DWORD WINAPI connection_handler_impl(LPVOID arg)
     if (proxy == NULL || proxy->host[0] == '\0' || proxy->port == 0)
     {
         log_message("[RELAY] No proxy config (id=%u) - dropping connection", proxy_config_id);
-        closesocket(client_sock);
+        reset_close(client_sock);
         return 1;
     }
 
@@ -625,7 +625,7 @@ static DWORD WINAPI connection_handler_impl(LPVOID arg)
     UINT32 proxy_ip = proxy->resolved_ip ? proxy->resolved_ip : resolve_hostname(proxy->host);
     if (proxy_ip == 0)
     {
-        closesocket(client_sock);
+        reset_close(client_sock);
         return 1;
     }
 
@@ -633,7 +633,7 @@ static DWORD WINAPI connection_handler_impl(LPVOID arg)
     if (socks_sock == INVALID_SOCKET)
     {
         log_message("Socket creation failed (%d)", WSAGetLastError());
-        closesocket(client_sock);
+        reset_close(client_sock);
         return 0;
     }
 
@@ -656,7 +656,7 @@ static DWORD WINAPI connection_handler_impl(LPVOID arg)
     if (connect(socks_sock, (struct sockaddr *)&socks_addr, sizeof(socks_addr)) == SOCKET_ERROR)
     {
         log_message("[RELAY] Failed to connect to proxy %s:%d (%d)", proxy->host, proxy->port, WSAGetLastError());
-        closesocket(client_sock);
+        reset_close(client_sock);
         closesocket(socks_sock);
         return 0;
     }

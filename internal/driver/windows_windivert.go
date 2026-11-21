@@ -421,6 +421,8 @@ func (d *WinDivertDriver) syncLocked() {
 		)
 		if r1 != 0 {
 			d.proxyIDMap[p.ID] = uint32(r1)
+		} else if d.logs != nil {
+			d.logs.LogActivity("WARN", fmt.Sprintf("WinDivert could not register proxy %s (%s:%d); traffic for it will be blocked", p.Label(), p.Host, p.Port))
 		}
 	}
 
@@ -449,6 +451,10 @@ func (d *WinDivertDriver) syncLocked() {
 			ruleProxyID = d.opts.DefaultProxyID
 		}
 		proxyID := uintptr(d.proxyIDMap[ruleProxyID])
+		if r.Action == pbprofile.ActionProxy && proxyID == 0 {
+			// fail closed when the target proxy is missing or failed to register
+			action = uintptr(winActionBlock)
+		}
 		var localhost uintptr
 		if r.LocalhostViaProxy {
 			localhost = 1
@@ -467,10 +473,14 @@ func (d *WinDivertDriver) syncLocked() {
 	}
 
 	if d.opts.DefaultProxyID != "" {
-		if defID := d.proxyIDMap[d.opts.DefaultProxyID]; defID != 0 {
-			if r1, _, _ := addRule.Call(cstrPtr("~*"), cstrPtr("*"), cstrPtr("*"), 0, uintptr(winProtoBoth), uintptr(winActionProxy), uintptr(defID), 0); r1 != 0 {
-				d.ruleIDs = append(d.ruleIDs, uint32(r1))
-			}
+		defID := d.proxyIDMap[d.opts.DefaultProxyID]
+		defAction := uintptr(winActionProxy)
+		if defID == 0 {
+			// fail closed so an unresolvable/missing default proxy never leaks direct
+			defAction = uintptr(winActionBlock)
+		}
+		if r1, _, _ := addRule.Call(cstrPtr("~*"), cstrPtr("*"), cstrPtr("*"), 0, uintptr(winProtoBoth), defAction, uintptr(defID), 0); r1 != 0 {
+			d.ruleIDs = append(d.ruleIDs, uint32(r1))
 		}
 	}
 }

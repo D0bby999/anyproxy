@@ -542,6 +542,9 @@ class AppProxyProvider: NETransparentProxyProvider {
     }
     private var storedProxyConfigs: [String: StoredProxyConfig] = [:]
     private var defaultProxyId: String = ""
+    // stays false until setRules lands after startProxy (or an OS respawn), so
+    // flows arriving before config is pushed fail closed instead of going direct
+    private var configLoaded = false
     private let proxyLock = NSLock()
     // a config change only affects connections opened after it. http/2 and quic
     // sockets that are already established keep the previous proxy for as long
@@ -884,6 +887,7 @@ class AppProxyProvider: NETransparentProxyProvider {
     }
 
     private func closeRelay(_ flow: NEAppProxyTCPFlow, _ connection: NWTCPConnection, error: Error? = nil) {
+        _ = completeHandshake(connection)
         connection.cancel()
         unregisterLiveFlow(flow)
         // a config reset may have closed this flow already
@@ -1049,6 +1053,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             pendingFlowReset = false
             let rulesChanged = signature != lastRulesSignature
             lastRulesSignature = signature
+            configLoaded = true
             proxyLock.unlock()
             if shouldReset || rulesChanged {
                 resetOpenFlows(reason: shouldReset ? "proxy configuration changed" : "rules changed")
@@ -1066,12 +1071,14 @@ class AppProxyProvider: NETransparentProxyProvider {
         
         case "clearConfig":
             // drop the stored proxy configs so credentials don't sit in memory after stop
+            engineEnabled = false
             proxyLock.lock()
             storedProxyConfigs.removeAll()
             warnedKeys.removeAll()
             // leaving the old default id behind made the next setProxyConfigs
             // compare against a default that no longer exists
             defaultProxyId = ""
+            configLoaded = false
             pendingFlowReset = false
             lastRulesSignature = ""
             proxyLock.unlock()
@@ -1088,6 +1095,12 @@ class AppProxyProvider: NETransparentProxyProvider {
     override func wake() {
     }
     
+    private func isConfigLoaded() -> Bool {
+        proxyLock.lock()
+        defer { proxyLock.unlock() }
+        return configLoaded
+    }
+
     private func resolveProxyConfig(forAction action: String) -> StoredProxyConfig? {
         proxyLock.lock()
         defer { proxyLock.unlock() }
@@ -1142,6 +1155,14 @@ class AppProxyProvider: NETransparentProxyProvider {
         let domains = DNSMapStore.shared.domains(forIP: destination)
         let logDest = domains.first ?? destination
 
+        if !isConfigLoaded() {
+            warnOnce("unconfigured", "Network Extension is waiting for proxy configuration; blocking traffic to prevent direct fallback")
+            sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
+            flow.closeReadWithError(FlowFailure.refused)
+            flow.closeWriteWithError(FlowFailure.refused)
+            return true
+        }
+
         // rules are always evaluated. a proxy config is only needed by a rule that
         // routes to one, BLOCK and DIRECT rules work without any (they used to be
         // skipped whenever no proxy was configured, so a lone BLOCK rule did nothing)
@@ -1154,18 +1175,16 @@ class AppProxyProvider: NETransparentProxyProvider {
                 return false
             case "BLOCK":
                 sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
-                flow.closeReadWithError(nil)
-                flow.closeWriteWithError(nil)
+                flow.closeReadWithError(FlowFailure.refused)
+                flow.closeWriteWithError(FlowFailure.refused)
                 return true
             default:
                 guard let config = resolveProxyConfig(forAction: rule.action) else {
-                    if rule.action != "PROXY" {
-                        // rule points at a proxy that no longer exists. it still goes
-                        // direct, but say so instead of leaking silently
-                        warnOnce("missing:\(rule.action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
-                    }
-                    sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
-                    return false
+                    warnOnce("missing:\(rule.action)", "Rule references an unavailable proxy; blocking TCP flow to prevent direct fallback")
+                    sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
+                    flow.closeReadWithError(FlowFailure.refused)
+                    flow.closeWriteWithError(FlowFailure.refused)
+                    return true
                 }
                 sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
                 registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
@@ -1175,13 +1194,21 @@ class AppProxyProvider: NETransparentProxyProvider {
             }
         } else {
             proxyLock.lock()
-            let defConfig = defaultProxyId.isEmpty ? nil : storedProxyConfigs[defaultProxyId]
+            let defId = defaultProxyId
+            let defConfig = defId.isEmpty ? nil : storedProxyConfigs[defId]
             proxyLock.unlock()
             if let config = defConfig {
                 sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
                 registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
                 trackTCPFlow(flow)
                 proxyTCPFlow(flow, destination: destination, port: portNum, config: config)
+                return true
+            }
+            if !defId.isEmpty {
+                warnOnce("missing-default:\(defId)", "Active default proxy is unavailable; blocking TCP flow to prevent direct fallback")
+                sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
+                flow.closeReadWithError(FlowFailure.refused)
+                flow.closeWriteWithError(FlowFailure.refused)
                 return true
             }
             sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
@@ -1205,6 +1232,14 @@ class AppProxyProvider: NETransparentProxyProvider {
         if processPath == "dev.anyproxy.app" || processPath == "dev.anyproxy.app.extension" {
             return false
         }
+
+        if !isConfigLoaded() {
+            warnOnce("unconfigured", "Network Extension is waiting for proxy configuration; blocking traffic to prevent direct fallback")
+            sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
+            flow.closeReadWithError(FlowFailure.refused)
+            flow.closeWriteWithError(FlowFailure.refused)
+            return true
+        }
         
         // rules first: udp BLOCK and DIRECT need no proxy at all. only a rule that
         // sends udp through a proxy needs a socks5 one (http proxies can't carry udp)
@@ -1223,19 +1258,23 @@ class AppProxyProvider: NETransparentProxyProvider {
             case "BLOCK":
                 sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
                 // a handled flow that is never closed stays pinned in the extension
-                flow.closeReadWithError(nil)
-                flow.closeWriteWithError(nil)
+                flow.closeReadWithError(FlowFailure.refused)
+                flow.closeWriteWithError(FlowFailure.refused)
                 return true
             default:
                 guard let socks5Config = resolveProxyConfig(forAction: action) else {
-                    if action != "PROXY" {
-                        warnOnce("missing:\(action)", "A rule routes to a proxy that no longer exists, its traffic is going direct")
-                    }
-                    return false
+                    warnOnce("missing:\(action)", "Rule references an unavailable proxy; blocking UDP flow to prevent direct fallback")
+                    sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
+                    flow.closeReadWithError(FlowFailure.refused)
+                    flow.closeWriteWithError(FlowFailure.refused)
+                    return true
                 }
                 guard socks5Config.type.lowercased() == "socks5" else {
-                    warnOnce("udp-http:\(action)", "UDP can't go through an HTTP proxy, UDP traffic for that rule is going direct")
-                    return false
+                    warnOnce("udp-http:\(action)", "HTTP/HTTPS proxy does not support UDP; blocking UDP flow to prevent direct fallback")
+                    sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
+                    flow.closeReadWithError(FlowFailure.refused)
+                    flow.closeWriteWithError(FlowFailure.refused)
+                    return true
                 }
                 let label = proxyLabel(socks5Config)
                 flow.open(withLocalEndpoint: nil) { [weak self] error in
@@ -1253,7 +1292,8 @@ class AppProxyProvider: NETransparentProxyProvider {
             }
         } else {
             proxyLock.lock()
-            let defConfig = defaultProxyId.isEmpty ? nil : storedProxyConfigs[defaultProxyId]
+            let defId = defaultProxyId
+            let defConfig = defId.isEmpty ? nil : storedProxyConfigs[defId]
             proxyLock.unlock()
             if let socks5Config = defConfig, socks5Config.type.lowercased() == "socks5" {
                 let label = proxyLabel(socks5Config)
@@ -1262,6 +1302,17 @@ class AppProxyProvider: NETransparentProxyProvider {
                     self.registerLiveFlow(flow, pid: pid, process: displayName, destIp: "0.0.0.0", host: "UDP association", port: 0, isUdp: true, proxyLabel: label)
                     self.proxyUDPFlowViaSOCKS5(flow, displayName: displayName, socksHost: socks5Config.host, socksPort: socks5Config.port, username: socks5Config.username, password: socks5Config.password)
                 }
+                return true
+            }
+            if !defId.isEmpty {
+                if defConfig == nil {
+                    warnOnce("missing-default:\(defId)", "Active default proxy is unavailable; blocking UDP flow to prevent direct fallback")
+                } else {
+                    warnOnce("udp-http:default", "HTTP/HTTPS proxy does not support UDP; blocking UDP flow to prevent direct fallback")
+                }
+                sendLogToApp(protocol: "UDP", pid: pid, process: displayName, destination: "unknown", port: "unknown", proxy: "BLOCK")
+                flow.closeReadWithError(FlowFailure.refused)
+                flow.closeWriteWithError(FlowFailure.refused)
                 return true
             }
             // no rule matched. as before, only log it when udp proxying is possible
@@ -2142,7 +2193,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         if lower == "localhost" || lower == "::1" || lower == "::" || lower == "0.0.0.0" || lower == "255.255.255.255" {
             return true
         }
-        if lower.hasPrefix("127.") || lower.hasPrefix("0.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("fec0:") || lower.hasPrefix("ff") || lower.hasSuffix(".255") {
+        if lower.hasPrefix("127.") || lower.hasPrefix("0.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("fec0:") || (lower.hasPrefix("ff") && lower.contains(":")) || lower.hasSuffix(".255") {
             return true
         }
         if let firstDot = lower.firstIndex(of: "."), let firstOctet = Int(lower[..<firstDot]), firstOctet >= 224 && firstOctet <= 239 {

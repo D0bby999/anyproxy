@@ -64,9 +64,11 @@ RuleAction check_process_rule_v6(const UINT8 src_ip6[16], UINT16 src_port, const
     {
         PROXY_CONFIG *cfg = find_proxy_config(proxy_config_id);
         if (cfg == NULL || cfg->host[0] == '\0' || cfg->port == 0)
-            return RULE_ACTION_DIRECT;
+            return RULE_ACTION_BLOCK;
+        // HTTP proxies cannot relay UDP; allow UDP:53 so OS DNS resolution still works for TCP/CONNECT,
+        // and block all other UDP (QUIC/WebRTC) to prevent real-IP fallback.
         if (is_udp && cfg->type == PROXY_TYPE_HTTP)
-            return RULE_ACTION_DIRECT;
+            return (dest_port == 53) ? RULE_ACTION_DIRECT : RULE_ACTION_BLOCK;
     }
     if (out_proxy_config_id) *out_proxy_config_id = proxy_config_id;
     return action;
@@ -839,11 +841,12 @@ RuleAction check_process_rule(UINT32 src_ip, UINT16 src_port, UINT32 dest_ip, UI
     {
         PROXY_CONFIG *cfg = find_proxy_config(proxy_config_id);
         if (cfg == NULL || cfg->host[0] == '\0' || cfg->port == 0)
-            return RULE_ACTION_DIRECT;  // No proxy configured
+            return RULE_ACTION_BLOCK;  // Fail closed when proxy config is missing
 
-        // UDP: HTTP proxy doesn't support UDP - use per-rule proxy config type
+        // HTTP proxies cannot relay UDP; allow UDP:53 so OS DNS resolution still works for TCP/CONNECT,
+        // and block all other UDP (QUIC/WebRTC) to prevent real-IP fallback.
         if (is_udp && cfg->type == PROXY_TYPE_HTTP)
-            return RULE_ACTION_DIRECT;
+            return (dest_port == 53) ? RULE_ACTION_DIRECT : RULE_ACTION_BLOCK;
     }
 
     if (out_proxy_config_id != NULL)

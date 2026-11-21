@@ -2,17 +2,16 @@
 
 // Proxy config: config store, lookup helpers, and management/test API.
 
-// Helper: find proxy config by ID; falls back to first config if not found
+// Helper: find proxy config by ID (0 = first available; non-zero IDs fail closed instead of falling back)
 PROXY_CONFIG* find_proxy_config(UINT32 config_id)
 {
+    if (config_id == 0)
+        return g_proxy_config_count > 0 ? &g_proxy_configs[0] : NULL;
     for (int i = 0; i < g_proxy_config_count; i++)
     {
         if (g_proxy_configs[i].config_id == config_id)
             return &g_proxy_configs[i];
     }
-    // Fall back to first available config
-    if (g_proxy_config_count > 0)
-        return &g_proxy_configs[0];
     return NULL;
 }
 

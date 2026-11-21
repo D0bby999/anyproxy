@@ -570,6 +570,220 @@ func TestSnapshotSinceCoalescesAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestInboundHTTPProxyBlocksUDPInsteadOfDirectFallback(t *testing.T) {
+	// Start a local UDP server that must NEVER receive packets when routed through an HTTP proxy.
+	received := make(chan []byte, 1)
+	targetUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatalf("listen udp: %v", err)
+	}
+	defer targetUDP.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		n, _, rerr := targetUDP.ReadFromUDP(buf)
+		if rerr == nil && n > 0 {
+			cp := make([]byte, n)
+			copy(cp, buf[:n])
+			received <- cp
+		}
+	}()
+	targetAddr := targetUDP.LocalAddr().(*net.UDPAddr)
+
+	logs := flows.NewLogManager()
+	srv := NewServer(Config{
+		ListenAddr: "127.0.0.1:0",
+		Logs:       logs,
+	})
+	srv.SyncProfile(
+		[]pbprofile.ProxyConfig{{ID: "http-up", Name: "HTTP Proxy", Type: pbprofile.ProxyHTTP, Host: "127.0.0.1", Port: 8080}},
+		[]pbprofile.ProxyRule{{
+			ID:                "udp-via-http",
+			Enabled:           true,
+			TargetHosts:       "*",
+			TargetPorts:       "*",
+			Protocol:          pbprofile.ProtoUDP,
+			Action:            pbprofile.ActionProxy,
+			ProxyConfigID:     "http-up",
+			LocalhostViaProxy: true,
+		}},
+		"http-up",
+	)
+	if err := srv.Start(); err != nil {
+		t.Fatalf("srv.Start: %v", err)
+	}
+	defer srv.Stop()
+
+	host, portStr, _ := net.SplitHostPort(srv.ListenAddr())
+	var port int
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	up := netproxy.Upstream{Type: "SOCKS5", Host: host, Port: port}
+	assoc, err := up.DialUDP(t.Context())
+	if err != nil {
+		t.Fatalf("DialUDP: %v", err)
+	}
+	defer assoc.Close()
+
+	if _, err := assoc.SendDatagram("127.0.0.1", "", uint16(targetAddr.Port), []byte("must-not-leak")); err != nil {
+		t.Fatalf("SendDatagram: %v", err)
+	}
+
+	select {
+	case leaked := <-received:
+		t.Fatalf("UDP datagram leaked directly past HTTP proxy: %q", leaked)
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	cl := logs.ConnectionLogs(10)
+	if len(cl) == 0 || cl[0].Action != "BLOCK" {
+		t.Fatalf("expected UDP block log entry, got %+v", cl)
+	}
+}
+
+func TestInboundDeadProxyFailsClosedWithoutDirectFallback(t *testing.T) {
+	// Target servers that must NEVER be contacted directly when the upstream proxy is down.
+	var directTCPHits atomic.Int32
+	targetTCP, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("target tcp listen: %v", err)
+	}
+	defer targetTCP.Close()
+	go func() {
+		for {
+			c, err := targetTCP.Accept()
+			if err != nil {
+				return
+			}
+			directTCPHits.Add(1)
+			_ = c.Close()
+		}
+	}()
+	targetHost, targetPortStr, _ := net.SplitHostPort(targetTCP.Addr().String())
+	var targetPort uint16
+	_, _ = fmt.Sscanf(targetPortStr, "%d", &targetPort)
+
+	var directUDPHits atomic.Int32
+	targetUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatalf("target udp listen: %v", err)
+	}
+	defer targetUDP.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, _, rerr := targetUDP.ReadFromUDP(buf)
+			if rerr != nil {
+				return
+			}
+			if n > 0 {
+				directUDPHits.Add(1)
+			}
+		}
+	}()
+	targetUDPPort := uint16(targetUDP.LocalAddr().(*net.UDPAddr).Port)
+
+	// Allocate and immediately close a local port to simulate a dead upstream proxy.
+	deadLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("dead port listen: %v", err)
+	}
+	deadHost, deadPortStr, _ := net.SplitHostPort(deadLn.Addr().String())
+	var deadPort int
+	_, _ = fmt.Sscanf(deadPortStr, "%d", &deadPort)
+	_ = deadLn.Close()
+
+	srv := NewServer(Config{ListenAddr: "127.0.0.1:0"})
+	srv.SyncProfile(
+		[]pbprofile.ProxyConfig{{ID: "dead", Name: "Dead SOCKS5", Type: pbprofile.ProxySOCKS5, Host: deadHost, Port: deadPort}},
+		[]pbprofile.ProxyRule{{
+			ID:                "all-via-dead",
+			Enabled:           true,
+			TargetHosts:       "*",
+			TargetPorts:       "*",
+			Protocol:          pbprofile.ProtoBoth,
+			Action:            pbprofile.ActionProxy,
+			ProxyConfigID:     "dead",
+			LocalhostViaProxy: true,
+		}},
+		"dead",
+	)
+	if err := srv.Start(); err != nil {
+		t.Fatalf("srv.Start: %v", err)
+	}
+	defer srv.Stop()
+
+	// 1. SOCKS5 CONNECT must fail with 0x04 and never dial target directly.
+	c1, err := net.Dial("tcp", srv.ListenAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c1.Close()
+	_ = c1.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = c1.Write([]byte{0x05, 0x01, 0x00})
+	authResp := make([]byte, 2)
+	if _, err := io.ReadFull(c1, authResp); err != nil {
+		t.Fatalf("socks5 auth resp: %v", err)
+	}
+	req := []byte{0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, byte(targetPort >> 8), byte(targetPort)}
+	_, _ = c1.Write(req)
+	connResp := make([]byte, 10)
+	if _, err := io.ReadFull(c1, connResp); err != nil {
+		t.Fatalf("socks5 connect resp: %v", err)
+	}
+	if connResp[1] == 0x00 {
+		t.Fatalf("expected SOCKS5 error when upstream proxy is dead, got success")
+	}
+
+	// 2. HTTP CONNECT must fail with 502 and never dial target directly.
+	c2, err := net.Dial("tcp", srv.ListenAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	_ = c2.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = fmt.Fprintf(c2, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", targetTCP.Addr().String(), targetTCP.Addr().String())
+	r2 := bufio.NewReader(c2)
+	statusLine, err := r2.ReadString('\n')
+	if err != nil || !containsString(statusLine, "502") {
+		t.Fatalf("expected 502 Bad Gateway when proxy is dead, got %q err=%v", statusLine, err)
+	}
+
+	// 3. Plain HTTP request must fail with 502 and never dial target directly.
+	c3, err := net.Dial("tcp", srv.ListenAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c3.Close()
+	_ = c3.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = fmt.Fprintf(c3, "GET http://%s:%d/ HTTP/1.1\r\nHost: %s:%d\r\n\r\n", targetHost, targetPort, targetHost, targetPort)
+	r3 := bufio.NewReader(c3)
+	statusLine3, err := r3.ReadString('\n')
+	if err != nil || !containsString(statusLine3, "502") {
+		t.Fatalf("expected 502 Bad Gateway on plain HTTP when proxy is dead, got %q err=%v", statusLine3, err)
+	}
+
+	// 4. SOCKS5 UDP ASSOCIATE must drop datagrams and never send directly.
+	inHost, inPortStr, _ := net.SplitHostPort(srv.ListenAddr())
+	var inPort int
+	_, _ = fmt.Sscanf(inPortStr, "%d", &inPort)
+	up := netproxy.Upstream{Type: "SOCKS5", Host: inHost, Port: inPort}
+	assoc, err := up.DialUDP(t.Context())
+	if err != nil {
+		t.Fatalf("DialUDP: %v", err)
+	}
+	defer assoc.Close()
+	if _, err := assoc.SendDatagram("127.0.0.1", "", targetUDPPort, []byte("must-not-leak-udp")); err != nil {
+		t.Fatalf("SendDatagram: %v", err)
+	}
+	time.Sleep(250 * time.Millisecond)
+
+	if hits := directTCPHits.Load(); hits != 0 {
+		t.Fatalf("dead proxy leaked %d direct TCP connection(s)", hits)
+	}
+	if hits := directUDPHits.Load(); hits != 0 {
+		t.Fatalf("dead proxy leaked %d direct UDP datagram(s)", hits)
+	}
+}
+
 func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || (len(s) > 0 && containsSub(s, substr)))
 }

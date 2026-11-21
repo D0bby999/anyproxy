@@ -329,10 +329,13 @@ func (s *Server) handleSOCKS5(client net.Conn, reader *bufio.Reader) {
 		proxyName = targetProxy.Name
 		up := s.buildUpstream(*targetProxy)
 		upstream, dialErr = up.DialTCP(ctx, destHost, destHost, destPort)
-	} else {
-		// DIRECT
+	} else if decision.Action == pbprofile.ActionDirect {
 		targetAddr := net.JoinHostPort(destHost, strconv.Itoa(int(destPort)))
 		upstream, dialErr = net.DialTimeout("tcp", targetAddr, 15*time.Second)
+	} else {
+		_, _ = client.Write([]byte{0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		s.recordLog(proc, destHost, destPort, "BLOCK", "", decision.RuleID)
+		return
 	}
 
 	if dialErr != nil {
@@ -412,9 +415,13 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 			proxyName = targetProxy.Name
 			up := s.buildUpstream(*targetProxy)
 			upstream, dialErr = up.DialTCP(ctx, destHost, destHost, destPort)
-		} else {
+		} else if decision.Action == pbprofile.ActionDirect {
 			targetAddr := net.JoinHostPort(destHost, strconv.Itoa(int(destPort)))
 			upstream, dialErr = net.DialTimeout("tcp", targetAddr, 15*time.Second)
+		} else {
+			_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nBlocked by AnyProxy rules\r\n"))
+			s.recordLog(proc, destHost, destPort, "BLOCK", "", decision.RuleID)
+			return
 		}
 
 		if dialErr != nil {
@@ -467,9 +474,13 @@ func (s *Server) handleHTTP(client net.Conn, reader *bufio.Reader) {
 		proxyName = targetProxy.Name
 		up := s.buildUpstream(*targetProxy)
 		upstream, dialErr = up.DialTCP(ctx, destHost, destHost, destPort)
-	} else {
+	} else if decision.Action == pbprofile.ActionDirect {
 		targetAddr := net.JoinHostPort(destHost, strconv.Itoa(int(destPort)))
 		upstream, dialErr = net.DialTimeout("tcp", targetAddr, 15*time.Second)
+	} else {
+		_, _ = client.Write([]byte("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nBlocked by AnyProxy rules\r\n"))
+		s.recordLog(proc, destHost, destPort, "BLOCK", "", decision.RuleID)
+		return
 	}
 	if dialErr != nil {
 		_, _ = client.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nFailed to connect to upstream\r\n"))
@@ -619,10 +630,10 @@ func (s *Server) handleSOCKS5UDPAssociate(client net.Conn, reader *bufio.Reader)
 
 		if decision.Action == pbprofile.ActionProxy && targetProxy != nil && strings.ToUpper(string(targetProxy.Type)) != "SOCKS5" {
 			if s.logs != nil {
-				s.logs.WarnOnce("udp-http:"+targetProxy.ID, "HTTP/HTTPS proxy does not support UDP; routing UDP traffic DIRECT")
+				s.logs.WarnOnce("udp-http:"+targetProxy.ID, "HTTP/HTTPS proxy does not support UDP; blocking UDP traffic to prevent direct fallback")
 			}
-			decision.Action = pbprofile.ActionDirect
-			targetProxy = nil
+			s.recordLogProto(proc, targetHost, targetPort, "UDP", "BLOCK", targetProxy.Name, decision.RuleID)
+			continue
 		}
 
 		flowKey := string(decision.Action) + "|" + targetHost + ":" + strconv.Itoa(int(targetPort))
@@ -695,9 +706,15 @@ func (s *Server) handleSOCKS5UDPAssociate(client net.Conn, reader *bufio.Reader)
 			if parsedIP, perr := netip.ParseAddr(targetHost); perr == nil {
 				destIP = parsedIP.String()
 			}
-			if sent, werr := assoc.SendDatagram(destIP, targetHost, targetPort, payload); werr == nil && s.tracker != nil && flowID != "" {
+			if sent, werr := assoc.SendDatagram(destIP, targetHost, targetPort, payload); werr != nil {
+				_ = assoc.Close()
+			} else if s.tracker != nil && flowID != "" {
 				s.tracker.AddBytes(flowID, int64(sent), 0)
 			}
+			continue
+		}
+
+		if decision.Action != pbprofile.ActionDirect {
 			continue
 		}
 
