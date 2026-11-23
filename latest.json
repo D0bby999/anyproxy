@@ -1,7 +1,7 @@
 {
   "version": "1.0.11",
   "date": "2026-11-21",
-  "notes": "Enforce fail-closed proxy routing without direct fallback, upgrade Routing Rules UX with drag-and-drop and inline Rule Simulator, add 1-click Leak & Protection Check and fail-closed health watchdog, and hibernate WebView memory in tray.",
+  "notes": "Saving an All except routing rule no longer changes the global Default Route. The rule editor no longer prompts you to switch the Default Route to Direct.",
   "assets": {
     "darwin-arm64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.11/AnyProxy-darwin-arm64.dmg",
