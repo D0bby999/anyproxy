@@ -95,7 +95,7 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   )
 })
 
-it('creates an exclude ("All except") rule directly, validates empty apps, and clears Active Proxy fallback via Advanced', async () => {
+it('creates an exclude ("All except") rule directly, validates empty apps, and does not show fallback warning or modify Default Route', async () => {
   const user = userEvent.setup()
   const proxy: ProxyConfig = {
     id: 'p1',
@@ -136,10 +136,12 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and c
 
   expect(screen.getByText(`${t.rules.exceptPrefix}: Telegram; Safari`)).toBeTruthy()
 
-  // Clicking on a rule row opens the Edit Rule modal directly
+  // Clicking on a rule row opens the Edit Rule modal directly without fallback warning
   await user.click(screen.getByText('System Except Chat'))
   const editDialog = screen.getByRole('dialog', { name: t.rules.editTitle })
   expect(editDialog).toBeTruthy()
+  expect(within(editDialog).queryByText(t.rules.fallbackProxyWarn)).toBeNull()
+  expect(within(editDialog).queryByRole('button', { name: t.rules.switchFallbackDirect })).toBeNull()
   await user.click(within(editDialog).getByRole('button', { name: t.actions.close }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.editTitle })).toBeNull())
 
@@ -148,6 +150,10 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and c
 
   await user.click(within(dialog).getByRole('button', { name: t.rules.matchExclude }))
   await user.type(within(dialog).getByLabelText(t.rules.name), 'All except Telegram')
+
+  // No fallback warning inside New Rule modal either
+  expect(within(dialog).queryByText(t.rules.fallbackProxyWarn)).toBeNull()
+  expect(within(dialog).queryByRole('button', { name: t.rules.switchFallbackDirect })).toBeNull()
 
   // Submitting without any excluded app shows validation error
   await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
@@ -159,20 +165,16 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and c
   await user.selectOptions(picker, 'Cursor')
   expect(dialog.textContent).toContain(`${t.rules.exceptPrefix}: Telegram, Cursor`)
 
-  // Switch active proxy fallback to Direct in one click (inside Advanced)
-  await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
-  await user.click(within(dialog).getByRole('button', { name: t.rules.switchFallbackDirect }))
-  await waitFor(() => expect(onSetDefaultProxy).toHaveBeenCalledWith(''))
-
   await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
+  expect(onSetDefaultProxy).not.toHaveBeenCalled()
   expect(onSaveRule).toHaveBeenCalledWith(
     expect.objectContaining({
       name: 'All except Telegram',
       processNames: 'Telegram; Cursor',
       excludeProcess: true,
       action: 'proxy',
-      proxyConfigId: 'p1',
+      proxyConfigId: '',
     })
   )
 })

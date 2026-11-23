@@ -426,9 +426,6 @@ export function RulesPage({
     setError('')
     try {
       await onSaveRule(payload)
-      if (effectiveMode === 'exclude' && payload.action === 'proxy' && defaultProxyId && onSetDefaultProxy) {
-        await onSetDefaultProxy('')
-      }
       setShowModal(false)
     } catch (err) {
       setError(String(err))
@@ -956,7 +953,6 @@ export function RulesPage({
           appMode={appMode}
           appDraft={appDraft}
           showAdvanced={showAdvanced}
-          rules={rules}
           proxies={proxies}
           defaultProxyId={defaultProxyId}
           quickAppCandidates={quickAppCandidates}
@@ -969,7 +965,6 @@ export function RulesPage({
           onAddApps={handleAddApps}
           onRemoveApp={handleRemoveApp}
           onCommitAppDraft={handleCommitAppDraft}
-          onSetDefaultProxy={onSetDefaultProxy}
           onBrowseExecutable={onPickExecutable ? handleBrowseExecutable : undefined}
           onSave={handleSave}
           onClose={() => setShowModal(false)}
@@ -1084,7 +1079,6 @@ function RuleEditorDialog({
   appMode,
   appDraft,
   showAdvanced,
-  rules,
   proxies,
   defaultProxyId,
   quickAppCandidates,
@@ -1097,7 +1091,6 @@ function RuleEditorDialog({
   onAddApps,
   onRemoveApp,
   onCommitAppDraft,
-  onSetDefaultProxy,
   onBrowseExecutable,
   onSave,
   onClose,
@@ -1106,7 +1099,6 @@ function RuleEditorDialog({
   appMode: 'all' | 'include' | 'exclude'
   appDraft: string
   showAdvanced: boolean
-  rules: ProxyRule[]
   proxies: ProxyConfig[]
   defaultProxyId: string
   quickAppCandidates: QuickAppOption[]
@@ -1119,7 +1111,6 @@ function RuleEditorDialog({
   onAddApps: (tokens: string[]) => void
   onRemoveApp: (appName: string) => void
   onCommitAppDraft: () => void
-  onSetDefaultProxy?: (proxyId: string) => Promise<void>
   onBrowseExecutable?: () => Promise<void>
   onSave: (e: React.FormEvent) => Promise<void>
   onClose: () => void
@@ -1165,34 +1156,7 @@ function RuleEditorDialog({
   const portsValue = editing.targetPorts
   const matchedProxy = proxies.find((p) => p.id === editing.proxyConfigId)
   const defaultProxy = proxies.find((p) => p.id === defaultProxyId)
-
-  const editIdx = editing.id ? rules.findIndex((r) => r.id === editing.id) : -1
-  const trailingRules = editIdx >= 0 ? rules.slice(editIdx + 1) : []
-  const hasCatchAllDirectAfter = trailingRules.some(
-    (r) =>
-      r.enabled &&
-      !r.excludeProcess &&
-      (r.processNames || '*').trim() === '*' &&
-      (r.targetHosts || '*').trim() === '*' &&
-      (r.targetPorts || '*').trim() === '*' &&
-      r.protocol.toLowerCase() === 'both' &&
-      r.action.toLowerCase() === 'direct'
-  )
   const effectiveExclude = appMode === 'exclude'
-  const showFallbackWarn =
-    Boolean(defaultProxyId) &&
-    Boolean(onSetDefaultProxy) &&
-    editing.action === 'proxy' &&
-    effectiveExclude &&
-    !hasCatchAllDirectAfter
-
-  const handleSwitchFallbackDirect = async () => {
-    if (!onSetDefaultProxy) return
-    if (!editing.proxyConfigId && defaultProxyId) {
-      onChange({ ...editing, proxyConfigId: defaultProxyId })
-    }
-    await onSetDefaultProxy('')
-  }
 
   const protoLabel = editing.protocol === 'tcp' ? 'TCP' : editing.protocol === 'udp' ? 'UDP' : 'TCP & UDP'
   const appsSummary = effectiveExclude
@@ -1649,20 +1613,6 @@ function RuleEditorDialog({
             </div>
           )}
         </div>
-
-        {showFallbackWarn && (
-          <div className="rule-fallback-note">
-            <Icon name="warn" />
-            <span className="grow">{t.rules.fallbackProxyWarn}</span>
-            <button
-              type="button"
-              className="btn sm"
-              onClick={() => void handleSwitchFallbackDirect()}
-            >
-              {t.rules.switchFallbackDirect}
-            </button>
-          </div>
-        )}
 
         <div className="rule-preview" aria-live="polite">
           <span className="rule-preview-when">{t.rules.previewWhen}</span>
