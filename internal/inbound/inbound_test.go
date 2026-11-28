@@ -419,6 +419,22 @@ func TestPerProcessRoutingAndDefaultProxyFallback(t *testing.T) {
 		t.Fatalf("expected unmatched app to fall back to default proxy, got dec=%+v px=%+v", dec, px)
 	}
 
+	// 3b. Default Route bypasses loopback, multicast, and stub DNS :53 directly
+	for _, target := range []struct {
+		host string
+		port uint16
+	}{
+		{"127.0.0.1", 8080},
+		{"::1", 443},
+		{"224.0.0.251", 5353},
+		{"127.0.0.53", 53},
+	} {
+		dec, px = srv.evaluateTargetForProcess(target.host, target.port, ProcessInfo{PID: 900, Name: "Telegram"})
+		if dec.Action != pbprofile.ActionDirect || px != nil {
+			t.Fatalf("expected default route to bypass %s:%d directly, got dec=%+v px=%+v", target.host, target.port, dec, px)
+		}
+	}
+
 	// 4. AnyProxy itself bypasses proxy (DIRECT) to prevent self-loop
 	dec, _ = srv.evaluateTargetForProcess("example.com", 443, ProcessInfo{PID: 999, Name: "AnyProxy"})
 	if dec.Action != pbprofile.ActionDirect {

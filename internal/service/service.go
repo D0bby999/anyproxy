@@ -934,18 +934,28 @@ func (s *Service) syncActiveProfileToDriver() error {
 		return err
 	}
 	s.hydratePasswords(&p)
-	// rules with no proxy id mean "the default proxy". resolve it once here so
-	// the inbound server, the NE push and the Windows driver all agree.
-	defProxyID := effectiveDefaultProxyID(p)
-	if s.inbound != nil {
-		s.inbound.SyncProfile(p.Proxies, p.Rules, defProxyID)
+	// Keep p.DefaultProxyID as the fallback route so "" stays Direct; only
+	// resolve empty ProxyConfigID on explicit PROXY rules when Default is Direct.
+	syncedRules := p.Rules
+	if p.DefaultProxyID == "" {
+		if ruleProxyID := effectiveDefaultProxyID(p); ruleProxyID != "" {
+			syncedRules = append([]pbprofile.ProxyRule(nil), p.Rules...)
+			for i := range syncedRules {
+				if syncedRules[i].Action == pbprofile.ActionProxy && syncedRules[i].ProxyConfigID == "" {
+					syncedRules[i].ProxyConfigID = ruleProxyID
+				}
+			}
+		}
 	}
-	return s.drv.SyncProfile(p.Proxies, p.Rules, driver.RuntimeOptions{
+	if s.inbound != nil {
+		s.inbound.SyncProfile(p.Proxies, syncedRules, p.DefaultProxyID)
+	}
+	return s.drv.SyncProfile(p.Proxies, syncedRules, driver.RuntimeOptions{
 		TrafficLoggingEnabled:   p.TrafficLoggingEnabled,
 		DnsViaProxy:             p.DnsViaProxy,
 		LogEveryConnection:      p.LogEveryConnection,
 		AutoClearConnectionLogs: p.AutoClearConnectionLogs,
-		DefaultProxyID:          defProxyID,
+		DefaultProxyID:          p.DefaultProxyID,
 		LogFilters:              p.LogFilters,
 	})
 }

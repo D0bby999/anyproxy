@@ -331,13 +331,14 @@ func (d *NEDriver) pushConfig(proxies []pbprofile.ProxyConfig, ruleList []pbprof
 			action = r.ProxyConfigID
 		}
 		rulesPayload = append(rulesPayload, map[string]any{
-			"processNames":   r.ProcessNames,
-			"targetHosts":    r.CombinedHosts(),
-			"targetPorts":    r.TargetPorts,
-			"ruleProtocol":   string(r.Protocol),
-			"ruleAction":     action,
-			"enabled":        r.Enabled,
-			"excludeProcess": r.ExcludeProcess,
+			"processNames":      r.ProcessNames,
+			"targetHosts":       r.CombinedHosts(),
+			"targetPorts":       r.TargetPorts,
+			"ruleProtocol":      string(r.Protocol),
+			"ruleAction":        action,
+			"enabled":           r.Enabled,
+			"excludeProcess":    r.ExcludeProcess,
+			"localhostViaProxy": r.LocalhostViaProxy,
 		})
 	}
 	if err := d.sendAction(map[string]any{

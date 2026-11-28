@@ -802,13 +802,22 @@ func (s *Server) evaluateTargetForProcessProto(host string, port uint16, proc Pr
 		dec = rules.Decision{Action: pbprofile.ActionDirect}
 	}
 
-	// If no rule matched and the user has selected an Active/Default Proxy, route through it automatically.
+	// If no rule matched and the user has selected an Active/Default Proxy, route through it automatically,
+	// except mandatory direct destinations (loopback, multicast, link-local, DHCP, stub DNS :53).
 	if !dec.Matched && s.defProxyID != "" {
-		dec = rules.Decision{
-			Matched:       true,
-			Action:        pbprofile.ActionProxy,
-			ProxyConfigID: s.defProxyID,
-			RuleID:        "default",
+		if rules.ShouldBypassProxy(destIP, port, proto == pbprofile.ProtoUDP, false) {
+			dec = rules.Decision{
+				Matched: true,
+				Action:  pbprofile.ActionDirect,
+				RuleID:  "default-bypass",
+			}
+		} else {
+			dec = rules.Decision{
+				Matched:       true,
+				Action:        pbprofile.ActionProxy,
+				ProxyConfigID: s.defProxyID,
+				RuleID:        "default",
+			}
 		}
 	}
 

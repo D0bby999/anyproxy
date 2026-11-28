@@ -430,3 +430,88 @@ func TestSaveRuleKeepsDefaultProxyLateBound(t *testing.T) {
 		t.Fatalf("effective default = %q, want %q", got, prof.Proxies[0].ID)
 	}
 }
+
+type recordingDriver struct {
+	*driver.MockDriver
+	lastRules []pbprofile.ProxyRule
+	lastOpts  driver.RuntimeOptions
+}
+
+func (d *recordingDriver) SyncProfile(proxies []pbprofile.ProxyConfig, ruleList []pbprofile.ProxyRule, opts driver.RuntimeOptions) error {
+	d.lastRules = append([]pbprofile.ProxyRule(nil), ruleList...)
+	d.lastOpts = opts
+	return d.MockDriver.SyncProfile(proxies, ruleList, opts)
+}
+
+// When Default Route is Direct (""), the driver and inbound proxy must receive
+// an empty DefaultProxyID so unmatched apps stay Direct, while explicit PROXY
+// rules without a pinned ProxyConfigID still resolve to the fallback proxy.
+func TestSyncProfileRespectsDirectDefaultRoute(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drv := &recordingDriver{MockDriver: driver.NewMockDriver("test", nil, nil, nil)}
+	svc := NewWithAddr(st, nil, drv, "127.0.0.1:0")
+	t.Cleanup(func() { _ = svc.Close() })
+
+	proxyHits := 0
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHits++
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer proxySrv.Close()
+	proxyHost, proxyPortStr, _ := net.SplitHostPort(proxySrv.Listener.Addr().String())
+	var proxyPort int
+	fmt.Sscanf(proxyPortStr, "%d", &proxyPort)
+
+	prof, err := svc.SaveProxy(pbprofile.ProxyConfig{
+		Name: "P1", Type: pbprofile.ProxyHTTP, Host: proxyHost, Port: proxyPort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pxID := prof.Proxies[0].ID
+
+	if _, err := svc.SaveRule(pbprofile.ProxyRule{
+		Name:         "Only Chrome",
+		ProcessNames: "Google Chrome*",
+		TargetHosts:  "*",
+		TargetPorts:  "*",
+		Protocol:     pbprofile.ProtoBoth,
+		Action:       pbprofile.ActionProxy,
+		Enabled:      true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetDefaultProxy(""); err != nil {
+		t.Fatal(err)
+	}
+
+	if drv.lastOpts.DefaultProxyID != "" {
+		t.Fatalf("driver DefaultProxyID = %q, want empty when Default Route is Direct", drv.lastOpts.DefaultProxyID)
+	}
+	if len(drv.lastRules) != 1 || drv.lastRules[0].ProxyConfigID != pxID {
+		t.Fatalf("driver rules = %+v, want late-bound PROXY rule resolved to %q", drv.lastRules, pxID)
+	}
+	active, err := svc.ActiveProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Rules[0].ProxyConfigID != "" {
+		t.Fatalf("stored rule ProxyConfigID = %q, want empty (still late-bound)", active.Rules[0].ProxyConfigID)
+	}
+
+	// Unmatched process through inbound must go Direct (never hit the upstream proxy).
+	conn, err := net.Dial("tcp", svc.InboundAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "CONNECT 127.0.0.1:1 HTTP/1.1\r\nHost: 127.0.0.1:1\r\n\r\n")
+	buf := make([]byte, 256)
+	_, _ = conn.Read(buf)
+	if proxyHits != 0 {
+		t.Fatalf("expected unmatched process to bypass proxy (proxyHits=0), got %d", proxyHits)
+	}
+}

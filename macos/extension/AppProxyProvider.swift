@@ -16,6 +16,7 @@ struct ProxyRule: Codable {
     let action: String  // "DIRECT", "BLOCK", or a proxy config UUID
     var enabled: Bool
     var excludeProcess: Bool
+    var localhostViaProxy: Bool
 
     enum CodingKeys: String, CodingKey {
         case ruleId
@@ -26,6 +27,7 @@ struct ProxyRule: Codable {
         case action = "ruleAction"
         case enabled
         case excludeProcess
+        case localhostViaProxy
     }
 
     init(from decoder: Decoder) throws {
@@ -38,9 +40,10 @@ struct ProxyRule: Codable {
         self.action = try container.decode(String.self, forKey: .action)
         self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         self.excludeProcess = try container.decodeIfPresent(Bool.self, forKey: .excludeProcess) ?? false
+        self.localhostViaProxy = try container.decodeIfPresent(Bool.self, forKey: .localhostViaProxy) ?? false
     }
 
-    init(ruleId: UInt32, processNames: String, targetHosts: String, targetPorts: String, ruleProtocol: RuleProtocol, action: String, enabled: Bool, excludeProcess: Bool = false) {
+    init(ruleId: UInt32, processNames: String, targetHosts: String, targetPorts: String, ruleProtocol: RuleProtocol, action: String, enabled: Bool, excludeProcess: Bool = false, localhostViaProxy: Bool = false) {
         self.ruleId = ruleId
         self.processNames = processNames
         self.targetHosts = targetHosts
@@ -49,6 +52,7 @@ struct ProxyRule: Codable {
         self.action = action
         self.enabled = enabled
         self.excludeProcess = excludeProcess
+        self.localhostViaProxy = localhostViaProxy
     }
     
     func matchesProcess(bundleId: String, processName: String?) -> Bool {
@@ -328,13 +332,14 @@ extension ProxyRule {
         // the program is known a rule written with a path (/opt/tool/bin/worker, /Applications/Foo.app/*)
         // is compared with it, and a rule written with a file name with its last part. without the path
         // only the file name is known and a rule with a path cannot match (issue #288).
-        init(bundleId: String, processName: String?, executablePath: String? = nil) {
+        init(bundleId: String, processName: String?, executablePath: String? = nil, ancestorPaths: [String] = []) {
             var list = [bundleId]
             if let executablePath = executablePath {
                 list.append(executablePath)
             } else if let processName = processName {
                 list.append(processName)
             }
+            list.append(contentsOf: ancestorPaths)
             candidates = list.map {
                 (Array($0.lowercased()), Array((($0 as NSString).lastPathComponent).lowercased()))
             }
@@ -468,12 +473,39 @@ class AppProxyProvider: NETransparentProxyProvider {
     // never inherits the previous owner's name
     private struct ProcessIdentity {
         let pid: Int
-        let name: String   // file name of the executable, what the logs show
-        let path: String   // full path of the executable, what a rule with a path is compared with
+        let name: String           // file name of the executable, what the logs show
+        let path: String           // full path of the executable, what a rule with a path is compared with
+        let ancestorPaths: [String] // parent .app / executable paths so child helpers & CLI tools inherit app rules
     }
     private var pidCache: [UInt64: ProcessIdentity] = [:]
     private let pidCacheLock = NSLock()
     private static let pidCacheMaxSize = 256
+    private static let maxAncestorDepth = 4
+
+    private static func collectAncestorPaths(startingFrom pid: pid_t, ownPath: String) -> [String] {
+        var result: [String] = []
+        var curPid = pid
+        var pathBuf = [Int8](repeating: 0, count: Int(MAXPATHLEN))
+        for _ in 0..<maxAncestorDepth {
+            var bsdInfo = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.stride)
+            guard proc_pidinfo(curPid, PROC_PIDTBSDINFO, 0, &bsdInfo, size) == size else {
+                break
+            }
+            let ppid = pid_t(bsdInfo.pbi_ppid)
+            if ppid <= 1 || ppid == curPid {
+                break
+            }
+            if proc_pidpath(ppid, &pathBuf, UInt32(MAXPATHLEN)) > 0 {
+                let pPath = String(cString: pathBuf)
+                if pPath != ownPath && !result.contains(pPath) {
+                    result.append(pPath)
+                }
+            }
+            curPid = ppid
+        }
+        return result
+    }
     
     private func getProcessIdentity(from metaData: NEFlowMetaData) -> ProcessIdentity? {
         guard let auditTokenData = metaData.sourceAppAuditToken else {
@@ -505,7 +537,8 @@ class AppProxyProvider: NETransparentProxyProvider {
         }
         
         let fullPath = String(cString: pathBuffer)
-        let identity = ProcessIdentity(pid: Int(pid), name: (fullPath as NSString).lastPathComponent, path: fullPath)
+        let ancestors = Self.collectAncestorPaths(startingFrom: pid, ownPath: fullPath)
+        let identity = ProcessIdentity(pid: Int(pid), name: (fullPath as NSString).lastPathComponent, path: fullPath, ancestorPaths: ancestors)
         
         // store in cache, evict everything if full - processes rarely hit this
         pidCacheLock.lock()
@@ -556,6 +589,8 @@ class AppProxyProvider: NETransparentProxyProvider {
     // same idea for the rule list: a rewritten rule routes existing connections
     // the old way until their sockets close, which looks like the edit did nothing
     private var lastRulesSignature = ""
+    // tracks whether 127.0.0.0/8 and ::1 are currently included in tunnel settings
+    private var localhostInterceptEnabled = false
     private var _engineEnabled = true
     private let engineEnabledLock = NSLock()
     private var engineEnabled: Bool {
@@ -596,9 +631,8 @@ class AppProxyProvider: NETransparentProxyProvider {
         logQueueLock.unlock()
     }
 
-    override func startProxy(options: [String : Any]?, completionHandler: @escaping (Error?) -> Void) {
+    private func makeTunnelSettings(includeLocalhost: Bool) -> NETransparentProxyNetworkSettings {
         let settings = NETransparentProxyNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-        
         let allTrafficRule = NENetworkRule(
             remoteNetwork: nil,
             remotePrefix: 0,
@@ -607,16 +641,23 @@ class AppProxyProvider: NETransparentProxyProvider {
             protocol: .any,
             direction: .outbound
         )
-        
         settings.includedNetworkRules = [allTrafficRule]
-        settings.excludedNetworkRules = [
-            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "127.0.0.0", port: "0"), remotePrefix: 8, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
-            NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "::1", port: "0"), remotePrefix: 128, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
+        var excluded: [NENetworkRule] = [
             NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "169.254.0.0", port: "0"), remotePrefix: 16, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
             NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "fe80::", port: "0"), remotePrefix: 10, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
             NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "224.0.0.0", port: "0"), remotePrefix: 4, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
             NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "ff00::", port: "0"), remotePrefix: 8, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound),
         ]
+        if !includeLocalhost {
+            excluded.insert(NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "::1", port: "0"), remotePrefix: 128, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound), at: 0)
+            excluded.insert(NENetworkRule(remoteNetwork: NWHostEndpoint(hostname: "127.0.0.0", port: "0"), remotePrefix: 8, localNetwork: nil, localPrefix: 0, protocol: .any, direction: .outbound), at: 0)
+        }
+        settings.excludedNetworkRules = excluded
+        return settings
+    }
+
+    override func startProxy(options: [String : Any]?, completionHandler: @escaping (Error?) -> Void) {
+        let settings = makeTunnelSettings(includeLocalhost: false)
 
         startUDPSweepTimer()
         diag("Tunnel starting")
@@ -1048,13 +1089,24 @@ class AppProxyProvider: NETransparentProxyProvider {
             // the new one instead of keeping the old exit ip
             let signature = (try? JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys]))
                 .map { String(decoding: $0, as: UTF8.self) } ?? ""
+            let wantsLocalhost = built.contains { $0.rule.enabled && $0.rule.localhostViaProxy && $0.rule.action != "DIRECT" && $0.rule.action != "BLOCK" }
             proxyLock.lock()
             let shouldReset = pendingFlowReset
             pendingFlowReset = false
             let rulesChanged = signature != lastRulesSignature
             lastRulesSignature = signature
             configLoaded = true
+            let localhostChanged = wantsLocalhost != localhostInterceptEnabled
+            localhostInterceptEnabled = wantsLocalhost
             proxyLock.unlock()
+            if localhostChanged {
+                let updatedSettings = makeTunnelSettings(includeLocalhost: wantsLocalhost)
+                self.setTunnelNetworkSettings(updatedSettings) { [weak self] error in
+                    if let error = error {
+                        self?.diag("Could not update localhost tunnel settings: \(error.localizedDescription)", level: "ERROR")
+                    }
+                }
+            }
             if shouldReset || rulesChanged {
                 resetOpenFlows(reason: shouldReset ? "proxy configuration changed" : "rules changed")
             }
@@ -1081,6 +1133,7 @@ class AppProxyProvider: NETransparentProxyProvider {
             configLoaded = false
             pendingFlowReset = false
             lastRulesSignature = ""
+            localhostInterceptEnabled = false
             proxyLock.unlock()
             completionHandler?(try? JSONSerialization.data(withJSONObject: ["status": "ok"]))
         default:
@@ -1141,7 +1194,8 @@ class AppProxyProvider: NETransparentProxyProvider {
             portStr = "unknown"
         }
 
-        if Self.isLocalOrMulticastAddress(destination) {
+        let isLoopback = Self.isLoopbackAddress(destination)
+        if Self.isNonRoutableNonLoopback(destination) || (isLoopback && portNum == 53) {
             return false
         }
         
@@ -1166,7 +1220,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         // rules are always evaluated. a proxy config is only needed by a rule that
         // routes to one, BLOCK and DIRECT rules work without any (they used to be
         // skipped whenever no proxy was configured, so a lone BLOCK rule did nothing)
-        let matchedRule = findMatchingRule(bundleId: processPath, processName: processName, executablePath: identity?.path, destination: destination, port: portNum, connectionProtocol: .tcp, checkIpPort: true, domains: domains)
+        let matchedRule = findMatchingRule(bundleId: processPath, processName: processName, executablePath: identity?.path, ancestorPaths: identity?.ancestorPaths ?? [], destination: destination, port: portNum, connectionProtocol: .tcp, checkIpPort: true, domains: domains)
 
         if let rule = matchedRule {
             switch rule.action {
@@ -1179,12 +1233,20 @@ class AppProxyProvider: NETransparentProxyProvider {
                 flow.closeWriteWithError(FlowFailure.refused)
                 return true
             default:
+                if isLoopback && !rule.localhostViaProxy {
+                    sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "Direct")
+                    return false
+                }
                 guard let config = resolveProxyConfig(forAction: rule.action) else {
                     warnOnce("missing:\(rule.action)", "Rule references an unavailable proxy; blocking TCP flow to prevent direct fallback")
                     sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: "BLOCK")
                     flow.closeReadWithError(FlowFailure.refused)
                     flow.closeWriteWithError(FlowFailure.refused)
                     return true
+                }
+                // never loop traffic addressed to the local proxy server itself
+                if isLoopback && Self.isLoopbackAddress(config.host) && portNum == UInt16(config.port) {
+                    return false
                 }
                 sendLogToApp(protocol: "TCP", pid: pid, process: displayName, destination: logDest, port: portStr, proxy: proxyLabel(config))
                 registerLiveFlow(flow, pid: pid, process: displayName, destIp: destination, host: logDest, port: portNum, isUdp: false, proxyLabel: proxyLabel(config))
@@ -1193,6 +1255,9 @@ class AppProxyProvider: NETransparentProxyProvider {
                 return true
             }
         } else {
+            if isLoopback {
+                return false
+            }
             proxyLock.lock()
             let defId = defaultProxyId
             let defConfig = defId.isEmpty ? nil : storedProxyConfigs[defId]
@@ -1247,7 +1312,7 @@ class AppProxyProvider: NETransparentProxyProvider {
         let hasAnySocks5 = storedProxyConfigs.values.contains { $0.type.lowercased() == "socks5" }
         proxyLock.unlock()
 
-        let matchedRule = findMatchingRule(bundleId: processPath, processName: processName, executablePath: identity?.path, destination: "", port: 0, connectionProtocol: .udp, checkIpPort: false)
+        let matchedRule = findMatchingRule(bundleId: processPath, processName: processName, executablePath: identity?.path, ancestorPaths: identity?.ancestorPaths ?? [], destination: "", port: 0, connectionProtocol: .udp, checkIpPort: false)
 
         if let rule = matchedRule {
             let action = rule.action
@@ -2129,13 +2194,13 @@ class AppProxyProvider: NETransparentProxyProvider {
         }
     }
     
-    private func findMatchingRule(bundleId: String, processName: String?, executablePath: String? = nil, destination: String, port: UInt16, connectionProtocol: RuleProtocol, checkIpPort: Bool, domains: [String] = []) -> ProxyRule? {
+    private func findMatchingRule(bundleId: String, processName: String?, executablePath: String? = nil, ancestorPaths: [String] = [], destination: String, port: UInt16, connectionProtocol: RuleProtocol, checkIpPort: Bool, domains: [String] = []) -> ProxyRule? {
         rulesLock.lock()
         let currentRules = rules
         rulesLock.unlock()
         if currentRules.isEmpty { return nil }
 
-        let flowProcess = ProxyRule.FlowProcess(bundleId: bundleId, processName: processName, executablePath: executablePath)
+        let flowProcess = ProxyRule.FlowProcess(bundleId: bundleId, processName: processName, executablePath: executablePath, ancestorPaths: ancestorPaths)
         let domainChars = domains.map { (name: $0, chars: Array($0)) }
 
         var excludedBy: ProxyRule? = nil
@@ -2151,8 +2216,8 @@ class AppProxyProvider: NETransparentProxyProvider {
                 if !m.matchesPort(port) || !m.matchesHost(ip: destination, domains: domainChars) {
                     continue
                 }
-            } else if m.processAll && (m.hasHostFilter || m.hasPortFilter) {
-                // UDP flow has no initial destination here, so a host/port-filtered wildcard cannot match
+            } else if m.hasHostFilter || m.hasPortFilter {
+                // UDP flow has no initial destination here, so any host/port-filtered rule cannot match
                 continue
             }
 
@@ -2188,18 +2253,27 @@ class AppProxyProvider: NETransparentProxyProvider {
         return nil
     }
     
-    private static func isLocalOrMulticastAddress(_ ip: String) -> Bool {
+    private static func isLoopbackAddress(_ ip: String) -> Bool {
         let lower = ip.lowercased()
-        if lower == "localhost" || lower == "::1" || lower == "::" || lower == "0.0.0.0" || lower == "255.255.255.255" {
+        return lower == "localhost" || lower == "::1" || lower.hasPrefix("127.")
+    }
+
+    private static func isNonRoutableNonLoopback(_ ip: String) -> Bool {
+        let lower = ip.lowercased()
+        if lower == "::" || lower == "0.0.0.0" || lower == "255.255.255.255" {
             return true
         }
-        if lower.hasPrefix("127.") || lower.hasPrefix("0.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("fec0:") || (lower.hasPrefix("ff") && lower.contains(":")) || lower.hasSuffix(".255") {
+        if lower.hasPrefix("0.") || lower.hasPrefix("169.254.") || lower.hasPrefix("fe80:") || lower.hasPrefix("fec0:") || (lower.hasPrefix("ff") && lower.contains(":")) || lower.hasSuffix(".255") {
             return true
         }
         if let firstDot = lower.firstIndex(of: "."), let firstOctet = Int(lower[..<firstDot]), firstOctet >= 224 && firstOctet <= 239 {
             return true
         }
         return false
+    }
+
+    private static func isLocalOrMulticastAddress(_ ip: String) -> Bool {
+        return isLoopbackAddress(ip) || isNonRoutableNonLoopback(ip)
     }
 
     private func sendLogToApp(protocol: String, pid: Int = 0, process: String, destination: String, port: String, proxy: String) {

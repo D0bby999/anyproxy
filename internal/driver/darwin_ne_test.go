@@ -159,7 +159,7 @@ func TestPushConfigSendsPROXYTokenForLateBoundRules(t *testing.T) {
 
 	rules := []pbprofile.ProxyRule{
 		{ProcessNames: "*", TargetHosts: "*", TargetPorts: "*", Action: pbprofile.ActionProxy},
-		{ProcessNames: "*", TargetHosts: "*", TargetPorts: "*", Action: pbprofile.ActionProxy, ProxyConfigID: "px-1"},
+		{ProcessNames: "*", TargetHosts: "*", TargetPorts: "*", Action: pbprofile.ActionProxy, ProxyConfigID: "px-1", LocalhostViaProxy: true},
 	}
 	if err := drv.pushConfig(
 		[]pbprofile.ProxyConfig{{ID: "px-1", Type: pbprofile.ProxySOCKS5, Host: "h", Port: 1080}},
@@ -189,5 +189,8 @@ func TestPushConfigSendsPROXYTokenForLateBoundRules(t *testing.T) {
 	}
 	if got := second["ruleAction"]; got != "px-1" {
 		t.Fatalf("pinned rule action = %v, want px-1", got)
+	}
+	if got, _ := second["localhostViaProxy"].(bool); !got {
+		t.Fatalf("localhostViaProxy = %v, want true", second["localhostViaProxy"])
 	}
 }
