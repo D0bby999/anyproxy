@@ -1,7 +1,7 @@
 {
   "version": "1.0.12",
   "date": "2026-11-23",
-  "notes": "Saving an All except routing rule no longer changes the global Default Route. The rule editor no longer prompts you to switch the Default Route to Direct.",
+  "notes": "Fix Direct default route for app-specific proxy rules, simplify the Routing Rules editor (moving advanced options into Advanced), auto-match macOS .app helpers and child processes, support localhostViaProxy on macOS NE, and strengthen light/dark UI border contrast.",
   "assets": {
     "darwin-arm64": {
       "url": "https://github.com/D0bby999/anyproxy/releases/download/v1.0.12/AnyProxy-darwin-arm64.dmg",
