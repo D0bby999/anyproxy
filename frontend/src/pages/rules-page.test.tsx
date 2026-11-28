@@ -41,41 +41,40 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
 
-  // Advanced fields stay hidden behind disclosure toggle on New Rule.
+  // Advanced fields (name, action, targets, ports) stay hidden behind disclosure toggle on New Rule.
+  expect(within(dialog).queryByLabelText(t.rules.name)).toBeNull()
   expect(within(dialog).queryByLabelText(t.rules.targets)).toBeNull()
   expect(within(dialog).queryByLabelText(t.rules.ports)).toBeNull()
 
-  // Action & Proxy selector are immediately visible outside Advanced.
-  await user.click(within(dialog).getByRole('button', { name: t.rules.actionBlock }))
-  expect(within(dialog).queryByLabelText(t.rules.selectProxy)).toBeNull()
-  await user.click(within(dialog).getByRole('button', { name: t.rules.actionProxy }))
+  // New Rule starts directly in "Only these apps" mode with proxy selector visible.
   const proxySelect = within(dialog).getByLabelText(t.rules.selectProxy) as HTMLSelectElement
   await user.selectOptions(proxySelect, 'p1')
 
-  // Switching to "Only these" reveals app input, Quick pick, and chip bar.
-  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
   const picker = within(dialog).getByLabelText(t.rules.quickApps) as HTMLSelectElement
-  await user.selectOptions(picker, 'Google Chrome*; *com.google.Chrome*')
-  await user.selectOptions(picker, 'Cursor')
+  await user.selectOptions(picker, '*/Google Chrome.app/*; Google Chrome*; *com.google.Chrome*')
+  await user.selectOptions(picker, '*/Cursor.app/*; Cursor*')
   await user.type(within(dialog).getByLabelText(t.rules.applications), 'curl{enter}')
 
+  // Grouped app presets render as clean single chips (not raw glob tokens).
   const chipsList = within(dialog).getByRole('list', { name: t.rules.selectedApps })
-  expect(within(chipsList).getByText('Google Chrome*')).toBeTruthy()
-  expect(within(chipsList).getByText('*com.google.Chrome*')).toBeTruthy()
+  expect(within(chipsList).getByText('Google Chrome')).toBeTruthy()
   expect(within(chipsList).getByText('Cursor')).toBeTruthy()
   expect(within(chipsList).getByText('curl')).toBeTruthy()
 
-  // Removing one chip via its close button leaves the remaining chips intact.
+  // Removing one chip via its close button removes all its underlying tokens.
   await user.click(within(chipsList).getByRole('button', { name: `${t.rules.removeApp} Cursor` }))
   expect(within(chipsList).queryByText('Cursor')).toBeNull()
-  expect(within(chipsList).getByText('Google Chrome*')).toBeTruthy()
+  expect(within(chipsList).getByText('Google Chrome')).toBeTruthy()
   expect(within(chipsList).getByText('curl')).toBeTruthy()
 
-  // Expanding Advanced reveals protocol/targets/ports.
+  // Expanding Advanced reveals action, name, protocol, targets, and ports.
   await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
+  await user.click(within(dialog).getByRole('button', { name: t.rules.actionBlock }))
+  expect(within(dialog).queryByLabelText(t.rules.selectProxy)).toBeNull()
+  await user.click(within(dialog).getByRole('button', { name: t.rules.actionProxy }))
   await user.click(within(dialog).getByRole('button', { name: t.rules.tcp }))
 
-  expect(dialog.textContent).toContain('Google Chrome*, *com.google.Chrome*, curl · *:* · TCP')
+  expect(dialog.textContent).toContain('Google Chrome, curl · *:* · TCP')
   expect(dialog.textContent).toContain(`${t.rules.actionProxy}: US Static`)
 
   await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
@@ -85,8 +84,8 @@ it('picks/removes multiple apps as chips, keeps Advanced collapsed by default, a
   await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
   expect(onSaveRule).toHaveBeenLastCalledWith(
     expect.objectContaining({
-      name: `${t.rules.actionProxy} Google Chrome*`,
-      processNames: 'Google Chrome*; *com.google.Chrome*; curl',
+      name: `${t.rules.actionProxy} Google Chrome`,
+      processNames: '*/Google Chrome.app/*; Google Chrome*; *com.google.Chrome*; curl',
       excludeProcess: false,
       protocol: 'tcp',
       action: 'proxy',
@@ -134,7 +133,7 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and d
     />
   )
 
-  expect(screen.getByText(`${t.rules.exceptPrefix}: Telegram; Safari`)).toBeTruthy()
+  expect(screen.getByText(`${t.rules.exceptPrefix}: Telegram, Safari`)).toBeTruthy()
 
   // Clicking on a rule row opens the Edit Rule modal directly without fallback warning
   await user.click(screen.getByText('System Except Chat'))
@@ -149,7 +148,6 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and d
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
 
   await user.click(within(dialog).getByRole('button', { name: t.rules.matchExclude }))
-  await user.type(within(dialog).getByLabelText(t.rules.name), 'All except Telegram')
 
   // No fallback warning inside New Rule modal either
   expect(within(dialog).queryByText(t.rules.fallbackProxyWarn)).toBeNull()
@@ -161,8 +159,8 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and d
   expect(onSaveRule).not.toHaveBeenCalled()
 
   const picker = within(dialog).getByLabelText(t.rules.quickApps) as HTMLSelectElement
-  await user.selectOptions(picker, 'Telegram')
-  await user.selectOptions(picker, 'Cursor')
+  await user.selectOptions(picker, '*/Telegram.app/*; Telegram*; *ru.keepcoder.Telegram*')
+  await user.selectOptions(picker, '*/Cursor.app/*; Cursor*')
   expect(dialog.textContent).toContain(`${t.rules.exceptPrefix}: Telegram, Cursor`)
 
   await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
@@ -170,8 +168,8 @@ it('creates an exclude ("All except") rule directly, validates empty apps, and d
   expect(onSetDefaultProxy).not.toHaveBeenCalled()
   expect(onSaveRule).toHaveBeenCalledWith(
     expect.objectContaining({
-      name: 'All except Telegram',
-      processNames: 'Telegram; Cursor',
+      name: `${t.rules.actionProxy} ${t.rules.exceptPrefix}: Telegram`,
+      processNames: '*/Telegram.app/*; Telegram*; *ru.keepcoder.Telegram*; */Cursor.app/*; Cursor*',
       excludeProcess: true,
       action: 'proxy',
       proxyConfigId: '',
@@ -196,18 +194,17 @@ it('keeps focus in other rule inputs while typing instead of jumping back to Rul
 
   await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
-  const nameInput = within(dialog).getByLabelText(t.rules.name) as HTMLInputElement
-
-  // Initial mount still focuses Rule name.
-  expect(document.activeElement).toBe(nameInput)
-
-  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
   const appsInput = within(dialog).getByLabelText(t.rules.applications) as HTMLInputElement
+
+  // Initial mount focuses the app input directly.
+  expect(document.activeElement).toBe(appsInput)
+
   await user.type(appsInput, 'curl')
   expect(appsInput.value).toBe('curl')
   expect(document.activeElement).toBe(appsInput)
 
   await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
+  const nameInput = within(dialog).getByLabelText(t.rules.name) as HTMLInputElement
   const targetsInput = within(dialog).getByLabelText(t.rules.targets) as HTMLInputElement
   const portsInput = within(dialog).getByLabelText(t.rules.ports) as HTMLInputElement
 
@@ -262,11 +259,11 @@ it('lets users save app directly without clearing "*", opens Advanced when editi
 
   await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
-  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
   const appsInput = within(dialog).getByLabelText(t.rules.applications) as HTMLInputElement
 
   await user.click(appsInput)
   await user.type(appsInput, 'curl')
+  await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
   await user.click(within(dialog).getByRole('button', { name: t.rules.actionDirect }))
   expect(within(dialog).queryByLabelText(t.rules.selectProxy)).toBeNull()
   expect(dialog.textContent).toContain(t.rules.directOutcome)
@@ -445,7 +442,7 @@ it('starts a rule from a starter template and saves localhostViaProxy from Advan
   await user.click(screen.getByRole('button', { name: t.rules.templateProxyBrowser }))
   const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
   const chipsList = within(dialog).getByRole('list', { name: t.rules.selectedApps })
-  expect(within(chipsList).getByText('Google Chrome*')).toBeTruthy()
+  expect(within(chipsList).getByText('Google Chrome')).toBeTruthy()
 
   // Expand Advanced and toggle localhostViaProxy
   await user.click(within(dialog).getByRole('button', { name: new RegExp(t.rules.advancedSection) }))
@@ -460,7 +457,7 @@ it('starts a rule from a starter template and saves localhostViaProxy from Advan
     expect.objectContaining({
       action: 'proxy',
       localhostViaProxy: true,
-      processNames: 'Google Chrome*; *com.google.Chrome*',
+      processNames: '*/Google Chrome.app/*; Google Chrome*; *com.google.Chrome*',
     })
   )
 })
@@ -515,5 +512,95 @@ it('simulates a rule inline and highlights the matched row', async () => {
   expect(screen.getByText(t.rules.simMatched(1, 'Burp Inspection'))).toBeTruthy()
   const matchedRow = screen.getByText('Burp Inspection').closest('tr')
   expect(matchedRow?.className).toContain('is-sim-match')
+})
+
+it('switches Default Route to Direct when saving an include-only Proxy rule for the default proxy, but preserves it for a different proxy', async () => {
+  const user = userEvent.setup()
+  const proxies: ProxyConfig[] = [
+    { id: 'p1', name: 'SG Fast', type: 'socks5', host: '1.1.1.1', port: 1080 },
+    { id: 'p2', name: 'US Static', type: 'http', host: '2.2.2.2', port: 8080 },
+  ]
+  const onSaveRule = vi.fn().mockResolvedValue(undefined)
+  const onSetDefaultProxy = vi.fn().mockResolvedValue(undefined)
+
+  render(
+    <RulesPage
+      rules={[]}
+      proxies={proxies}
+      defaultProxyId="p1"
+      onSaveRule={onSaveRule}
+      onSetDefaultProxy={onSetDefaultProxy}
+      onDeleteRule={vi.fn()}
+      onToggleRule={vi.fn()}
+      onMoveRule={vi.fn()}
+      onCloneRule={vi.fn()}
+    />
+  )
+
+  // Case 1: "Only these apps" with no app selected shows validation error instead of saving as "*"
+  await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
+  let dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
+  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
+  await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain(t.rules.includeRequired))
+  expect(onSaveRule).not.toHaveBeenCalled()
+
+  // Case 2: "Only these apps" using a DIFFERENT proxy (p2) preserves Default Route (p1)
+  await user.type(within(dialog).getByLabelText(t.rules.applications), 'curl{enter}')
+  await user.selectOptions(within(dialog).getByLabelText(t.rules.selectProxy), 'p2')
+  await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
+  expect(onSetDefaultProxy).not.toHaveBeenCalled()
+  expect(onSaveRule).toHaveBeenLastCalledWith(
+    expect.objectContaining({ processNames: 'curl', action: 'proxy', proxyConfigId: 'p2' })
+  )
+
+  // Case 2: "Only these apps" using Default Proxy (p1) pins the rule to p1 and switches Default Route to Direct
+  await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
+  dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
+  await user.click(within(dialog).getByRole('button', { name: t.rules.matchInclude }))
+  await user.type(within(dialog).getByLabelText(t.rules.applications), 'Telegram{enter}')
+  await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
+  expect(onSaveRule).toHaveBeenLastCalledWith(
+    expect.objectContaining({ processNames: 'Telegram', action: 'proxy', proxyConfigId: 'p1' })
+  )
+  expect(onSetDefaultProxy).toHaveBeenCalledWith('')
+})
+
+it('expands a browsed macOS .app bundle to match all helpers while displaying a single clean chip', async () => {
+  const user = userEvent.setup()
+  const onSaveRule = vi.fn().mockResolvedValue(undefined)
+  const onPickExecutable = vi.fn().mockResolvedValue('/Applications/Discord.app')
+
+  render(
+    <RulesPage
+      rules={[]}
+      proxies={[{ id: 'p1', name: 'SG Fast', type: 'socks5', host: '1.1.1.1', port: 1080 }]}
+      onSaveRule={onSaveRule}
+      onPickExecutable={onPickExecutable}
+      onDeleteRule={vi.fn()}
+      onToggleRule={vi.fn()}
+      onMoveRule={vi.fn()}
+      onCloneRule={vi.fn()}
+    />
+  )
+
+  await user.click(screen.getAllByRole('button', { name: t.rules.newBtn })[0])
+  const dialog = screen.getByRole('dialog', { name: t.rules.newBtn })
+  await user.click(within(dialog).getByRole('button', { name: t.rules.browseApp }))
+
+  const chipsList = within(dialog).getByRole('list', { name: t.rules.selectedApps })
+  await waitFor(() => expect(within(chipsList).getByText('Discord')).toBeTruthy())
+
+  await user.click(within(dialog).getByRole('button', { name: t.actions.save }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: t.rules.newBtn })).toBeNull())
+  expect(onSaveRule).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: `${t.rules.actionProxy} Discord`,
+      processNames: '*/Discord.app/*; Discord*',
+      action: 'proxy',
+    })
+  )
 })
 
