@@ -204,7 +204,7 @@ input, textarea { caret-color: var(--accent); }
 .input, .select, select, textarea {
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--ctl-border);
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--ink);
